@@ -1,0 +1,1311 @@
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { APP_MODES, useAppStore } from '../../stores/appStore'
+import { useVideoStore } from '../../stores/videoStore'
+import useModeHotkeys from '../hooks/useModeHotkeys'
+import VideoPlayer from '../video/VideoPlayer'
+
+const PLAYBACK_RATES = [0.1, 0.3, 0.5, 0.8, 0.9, 1, 1.2, 1.4, 1.6, 1.8, 2.0]
+const SHORT_JUMP_SECONDS = 2
+const LONG_JUMP_SECONDS = 8
+const QUICK_NOTE_FORWARD_SECONDS = 5
+const QUICK_NOTE_BACKWARD_SECONDS = 2
+
+function formatTime(seconds) {
+  const value = Number.isFinite(seconds) ? Math.max(0, seconds) : 0
+  const wholeSeconds = Math.floor(value)
+  const hours = Math.floor(wholeSeconds / 3600)
+  const minutes = Math.floor((wholeSeconds % 3600) / 60)
+  const secs = wholeSeconds % 60
+  const pad = (part) => part.toString().padStart(2, '0')
+
+  return `${pad(hours)}:${pad(minutes)}:${pad(secs)}.0`
+}
+
+function parseTime(timeText) {
+  if (!timeText) return Number.NaN
+
+  const parts = timeText.split(':')
+  if (parts.length !== 3) return Number.NaN
+
+  const hours = Number(parts[0])
+  const minutes = Number(parts[1])
+  const seconds = Number(parts[2])
+
+  if (![hours, minutes, seconds].every(Number.isFinite)) return Number.NaN
+
+  return hours * 3600 + minutes * 60 + seconds
+}
+
+function splitPath(filePath) {
+  const value = filePath || ''
+  const lastSlash = Math.max(value.lastIndexOf('\\'), value.lastIndexOf('/'))
+
+  if (lastSlash < 0) {
+    return { folderPath: '', fileName: value }
+  }
+
+  return {
+    folderPath: value.slice(0, lastSlash),
+    fileName: value.slice(lastSlash + 1),
+  }
+}
+
+function joinPath(folderPath, fileName) {
+  if (!folderPath || !fileName) return ''
+  const separator = folderPath.endsWith('\\') || folderPath.endsWith('/') ? '' : '\\'
+  return `${folderPath}${separator}${fileName}`
+}
+
+function removeFileExtension(fileName) {
+  const dotIndex = String(fileName || '').lastIndexOf('.')
+  return dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName
+}
+
+export default function VideoMode() {
+  const playerRef = useRef(null)
+  const notesListRef = useRef(null)
+  const directoryListRef = useRef(null)
+  const noteEditorRef = useRef(null)
+  const leaveGuardHandlerRef = useRef(null)
+  const dialogResolveRef = useRef(null)
+  const toastTimerRef = useRef(null)
+  const [leftTab, setLeftTab] = useState('notes')
+  const [dialog, setDialog] = useState(null)
+  const [contextMenu, setContextMenu] = useState(null)
+  const [fullscreenCycleState, setFullscreenCycleState] = useState(0)
+  const [panelsHidden, setPanelsHidden] = useState(false)
+  const [selectedDirectoryMp4Name, setSelectedDirectoryMp4Name] = useState('')
+  const [playAll, setPlayAll] = useState(true)
+  const [titleOn, setTitleOn] = useState(true)
+  const [selectedSubtitle, setSelectedSubtitle] = useState(null)
+
+  const dirty = useAppStore((state) => state.dirty)
+  const recentVideoFiles = useAppStore((state) => state.recentFiles.video || [])
+  const recentVideoFolders = useAppStore((state) => state.recentFolders.video || [])
+  const setDirty = useAppStore((state) => state.setDirty)
+  const setCurrentFile = useAppStore((state) => state.setCurrentFile)
+  const addRecentFile = useAppStore((state) => state.addRecentFile)
+  const addRecentFolder = useAppStore((state) => state.addRecentFolder)
+  const setLeaveGuard = useAppStore((state) => state.setLeaveGuard)
+
+  const videoFile = useVideoStore((state) => state.videoFile)
+  const notes = useVideoStore((state) => state.notes)
+  const selectedNoteId = useVideoStore((state) => state.selectedNoteId)
+  const curStart = useVideoStore((state) => state.curStart)
+  const curEnd = useVideoStore((state) => state.curEnd)
+  const noteDraft = useVideoStore((state) => state.noteDraft)
+  const selectedStart = useVideoStore((state) => state.selectedStart)
+  const selectedEnd = useVideoStore((state) => state.selectedEnd)
+  const playingTime = useVideoStore((state) => state.playingTime)
+  const playbackRate = useVideoStore((state) => state.playbackRate)
+  const repeat = useVideoStore((state) => state.repeat)
+  const directoryMp4Files = useVideoStore((state) => state.directoryMp4Files)
+  const setVideoFile = useVideoStore((state) => state.setVideoFile)
+  const setNotes = useVideoStore((state) => state.setNotes)
+  const setSelectedNoteId = useVideoStore((state) => state.setSelectedNoteId)
+  const setCurStart = useVideoStore((state) => state.setCurStart)
+  const setCurEnd = useVideoStore((state) => state.setCurEnd)
+  const setNoteDraft = useVideoStore((state) => state.setNoteDraft)
+  const setSelectedStart = useVideoStore((state) => state.setSelectedStart)
+  const setSelectedEnd = useVideoStore((state) => state.setSelectedEnd)
+  const setPlayingTime = useVideoStore((state) => state.setPlayingTime)
+  const setPlaybackRate = useVideoStore((state) => state.setPlaybackRate)
+  const setRepeat = useVideoStore((state) => state.setRepeat)
+  const setDirectoryMp4Files = useVideoStore((state) => state.setDirectoryMp4Files)
+  const addNote = useVideoStore((state) => state.addNote)
+  const insertNoteAt = useVideoStore((state) => state.insertNoteAt)
+  const updateNote = useVideoStore((state) => state.updateNote)
+  const deleteNote = useVideoStore((state) => state.deleteNote)
+  const clearNotes = useVideoStore((state) => state.clearNotes)
+
+  useEffect(() => {
+    console.log(`[startup:renderer] VideoMode mounted +${Math.round(performance.now())}ms`)
+  }, [])
+
+  const selectedNote = notes.find((note) => note.id === selectedNoteId) || null
+
+  const scrollSelectedNoteIntoView = () => {
+    window.requestAnimationFrame(() => {
+      const row = notesListRef.current?.querySelector('.note-row.active')
+      row?.scrollIntoView({ block: 'nearest' })
+    })
+  }
+
+  useEffect(() => {
+    if (leftTab === 'notes') scrollSelectedNoteIntoView()
+  }, [leftTab, selectedNoteId])
+
+  const scrollSelectedDirectoryMp4IntoView = () => {
+    window.requestAnimationFrame(() => {
+      const row = directoryListRef.current?.querySelector('.mp4-list-row.active')
+      row?.scrollIntoView({ block: 'nearest' })
+    })
+  }
+
+  useEffect(() => {
+    if (leftTab === 'files') scrollSelectedDirectoryMp4IntoView()
+  }, [leftTab, selectedDirectoryMp4Name])
+
+  const closeDialog = (decision) => {
+    const resolve = dialogResolveRef.current
+    dialogResolveRef.current = null
+    setDialog(null)
+    resolve?.(decision)
+  }
+
+  const showActionDialog = (options) => new Promise((resolve) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = null
+    }
+
+    dialogResolveRef.current = resolve
+    setDialog(options)
+  })
+
+  const showSubtitleChoiceDialog = (subtitleCandidates, options = {}) => new Promise((resolve) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = null
+    }
+
+    dialogResolveRef.current = resolve
+    setDialog({
+      title: options.title || '选择字幕文件',
+      subtitleCandidates,
+      defaultValue: subtitleCandidates[0]?.filePath || 'none',
+      cancelValue: 'none',
+      actions: [{ label: options.noneLabel || '不加载字幕', value: 'none' }],
+    })
+  })
+
+  const showAutoMessage = (message, title = '提示', timeout = 1200) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+    }
+
+    setDialog({
+      title,
+      message,
+      actions: [{ label: '确定', value: 'ok', primary: true }],
+      autoClose: true,
+    })
+
+    toastTimerRef.current = setTimeout(() => {
+      closeDialog('ok')
+    }, timeout)
+  }
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!dialog) return undefined
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeDialog(dialog.cancelValue || 'cancel')
+        return
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        closeDialog(dialog.defaultValue || dialog.actions?.[0]?.value || 'ok')
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [dialog])
+
+  useEffect(() => {
+    if (!contextMenu) return undefined
+
+    const closeMenu = () => setContextMenu(null)
+    window.addEventListener('click', closeMenu, true)
+    window.addEventListener('contextmenu', closeMenu, true)
+    return () => {
+      window.removeEventListener('click', closeMenu, true)
+      window.removeEventListener('contextmenu', closeMenu, true)
+    }
+  }, [contextMenu])
+
+  const getPlayerTime = () => playerRef.current?.currentTime() ?? 0
+
+  const getDuration = () => {
+    const duration = playerRef.current?.duration?.()
+    return Number.isFinite(duration) ? duration : Number.POSITIVE_INFINITY
+  }
+
+  const getPlaybackRate = () => {
+    const playerRate = Number(playerRef.current?.playbackRate?.())
+    return Number.isFinite(playerRate) && playerRate > 0
+      ? playerRate
+      : playbackRate || 1
+  }
+
+  const scaleTimeDistance = (seconds) => seconds * getPlaybackRate()
+
+  const seekByScaledSeconds = (seconds) => {
+    const player = playerRef.current
+    if (!player) return
+
+    const duration = getDuration()
+    const nextTime = Math.min(duration, Math.max(0, getPlayerTime() + scaleTimeDistance(seconds)))
+    player.currentTime(nextTime)
+  }
+
+  const buildCaptureRange = (forwardSeconds = QUICK_NOTE_FORWARD_SECONDS, backwardSeconds = QUICK_NOTE_BACKWARD_SECONDS) => {
+    const currentTime = getPlayerTime()
+    const duration = getDuration()
+    const scaledBackward = scaleTimeDistance(backwardSeconds)
+    const scaledForward = scaleTimeDistance(forwardSeconds)
+    const start = currentTime - scaledBackward < 0 ? 0 : currentTime - scaledBackward
+    let end = Math.min(duration, start + scaledForward)
+
+    if (!Number.isFinite(end) || end <= start) {
+      end = start + 1
+    }
+
+    return {
+      start: formatTime(start),
+      end: formatTime(end),
+    }
+  }
+
+  const normalizeRange = (range) => {
+    const startSeconds = parseTime(range.start)
+    const endSeconds = parseTime(range.end)
+
+    if (!Number.isFinite(startSeconds)) {
+      showAutoMessage('当前 start 时间无效，无法生成视频笔记。', '时间无效', 1800)
+      return null
+    }
+
+    if (!Number.isFinite(endSeconds) || endSeconds <= startSeconds) {
+      showAutoMessage('结束时间小于或等于开始时间，已自动调整为 start + 1秒。', '时间已调整', 1600)
+      return {
+        start: range.start,
+        end: formatTime(startSeconds + 1),
+      }
+    }
+
+    return range
+  }
+
+  const playFromCurrentPosition = () => {
+    const player = playerRef.current
+    if (!player?.play) return
+
+    const tryPlay = () => {
+      const result = player.play()
+      if (result?.catch) {
+        result.catch(() => {
+          showAutoMessage('浏览器阻止了自动播放，请手动点击播放。', '播放提示', 1800)
+        })
+      }
+    }
+
+    tryPlay()
+    player.one?.('seeked', tryPlay)
+    setTimeout(tryPlay, 80)
+  }
+
+  const togglePlayPause = () => {
+    const player = playerRef.current
+    if (!player) return
+
+    if (player.paused?.()) {
+      playFromCurrentPosition()
+      return
+    }
+
+    player.pause?.()
+  }
+
+  const selectNote = (note) => {
+    setSelectedNoteId(note.id)
+    setNoteDraft(note.content)
+    setSelectedStart(note.start)
+    setSelectedEnd(note.end)
+  }
+
+  const selectNoteByIndex = (index) => {
+    if (notes.length === 0) return null
+
+    const safeIndex = Math.max(0, Math.min(index, notes.length - 1))
+    const note = notes[safeIndex]
+    selectNote(note)
+    return note
+  }
+
+  const jumpToNote = (note) => {
+    selectNote(note)
+
+    const startSeconds = parseTime(note.start)
+    if (!Number.isFinite(startSeconds) || !playerRef.current) return
+
+    playerRef.current.pause?.()
+    playerRef.current.currentTime(startSeconds)
+    setCurStart(note.start)
+    setCurEnd(note.end)
+    playFromCurrentPosition()
+  }
+
+  const applyPlaybackRate = (rate) => {
+    const player = playerRef.current
+    const nextRate = Number(rate)
+    if (!player?.playbackRate || !Number.isFinite(nextRate) || nextRate <= 0) return
+
+    player.playbackRate(nextRate)
+    setPlaybackRate(nextRate)
+  }
+
+  const playAfterVideoSourceLoaded = (options = {}) => {
+    const player = playerRef.current
+    if (!player?.play) return
+
+    const tryPlay = () => {
+      if (options.playbackRate) {
+        applyPlaybackRate(options.playbackRate)
+      }
+
+      const result = player.play()
+      if (result?.catch) {
+        result.catch(() => {
+          showAutoMessage('浏览器阻止了自动播放，请手动点击播放。', '播放提示', 1800)
+        })
+      }
+    }
+
+    player.one?.('loadedmetadata', tryPlay)
+    player.one?.('canplay', tryPlay)
+    setTimeout(tryPlay, 180)
+  }
+
+  const saveVideoNotes = async ({ silent = false } = {}) => {
+    if (!videoFile?.filePath || !window.videoApi?.saveNotes) {
+      showAutoMessage('没有可保存的视频文件。')
+      return false
+    }
+
+    const payload = notes.map((note) => ({
+      ...(note.raw || {}),
+      Start: note.start,
+      End: note.end,
+      Content: note.content,
+    }))
+
+    const result = await window.videoApi.saveNotes(videoFile.filePath, payload)
+    if (!result?.ok) {
+      showAutoMessage('保存失败。')
+      return false
+    }
+
+    setDirty(false)
+    if (!silent) {
+      showAutoMessage('文件已经保存。', '保存完成', 900)
+    }
+    return true
+  }
+
+  const confirmBeforeSwitchVideo = async () => {
+    if (!dirty) return true
+
+    const decision = await showActionDialog({
+      title: '视频笔记已修改',
+      message: '当前视频笔记已经修改，切换MP4文件前需要处理这些修改。',
+      defaultValue: 'save',
+      cancelValue: 'cancel',
+      actions: [
+        { label: '保存并切换', value: 'save', primary: true },
+        { label: '放弃修改', value: 'discard', danger: true },
+        { label: '取消', value: 'cancel' },
+      ],
+    })
+
+    if (decision === 'save') {
+      return saveVideoNotes({ silent: true })
+    }
+
+    if (decision === 'discard') {
+      setDirty(false)
+      return true
+    }
+
+    return false
+  }
+
+  leaveGuardHandlerRef.current = confirmBeforeSwitchVideo
+
+  useEffect(() => {
+    setLeaveGuard(() => leaveGuardHandlerRef.current?.() ?? true)
+    return () => setLeaveGuard(null)
+  }, [setLeaveGuard])
+
+  const chooseSubtitle = async (subtitleCandidates = []) => {
+    if (subtitleCandidates.length === 0) {
+      return null
+    }
+
+    if (subtitleCandidates.length === 1) {
+      return subtitleCandidates[0]
+    }
+
+    const selectedPath = await showSubtitleChoiceDialog(subtitleCandidates)
+    if (!selectedPath || selectedPath === 'none') {
+      return null
+    }
+
+    return subtitleCandidates.find((subtitle) => subtitle.filePath === selectedPath) || null
+  }
+
+  const chooseSrtSubtitleForConversion = async (srtSubtitleCandidates = []) => {
+    if (srtSubtitleCandidates.length === 0) {
+      return null
+    }
+
+    let selectedSrt = srtSubtitleCandidates[0]
+
+    if (srtSubtitleCandidates.length > 1) {
+      const selectedPath = await showSubtitleChoiceDialog(
+        srtSubtitleCandidates,
+        { title: '选择SRT字幕文件', noneLabel: '不转换字幕' },
+      )
+
+      selectedSrt = srtSubtitleCandidates.find((subtitle) => subtitle.filePath === selectedPath) || null
+    }
+
+    if (!selectedSrt) {
+      return null
+    }
+
+    const decision = await showActionDialog({
+      title: '转换SRT字幕',
+      message: `未找到VTT字幕，发现SRT字幕：${selectedSrt.fileName}。是否转换为VTT？`,
+      defaultValue: 'convert',
+      cancelValue: 'cancel',
+      actions: [
+        { label: '转换', value: 'convert', primary: true },
+        { label: '取消', value: 'cancel' },
+      ],
+    })
+
+    return decision === 'convert' ? selectedSrt : null
+  }
+
+  const convertSrtSubtitleInBackground = async (videoInfo, srtSubtitle) => {
+    if (!window.videoApi?.convertSrtSubtitle || !srtSubtitle?.filePath) {
+      return
+    }
+
+    try {
+      const result = await window.videoApi.convertSrtSubtitle({
+        filePath: srtSubtitle.filePath,
+        videoBaseName: removeFileExtension(videoInfo.fileName),
+      })
+
+      if (result?.ok && result.subtitle) {
+        setSelectedSubtitle(result.subtitle)
+        showAutoMessage('字幕转换完成。', '字幕', 900)
+        return
+      }
+
+      showAutoMessage('字幕转换失败。', '字幕', 1500)
+    } catch {
+      showAutoMessage('字幕转换失败。', '字幕', 1500)
+    }
+  }
+
+  const loadVideoInfo = async (info, options = {}) => {
+    if (!info?.ok) {
+      showAutoMessage('没有合法的MP4文件。')
+      return
+    }
+
+    const subtitle = await chooseSubtitle(info.subtitleCandidates || [])
+    const srtSubtitle = subtitle ? null : await chooseSrtSubtitleForConversion(info.srtSubtitleCandidates || [])
+
+    setVideoFile(info)
+    setSelectedSubtitle(subtitle)
+    setCurrentFile(info.filePath)
+    addRecentFile(APP_MODES.VIDEO, info.filePath)
+    if (info.folderPath) {
+      addRecentFolder(APP_MODES.VIDEO, info.folderPath)
+    }
+    setNotes(
+      info.notes.map((note, index) => ({
+        id: `${info.filePath}-${index}`,
+        start: note.Start || note.start || '',
+        end: note.End || note.end || '',
+        content: note.Content || note.content || '',
+        raw: note,
+      })),
+    )
+    setDirectoryMp4Files(info.mp4Files || [])
+    setSelectedDirectoryMp4Name(info.fileName || '')
+    setSelectedNoteId(null)
+    setNoteDraft('')
+    setSelectedStart('')
+    setSelectedEnd('')
+    setCurStart('')
+    setCurEnd('')
+    setDirty(false)
+
+    if (options.playbackRate) {
+      applyPlaybackRate(options.playbackRate)
+    }
+
+    if (options.autoplay) {
+      playAfterVideoSourceLoaded({ playbackRate: options.playbackRate })
+    }
+
+    if (srtSubtitle) {
+      convertSrtSubtitleInBackground(info, srtSubtitle)
+    }
+  }
+
+  const openVideoFileFullPath = async (fullPath, options = {}) => {
+    if (!fullPath || !window.videoApi?.getVideoFileInfo) return
+
+    const canSwitch = await confirmBeforeSwitchVideo()
+    if (!canSwitch) return
+
+    const info = await window.videoApi.getVideoFileInfo(fullPath)
+    await loadVideoInfo(info, options)
+  }
+
+  const openVideoFilePath = async (fileName) => {
+    if (!videoFile?.folderPath) return
+    openVideoFileFullPath(joinPath(videoFile.folderPath, fileName), { autoplay: true })
+  }
+
+  const playNextDirectoryVideo = () => {
+    if (!playAll || repeat || !videoFile?.folderPath || directoryMp4Files.length === 0) return
+
+    const currentIndex = directoryMp4Files.findIndex((fileName) => fileName === videoFile.fileName)
+    if (currentIndex < 0 || currentIndex >= directoryMp4Files.length - 1) return
+
+    const nextFileName = directoryMp4Files[currentIndex + 1]
+    openVideoFileFullPath(joinPath(videoFile.folderPath, nextFileName), {
+      autoplay: true,
+      playbackRate: getPlaybackRate(),
+    })
+  }
+
+  const selectDirectoryMp4ByIndex = (index) => {
+    if (directoryMp4Files.length === 0) return ''
+
+    const safeIndex = Math.max(0, Math.min(index, directoryMp4Files.length - 1))
+    const fileName = directoryMp4Files[safeIndex]
+    setSelectedDirectoryMp4Name(fileName)
+    return fileName
+  }
+
+  const handleDirectoryMp4KeyDown = (event) => {
+    if (!['ArrowUp', 'ArrowDown', 'Enter'].includes(event.key)) return
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (event.key === 'Enter') {
+      const fileName = selectedDirectoryMp4Name || selectDirectoryMp4ByIndex(0)
+      if (fileName) openVideoFilePath(fileName)
+      return
+    }
+
+    const currentIndex = directoryMp4Files.findIndex((fileName) => fileName === selectedDirectoryMp4Name)
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0
+    const nextIndex = event.key === 'ArrowUp' ? baseIndex - 1 : baseIndex + 1
+    selectDirectoryMp4ByIndex(currentIndex >= 0 ? nextIndex : 0)
+  }
+
+  const loadVideoFolderPath = async (folderPath) => {
+    if (!folderPath || !window.videoApi?.listMp4Files) return
+
+    const canSwitch = await confirmBeforeSwitchVideo()
+    if (!canSwitch) return
+
+    const result = await window.videoApi.listMp4Files(folderPath)
+    if (!result?.ok) return
+
+    addRecentFolder(APP_MODES.VIDEO, folderPath)
+    const mp4Files = result.mp4Files || []
+    setDirectoryMp4Files(mp4Files)
+    setSelectedDirectoryMp4Name(mp4Files[0] || '')
+
+    if (mp4Files[0] && window.videoApi?.getVideoFileInfo) {
+      const info = await window.videoApi.getVideoFileInfo(joinPath(folderPath, mp4Files[0]))
+      await loadVideoInfo({
+        ...info,
+        mp4Files,
+      })
+    }
+  }
+
+  const openVideoFile = async () => {
+    if (!window.videoApi?.openVideoFile) {
+      showAutoMessage('videoApi.openVideoFile 不可用。')
+      return
+    }
+
+    const canSwitch = await confirmBeforeSwitchVideo()
+    if (!canSwitch) return
+
+    const info = await window.videoApi.openVideoFile()
+    if (info?.canceled) return
+    await loadVideoInfo(info, { autoplay: true })
+  }
+
+  const openFromClipboard = async () => {
+    if (!window.videoApi?.readClipboardText || !window.videoApi?.validateMp4Path) {
+      showAutoMessage('剪贴板读取接口不可用。')
+      return
+    }
+
+    let clipboardText = ''
+    try {
+      clipboardText = await window.videoApi.readClipboardText()
+    } catch {
+      showAutoMessage('剪贴板读取失败。', 'GetClip', 1200)
+      return
+    }
+
+    const result = await window.videoApi.validateMp4Path(clipboardText)
+    if (!result?.ok) {
+      showAutoMessage('没有合法的MP4文件。', 'GetClip', 1200)
+      return
+    }
+
+    openVideoFileFullPath(result.filePath, {
+      autoplay: true,
+      playbackRate: getPlaybackRate(),
+    })
+  }
+
+  const addQuickNote = async () => {
+    if (!videoFile?.filePath) return
+
+    const range = normalizeRange(buildCaptureRange())
+    if (!range) return
+
+    addNote(createQuickNote(range))
+    setDirty(true)
+    showAutoMessage('已追加视频笔记。', '操作完成', 900)
+  }
+
+  const createQuickNote = (range) => ({
+    id: `${videoFile?.filePath || 'video'}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    start: range.start,
+    end: range.end,
+    content: 'None',
+    raw: {},
+  })
+
+  const insertQuickNoteNearSelected = (position) => {
+    if (!selectedNoteId || !videoFile?.filePath) {
+      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      return
+    }
+
+    const selectedIndex = notes.findIndex((note) => note.id === selectedNoteId)
+    if (selectedIndex < 0) {
+      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      return
+    }
+
+    const range = normalizeRange(buildCaptureRange())
+    if (!range) return
+
+    const insertIndex = position === 'before' ? selectedIndex : selectedIndex + 1
+    insertNoteAt(insertIndex, createQuickNote(range))
+    setDirty(true)
+    showAutoMessage('已插入视频笔记。', '操作完成', 900)
+  }
+
+  const deleteSelectedNote = async () => {
+    if (!selectedNoteId) {
+      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      return
+    }
+
+    const decision = await showActionDialog({
+      title: '删除视频笔记',
+      message: '确认删除当前选中的视频笔记？',
+      defaultValue: 'delete',
+      cancelValue: 'cancel',
+      actions: [
+        { label: '删除', value: 'delete', danger: true },
+        { label: '取消', value: 'cancel' },
+      ],
+    })
+    if (decision !== 'delete') return
+
+    deleteNote(selectedNoteId)
+    setDirty(true)
+  }
+
+  const clearNotesList = async () => {
+    const decision = await showActionDialog({
+      title: '清空笔记列表',
+      message: '确认清空当前视频的全部笔记数据？',
+      defaultValue: 'clear',
+      cancelValue: 'cancel',
+      actions: [
+        { label: '清空', value: 'clear', danger: true },
+        { label: '取消', value: 'cancel' },
+      ],
+    })
+    if (decision !== 'clear') return
+
+    clearNotes()
+    setCurStart('')
+    setCurEnd('')
+    setDirty(true)
+  }
+  const updateSelectedRange = async () => {
+    if (!selectedNoteId) {
+      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      return
+    }
+
+    const range = normalizeRange(buildCaptureRange())
+    if (!range) return
+
+    updateNote(selectedNoteId, range)
+    setSelectedStart(range.start)
+    setSelectedEnd(range.end)
+    setDirty(true)
+    showAutoMessage('已更新时间段。', '操作完成', 900)
+  }
+  const writeCurrentRangeToSelected = async () => {
+    if (!selectedNoteId || !curStart || !curEnd) return
+
+    const decision = await showActionDialog({
+      title: '更新时间段',
+      message: '确认将 curStart / curEnd 写回当前选中视频笔记？',
+      defaultValue: 'update',
+      cancelValue: 'cancel',
+      actions: [
+        { label: '更新', value: 'update', primary: true },
+        { label: '取消', value: 'cancel' },
+      ],
+    })
+    if (decision !== 'update') return
+
+    const range = normalizeRange({ start: curStart, end: curEnd })
+    if (!range) return
+
+    updateNote(selectedNoteId, range)
+    setSelectedStart(range.start)
+    setSelectedEnd(range.end)
+    setDirty(true)
+  }
+
+  const updateSelectedContent = (content) => {
+    setNoteDraft(content)
+  }
+
+  const confirmUpdateSelectedContent = async () => {
+    if (!selectedNoteId) {
+      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      return
+    }
+
+    const decision = await showActionDialog({
+      title: '更新视频笔记',
+      message: '确认更新当前选中视频笔记内容？',
+      defaultValue: 'update',
+      cancelValue: 'cancel',
+      actions: [
+        { label: '更新', value: 'update', primary: true },
+        { label: '取消', value: 'cancel' },
+      ],
+    })
+    if (decision !== 'update') return
+
+    updateNote(selectedNoteId, { content: noteDraft })
+    setDirty(true)
+    showAutoMessage('已更新视频笔记内容。', '操作完成', 900)
+  }
+
+  const speedByStep = (step) => {
+    const currentRate = getPlaybackRate()
+    const currentIndex = PLAYBACK_RATES.reduce((bestIndex, rate, index) => (
+      Math.abs(rate - currentRate) < Math.abs(PLAYBACK_RATES[bestIndex] - currentRate)
+        ? index
+        : bestIndex
+    ), 0)
+    const nextIndex = Math.min(PLAYBACK_RATES.length - 1, Math.max(0, currentIndex + step))
+    const nextRate = PLAYBACK_RATES[nextIndex]
+
+    playerRef.current?.playbackRate?.(nextRate)
+    setPlaybackRate(nextRate)
+  }
+
+  const cycleFullscreenPanelState = () => {
+    setFullscreenCycleState((state) => {
+      if (state === 0) return 2
+      if (state === 2) return 3
+      return 0
+    })
+  }
+
+  const toggleFocusBetweenNotesListAndTextInput = () => {
+    const editor = noteEditorRef.current
+    const notesList = notesListRef.current
+
+    if (!editor || !notesList) return
+
+    if (document.activeElement === editor) {
+      if (leftTab !== 'notes') {
+        setLeftTab('notes')
+      }
+      setTimeout(() => {
+        notesList.focus()
+      }, 0)
+      return
+    }
+
+    if (leftTab !== 'notes') {
+      setLeftTab('notes')
+      setTimeout(() => {
+        notesList.focus()
+      }, 0)
+      return
+    }
+
+    if (document.activeElement === notesList) {
+      editor.focus()
+      setTimeout(() => {
+        editor.selectionStart = editor.selectionEnd = editor.value.length
+      }, 0)
+      return
+    }
+
+    if (leftTab === 'notes') {
+      notesList.focus()
+      return
+    }
+  }
+
+  const handleNotesListKeyDown = (event) => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'Enter') {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (event.key === 'Enter') {
+      const note = selectedNote || selectNoteByIndex(0)
+      if (note) {
+        jumpToNote(note)
+      }
+      return
+    }
+
+    const currentIndex = notes.findIndex((note) => note.id === selectedNoteId)
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0
+    const nextIndex = event.key === 'ArrowUp' ? baseIndex - 1 : baseIndex + 1
+    selectNoteByIndex(currentIndex >= 0 ? nextIndex : 0)
+  }
+
+  const toggleCustomFullscreen = () => {
+    setFullscreenCycleState((state) => (state === 1 || state === 2 ? 0 : 1))
+  }
+
+  const togglePanelsVisibility = () => {
+    setPanelsHidden((value) => !value)
+  }
+
+  const openContextMenu = (event, type, note = null) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (note) {
+      selectNote(note)
+    }
+
+    setContextMenu({
+      type,
+      x: event.clientX,
+      y: event.clientY,
+    })
+  }
+
+  const runContextMenuAction = (handler) => {
+    setContextMenu(null)
+    setTimeout(() => {
+      handler()
+    }, 0)
+  }
+
+  const getContextMenuItems = () => {
+    const noteItems = [
+      { label: '追加快捷标记', action: addQuickNote },
+      { label: '前插入快捷标记', action: () => insertQuickNoteNearSelected('before') },
+      { label: '后插入快捷标记', action: () => insertQuickNoteNearSelected('after') },
+      { label: '更新当前标记', action: updateSelectedRange },
+      { label: '删除当前选中', action: deleteSelectedNote },
+    ]
+
+    if (contextMenu?.type === 'video') {
+      return [
+        ...noteItems,
+        { label: '切换全屏模式', action: toggleCustomFullscreen, separator: true },
+        { label: '显示/隐藏控制区', action: togglePanelsVisibility },
+        { label: '关闭菜单', action: () => {}, separator: true },
+      ]
+    }
+
+    return [
+      ...noteItems,
+      { label: '清空笔记列表', action: clearNotesList, separator: true },
+      { label: '关闭菜单', action: () => {}, separator: true },
+    ]
+  }
+
+  const handlers = useMemo(
+    () => ({
+      f1: () => seekByScaledSeconds(-SHORT_JUMP_SECONDS),
+      f2: () => {
+        const currentTime = formatTime(getPlayerTime())
+        setCurStart(currentTime)
+      },
+      f3: () => {
+        const currentTime = formatTime(getPlayerTime())
+        setCurEnd(currentTime)
+      },
+      f4: () => seekByScaledSeconds(SHORT_JUMP_SECONDS),
+      f6: () => togglePlayPause(),
+      f9: () => saveVideoNotes(),
+      arrowleft: () => seekByScaledSeconds(-SHORT_JUMP_SECONDS),
+      arrowright: () => seekByScaledSeconds(SHORT_JUMP_SECONDS),
+      'ctrl+arrowleft': () => seekByScaledSeconds(-LONG_JUMP_SECONDS),
+      'ctrl+arrowright': () => seekByScaledSeconds(LONG_JUMP_SECONDS),
+      'ctrl+arrowup': () => speedByStep(1),
+      'ctrl+arrowdown': () => speedByStep(-1),
+      'ctrl+f': () => cycleFullscreenPanelState(),
+      'ctrl+q': () => confirmUpdateSelectedContent(),
+      'ctrl+s': () => addQuickNote(),
+      'ctrl+g': () => updateSelectedRange(),
+      'ctrl+w': () => writeCurrentRangeToSelected(),
+      'alt+e': () => toggleFocusBetweenNotesListAndTextInput(),
+      'alt+p': () => togglePlayPause(),
+      'shift+alt+s': () => saveVideoNotes(),
+    }),
+    [
+      addQuickNote,
+      togglePlayPause,
+      saveVideoNotes,
+      setCurEnd,
+      setCurStart,
+      confirmUpdateSelectedContent,
+      updateSelectedRange,
+      writeCurrentRangeToSelected,
+      toggleFocusBetweenNotesListAndTextInput,
+    ],
+  )
+
+  useModeHotkeys(dialog ? {} : handlers)
+
+  const onPlayerReady = (player) => {
+    playerRef.current = player
+    setPlaybackRate(player.playbackRate?.() || 1)
+    player.on('ratechange', () => {
+      setPlaybackRate(player.playbackRate?.() || 1)
+    })
+  }
+
+  const onTimeUpdate = (currentTime) => {
+    setPlayingTime(formatTime(currentTime))
+  }
+
+  const fullscreenClass = `fullscreen-state-${fullscreenCycleState}`
+  const panelsClass = panelsHidden ? 'panels-hidden' : ''
+
+  return (
+    <section className={`video-mode ${fullscreenClass} ${panelsClass}`}>
+      <aside className="video-left-panel">
+        <div className="left-tabs">
+          <button
+            className={leftTab === 'notes' ? 'left-tab active' : 'left-tab'}
+            onClick={() => setLeftTab('notes')}
+            type="button"
+          >
+            Notes
+          </button>
+          <button
+            className={leftTab === 'files' ? 'left-tab active' : 'left-tab'}
+            onClick={() => setLeftTab('files')}
+            type="button"
+          >
+            MP4 Files
+          </button>
+        </div>
+        {leftTab === 'notes' ? (
+          <div className="notes-panel">
+            <div className="list-title">Video notes</div>
+            <div
+              className="notes-list"
+              onContextMenu={(event) => openContextMenu(event, 'notes')}
+              onKeyDown={handleNotesListKeyDown}
+              ref={notesListRef}
+              tabIndex={0}
+            >
+              {notes.length === 0 ? (
+                <div className="empty-list">No video notes</div>
+              ) : (
+                notes.map((note) => (
+                  <button
+                    className={note.id === selectedNoteId ? 'note-row active' : 'note-row'}
+                    key={note.id}
+                    onClick={() => selectNote(note)}
+                    onContextMenu={(event) => openContextMenu(event, 'notes', note)}
+                    onDoubleClick={() => jumpToNote(note)}
+                    type="button"
+                  >
+                    <span>{note.start}</span>
+                    <span>{note.end}</span>
+                    <span>{note.content}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="files-list">
+            <label className="recent-folder-picker">
+              <span>Recent folders</span>
+              <select defaultValue="" onChange={(event) => loadVideoFolderPath(event.target.value)}>
+                <option value="" disabled>Choose folder</option>
+                {recentVideoFolders.map((folderPath) => (
+                  <option key={folderPath} value={folderPath}>{folderPath}</option>
+                ))}
+              </select>
+            </label>
+            <div className="list-section recent-section">
+              <div className="list-title">recent MP4 files</div>
+              <div className="list-scroll-body">
+                {recentVideoFiles.length === 0 ? (
+                  <div className="empty-list">No recent MP4 files</div>
+                ) : (
+                  recentVideoFiles.map((filePath) => {
+                    const { fileName } = splitPath(filePath)
+                    return (
+                      <button
+                        className={filePath === videoFile?.filePath ? 'mp4-list-row recent active' : 'mp4-list-row recent'}
+                        key={filePath}
+                        onDoubleClick={() => openVideoFileFullPath(filePath, { autoplay: true })}
+                        title={filePath}
+                        type="button"
+                      >
+                        {fileName}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+            <div className="list-section directory-section">
+              <label className="folder-title-field">
+                <span>folder:</span>
+                <input readOnly title={videoFile?.folderPath || ''} value={videoFile?.folderPath || ''} />
+              </label>
+              <div
+                className="list-scroll-body"
+                onKeyDown={handleDirectoryMp4KeyDown}
+                ref={directoryListRef}
+                tabIndex={0}
+              >
+                {directoryMp4Files.length === 0 ? (
+                  <div className="empty-list">No MP4 files loaded</div>
+                ) : (
+                  directoryMp4Files.map((fileName) => (
+                    <button
+                      className={fileName === selectedDirectoryMp4Name ? 'mp4-list-row active' : 'mp4-list-row'}
+                      key={fileName}
+                      onClick={() => setSelectedDirectoryMp4Name(fileName)}
+                      onDoubleClick={() => openVideoFilePath(fileName)}
+                      title={fileName}
+                      type="button"
+                    >
+                      {fileName}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </aside>
+
+      <section className="video-center">
+        <div className="video-stage" onContextMenu={(event) => openContextMenu(event, 'video')}>
+          <VideoPlayer
+            onEnded={playNextDirectoryVideo}
+            onReady={onPlayerReady}
+            onTimeUpdate={onTimeUpdate}
+            subtitle={selectedSubtitle}
+            subtitleEnabled={titleOn}
+            src={videoFile?.fileUrl}
+          />
+        </div>
+
+        <div className="video-bottom-panel">
+          <textarea
+            className="note-editor"
+            onChange={(event) => updateSelectedContent(event.target.value)}
+            placeholder="Note content"
+            ref={noteEditorRef}
+            value={noteDraft}
+          />
+          <div className="video-info">
+            <div className="info-pair">
+              <div>
+                <span>start</span>
+                <strong>{selectedStart || selectedNote?.start || '--:--:--.-'}</strong>
+              </div>
+              <div>
+                <span>end</span>
+                <strong>{selectedEnd || selectedNote?.end || '--:--:--.-'}</strong>
+              </div>
+            </div>
+            <div className="info-pair">
+              <div>
+                <span>curStart</span>
+                <strong>{curStart || '--:--:--.-'}</strong>
+              </div>
+              <div>
+                <span>curEnd</span>
+                <strong>{curEnd || '--:--:--.-'}</strong>
+              </div>
+            </div>
+            <div>
+              <span>playing</span>
+              <strong>{playingTime}</strong>
+            </div>
+            <div>
+              <span>Mode</span>
+              <strong className={repeat ? 'repeat-mode' : ''}>{repeat ? 'repeat' : 'normal'}</strong>
+            </div>
+            <div>
+              <span>speed</span>
+              <strong>{playbackRate}x</strong>
+            </div>
+            <div className="info-file">
+              <span>file</span>
+              <strong title={videoFile?.fileName || ''}>{videoFile?.fileName || '--'}</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside className="video-toolbar">
+        <button type="button" onClick={openVideoFile}>Open</button>
+        <button type="button" onClick={saveVideoNotes}>Save</button>
+        <button type="button" onClick={addQuickNote}>QuickNote</button>
+        <button type="button" onClick={() => setRepeat(!repeat)}>Repeat</button>
+        <button type="button" onClick={updateSelectedRange}>Update</button>
+        <button type="button" onClick={openFromClipboard}>GetClip</button>
+        <label className="toolbar-check video-toolbar-check">
+          <input
+            checked={playAll}
+            onChange={(event) => setPlayAll(event.target.checked)}
+            type="checkbox"
+          />
+          <span>PlayAll</span>
+        </label>
+        <label className="toolbar-check video-toolbar-check">
+          <input
+            checked={titleOn}
+            onChange={(event) => setTitleOn(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Subtitle</span>
+        </label>
+      </aside>
+
+      {dialog && !dialog.autoClose ? (
+        <div className="inline-dialog-mask">
+          <div className="inline-dialog">
+            <div className="inline-dialog-title">{dialog.title}</div>
+            {dialog.subtitleCandidates ? (
+              <div className="subtitle-choice-list">
+                {dialog.subtitleCandidates.map((subtitle) => (
+                  <button
+                    key={subtitle.filePath}
+                    onClick={() => closeDialog(subtitle.filePath)}
+                    title={subtitle.filePath}
+                    type="button"
+                  >
+                    <span>{subtitle.label}</span>
+                    <strong>{subtitle.fileName}</strong>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="inline-dialog-message">{dialog.message}</div>
+            )}
+            <div className="inline-dialog-actions">
+              {dialog.actions.map((action, index) => (
+                <button
+                  className={[
+                    action.primary ? 'primary' : '',
+                    action.danger ? 'danger' : '',
+                  ].filter(Boolean).join(' ')}
+                  key={action.value}
+                  onClick={() => closeDialog(action.value)}
+                  autoFocus={index === 0}
+                  type="button"
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {dialog?.autoClose ? (
+        <div className="inline-toast-layer">
+          <div className="inline-dialog toast">
+            <div className="inline-dialog-title">{dialog.title}</div>
+            <div className="inline-dialog-message">{dialog.message}</div>
+          </div>
+        </div>
+      ) : null}
+
+      {contextMenu ? (
+        <div
+          className="context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          {getContextMenuItems().map((item, index) => (
+            <button
+              className={item.separator ? 'context-menu-item separator' : 'context-menu-item'}
+              key={`${item.label}-${index}`}
+              onMouseDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                runContextMenuAction(item.action)
+              }}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+

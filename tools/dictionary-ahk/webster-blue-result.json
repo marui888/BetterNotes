@@ -1,0 +1,101 @@
+{
+  "ok": true,
+  "imagePath": "D:\\prj_UpgradeVideoPlayer\\prj_videoPlayer_new\\tools\\dictionary-ahk\\webster-output.png",
+  "resultPath": "D:\\prj_UpgradeVideoPlayer\\prj_videoPlayer_new\\tools\\dictionary-ahk\\webster-blue-result.json",
+  "rect": {
+    "ok": true,
+    "command": "webster-output-rect",
+    "startedAt": "2026-08-03 20:23:30",
+    "writtenAt": "2026-08-03 20:23:31",
+    "pid": 11180,
+    "main": "0xB09BA",
+    "output": "0x10A50",
+    "screenX": -933,
+    "screenY": 235,
+    "width": 434,
+    "height": 362,
+    "screenRight": -499,
+    "screenBottom": 597,
+    "monitorIndex": 2,
+    "monitorLeft": -1920,
+    "monitorTop": 0,
+    "monitorRight": 0,
+    "monitorBottom": 1080,
+    "monitorWidth": 1920,
+    "monitorHeight": 1080
+  },
+  "display": {
+    "id": 3741312648,
+    "bounds": {
+      "x": -1920,
+      "y": 0,
+      "width": 1920,
+      "height": 1080
+    },
+    "scaleFactor": 1
+  },
+  "crop": {
+    "x": 987,
+    "y": 235,
+    "width": 410,
+    "height": 362
+  },
+  "trimRight": 24,
+  "imageSize": {
+    "width": 410,
+    "height": 362
+  },
+  "rawAreas": [
+    {
+      "index": 1,
+      "imageX": 171,
+      "imageY": 22,
+      "imageWidth": 29,
+      "imageHeight": 11,
+      "pixelArea": 319,
+      "contourArea": 110,
+      "imageCenterX": 186,
+      "imageCenterY": 28,
+      "clientX": 186,
+      "clientY": 28,
+      "screenX": -747,
+      "screenY": 263
+    },
+    {
+      "index": 2,
+      "imageX": 163,
+      "imageY": 26,
+      "imageWidth": 7,
+      "imageHeight": 7,
+      "pixelArea": 49,
+      "contourArea": 15,
+      "imageCenterX": 167,
+      "imageCenterY": 30,
+      "clientX": 167,
+      "clientY": 30,
+      "screenX": -766,
+      "screenY": 265
+    }
+  ],
+  "areas": [
+    {
+      "imageX": 163,
+      "imageY": 22,
+      "imageWidth": 37,
+      "imageHeight": 11,
+      "pixelArea": 368,
+      "contourArea": 125,
+      "parts": [
+        2,
+        1
+      ],
+      "index": 1,
+      "imageCenterX": 182,
+      "imageCenterY": 28,
+      "clientX": 182,
+      "clientY": 28,
+      "screenX": -751,
+      "screenY": 263
+    }
+  ]
+}
