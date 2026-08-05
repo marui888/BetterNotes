@@ -1,12 +1,13 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, screen, session, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell } from 'electron';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import started from 'electron-squirrel-startup';
 import { convertSrtToVtt } from './main/srtToVtt';
 import { captureWebsterOutput, doubleClickWebsterClientPoint } from './main/websterCapture';
-import { listTxtFilesInFolder, readWordFile, saveWordFile } from './main/wordFileService';
-import { cycleMDictDictionary, findDictionaryWindows, lookupMDict, lookupWebsterAndRead } from './main/dictionaryAhkBridge';
+import { appendTextLine, listTxtFilesInFolder, readWordFile, saveWordFile } from './main/wordFileService';
+import { cycleMDictDictionary, findDictionaryWindows, getMDictInputText, lookupMDict, lookupMDictRestore, lookupWebster, lookupWebsterAndRead } from './main/dictionaryAhkBridge';
 
 const startupStartMs = Date.now()
 
@@ -26,6 +27,7 @@ let allowClose = false
 let closeRequestPending = false
 let windowLayoutBeforeTextMode = null
 let websterBlueDetectorPromise = null
+let registeredGlobalActivationShortcut = ''
 const DEFAULT_RECENT_STATE = {
   recentFiles: {
     video: [],
@@ -38,6 +40,62 @@ const DEFAULT_RECENT_STATE = {
     image: [],
     text: [],
     search: [],
+  },
+}
+const DEFAULT_APP_SETTINGS = {
+  general: {
+    defaultMode: 'video',
+    globalActivationShortcut: 'Ctrl+Alt+F',
+    monthlyNotesFolder: '',
+    specialTextFolder: '',
+    textAutoPlayAll: false,
+    textAutoLookupDelayMs: 1500,
+    wordsReviewFontSize: 13,
+    websterSpellOut: true,
+    textAutoPlayDicts: {
+      mdict: true,
+      webster: true,
+    },
+  },
+  shortcuts: {
+    video: {
+      'video.seekStart': 'Escape',
+      'video.jumpBack': 'F1',
+      'video.setStart': 'F2',
+      'video.setEnd': 'F3',
+      'video.jumpForward': 'F4',
+      'video.toggleFocus': 'Alt+E',
+      'video.appendMark': '',
+      'video.appendQuickMark': 'Ctrl+S',
+      'video.toggleControlMode': 'Alt+V',
+      'video.togglePlay': 'F6',
+      'video.togglePlayAlt': 'Alt+P',
+      'video.saveNotes': 'F9',
+      'video.saveNotesAlt': 'Shift+Alt+S',
+      'video.jumpBackShort': 'ArrowLeft',
+      'video.jumpForwardShort': 'ArrowRight',
+      'video.jumpBackLong': 'Ctrl+ArrowLeft',
+      'video.jumpForwardLong': 'Ctrl+ArrowRight',
+      'video.speedUp': 'Ctrl+ArrowUp',
+      'video.speedDown': 'Ctrl+ArrowDown',
+      'video.volumeUp': 'ArrowUp',
+      'video.volumeDown': 'ArrowDown',
+      'video.toggleView': 'Ctrl+F',
+      'video.toggleLeftTab': 'Alt+F',
+      'video.updateContent': 'Ctrl+Q',
+      'video.updateRange': 'Ctrl+G',
+      'video.writeCurrentRange': 'Ctrl+W',
+    },
+    image: {},
+    text: {
+      'text.lookup': 'Ctrl+Enter',
+      'text.pasteAndLookup': 'Ctrl+G',
+      'text.saveTo': '',
+      'text.saveToEn': '',
+      'text.saveToZh': '',
+    },
+    search: {},
+    global: {},
   },
 }
 
@@ -64,8 +122,129 @@ function normalizeRecentState(value) {
   }
 }
 
+function mergeShortcutBucket(scope, value) {
+  const defaults = DEFAULT_APP_SETTINGS.shortcuts[scope] || {}
+  return value && typeof value === 'object'
+    ? { ...defaults, ...value }
+    : { ...defaults }
+}
+
+function normalizeShortcutBuckets(value) {
+  return {
+    video: mergeShortcutBucket('video', value?.video),
+    image: mergeShortcutBucket('image', value?.image),
+    text: mergeShortcutBucket('text', value?.text),
+    search: mergeShortcutBucket('search', value?.search),
+    global: mergeShortcutBucket('global', value?.global),
+  }
+}
+
+function normalizeAppSettings(value) {
+  const defaultMode = ['video', 'image', 'text', 'search'].includes(value?.general?.defaultMode)
+    ? value.general.defaultMode
+    : DEFAULT_APP_SETTINGS.general.defaultMode
+  const globalActivationShortcut = typeof value?.general?.globalActivationShortcut === 'string'
+    ? value.general.globalActivationShortcut
+    : DEFAULT_APP_SETTINGS.general.globalActivationShortcut
+  const monthlyNotesFolder = typeof value?.general?.monthlyNotesFolder === 'string'
+    ? normalizeFilePath(value.general.monthlyNotesFolder)
+    : DEFAULT_APP_SETTINGS.general.monthlyNotesFolder
+  const specialTextFolder = typeof value?.general?.specialTextFolder === 'string'
+    ? normalizeFilePath(value.general.specialTextFolder)
+    : DEFAULT_APP_SETTINGS.general.specialTextFolder
+  const rawTextAutoLookupDelayMs = Number(value?.general?.textAutoLookupDelayMs)
+  const textAutoLookupDelayMs = Number.isFinite(rawTextAutoLookupDelayMs)
+    ? Math.max(200, Math.min(60000, Math.round(rawTextAutoLookupDelayMs)))
+    : DEFAULT_APP_SETTINGS.general.textAutoLookupDelayMs
+  const rawWordsReviewFontSize = Number(value?.general?.wordsReviewFontSize)
+  const wordsReviewFontSize = Number.isFinite(rawWordsReviewFontSize)
+    ? Math.max(10, Math.min(32, Math.round(rawWordsReviewFontSize)))
+    : DEFAULT_APP_SETTINGS.general.wordsReviewFontSize
+  const textAutoPlayDicts = value?.general?.textAutoPlayDicts
+
+  return {
+    general: {
+      defaultMode,
+      globalActivationShortcut,
+      monthlyNotesFolder,
+      specialTextFolder,
+      textAutoPlayAll: value?.general?.textAutoPlayAll === true,
+      textAutoLookupDelayMs,
+      wordsReviewFontSize,
+      websterSpellOut: value?.general?.websterSpellOut !== false,
+      textAutoPlayDicts: {
+        mdict: textAutoPlayDicts?.mdict !== false,
+        webster: textAutoPlayDicts?.webster !== false,
+      },
+    },
+    shortcuts: normalizeShortcutBuckets(value?.shortcuts),
+  }
+}
+
+function validateGlobalActivationShortcut(shortcut) {
+  const value = typeof shortcut === 'string' ? shortcut.trim() : ''
+  if (!value) return { ok: false, reason: 'empty-global-shortcut' }
+
+  const parts = value.split('+').map((part) => part.trim()).filter(Boolean)
+  const modifiers = new Set(['Ctrl', 'Control', 'Alt', 'Shift', 'Meta', 'Command', 'Cmd', 'Super'])
+  const modifierCount = parts.filter((part) => modifiers.has(part)).length
+  const normalKeyCount = parts.length - modifierCount
+
+  if (parts.length !== 3 || modifierCount !== 2 || normalKeyCount !== 1) {
+    return { ok: false, reason: 'global-shortcut-must-be-three-keys' }
+  }
+
+  return { ok: true, shortcut: value }
+}
+
+function toggleMainWindowActivation() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+
+  if (mainWindow.isFocused() && !mainWindow.isMinimized()) {
+    mainWindow.minimize()
+    return
+  }
+
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  mainWindow.webContents.focus()
+}
+
+function registerGlobalActivationShortcut(shortcut) {
+  if (registeredGlobalActivationShortcut) {
+    globalShortcut.unregister(registeredGlobalActivationShortcut)
+    registeredGlobalActivationShortcut = ''
+  }
+
+  const validation = validateGlobalActivationShortcut(shortcut)
+  if (!validation.ok) {
+    return validation
+  }
+
+  const registered = globalShortcut.register(validation.shortcut, toggleMainWindowActivation)
+  if (!registered) {
+    return { ok: false, reason: 'register-global-shortcut-failed', shortcut: validation.shortcut }
+  }
+
+  registeredGlobalActivationShortcut = validation.shortcut
+  return { ok: true, shortcut: validation.shortcut }
+}
+
 function getRecentStatePath() {
   return path.join(app.getPath('userData'), 'recent-state.json')
+}
+
+function getAppSettingsPath() {
+  return path.join(process.cwd(), 'app-settings.json')
+}
+
+function getLastSessionStatePath() {
+  return path.join(process.cwd(), 'last-session-state.json')
+}
+
+function getLegacyAppSettingsPath() {
+  return path.join(app.getPath('userData'), 'app-settings.json')
 }
 
 async function readRecentState() {
@@ -82,6 +261,46 @@ async function writeRecentState(value) {
   await fs.mkdir(path.dirname(getRecentStatePath()), { recursive: true })
   await fs.writeFile(getRecentStatePath(), JSON.stringify(recentState, null, 2), 'utf8')
   return { ok: true, recentState }
+}
+
+async function readAppSettings() {
+  try {
+    const text = await fs.readFile(getAppSettingsPath(), 'utf8')
+    return normalizeAppSettings(JSON.parse(text))
+  } catch {
+    try {
+      const text = await fs.readFile(getLegacyAppSettingsPath(), 'utf8')
+      return normalizeAppSettings(JSON.parse(text))
+    } catch {
+      return normalizeAppSettings(DEFAULT_APP_SETTINGS)
+    }
+  }
+}
+
+async function writeAppSettings(value) {
+  const settings = normalizeAppSettings(value)
+  await fs.mkdir(path.dirname(getAppSettingsPath()), { recursive: true })
+  await fs.writeFile(getAppSettingsPath(), JSON.stringify(settings, null, 2), 'utf8')
+  return { ok: true, settings }
+}
+
+async function readLastSessionState() {
+  try {
+    const text = await fs.readFile(getLastSessionStatePath(), 'utf8')
+    const sessionState = JSON.parse(text)
+    return { ok: true, sessionState }
+  } catch {
+    return { ok: false, reason: 'last-session-not-found' }
+  }
+}
+
+async function writeLastSessionState(sessionState) {
+  await fs.writeFile(getLastSessionStatePath(), JSON.stringify({
+    version: 1,
+    savedAt: new Date().toISOString(),
+    ...(sessionState || {}),
+  }, null, 2), 'utf8')
+  return { ok: true }
 }
 
 function preloadWebsterBlueDetector() {
@@ -207,6 +426,17 @@ function buildAppMenu() {
       label: 'File',
       submenu: [
         {
+          label: 'Settings',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('app:showSettings')
+            }
+          },
+        },
+        {
+          type: 'separator',
+        },
+        {
           role: 'quit',
         },
       ],
@@ -262,6 +492,17 @@ function normalizeFilePath(filePath) {
   return typeof filePath === 'string'
     ? filePath.trim().replace(/^["']|["']$/g, '')
     : ''
+}
+
+function getMonthlyNoteFilePath(folderPath, kind) {
+  const normalizedFolder = normalizeFilePath(folderPath)
+  if (!normalizedFolder) return ''
+
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const baseName = kind === 'zh' ? 'NewWordsLog_Zh' : 'NewWordsLog_EN'
+  return path.join(normalizedFolder, `${baseName} ${year}-${month} ${os.hostname()}.txt`)
 }
 
 function getVideoNotePath(filePath) {
@@ -620,7 +861,7 @@ async function operateImageFile({ filePath, operation, targetFileName }) {
   }
 }
 
-function dockWindowForTextMode() {
+function dockWindowForTextMode(options = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return { ok: false, reason: 'window-not-ready' }
   }
@@ -640,7 +881,8 @@ function dockWindowForTextMode() {
     (display) => display.id === windowLayoutBeforeTextMode.displayId
   ) || screen.getDisplayMatching(windowLayoutBeforeTextMode.bounds)
   const workArea = dockDisplay.workArea
-  const width = Math.max(320, Math.round(workArea.width / 4))
+  const scale = Number.isFinite(Number(options?.scale)) ? Number(options.scale) : 1
+  const width = Math.max(320, Math.min(workArea.width, Math.round((workArea.width / 4) * scale)))
 
   if (mainWindow.isMaximized()) {
     mainWindow.unmaximize()
@@ -861,6 +1103,29 @@ function registerIpcHandlers() {
 
   ipcMain.handle('text:saveFile', async (_event, filePath, records) => saveWordFile(filePath, records))
 
+  ipcMain.handle('text:appendLine', async (_event, filePath, line) => appendTextLine(filePath, line))
+
+  ipcMain.handle('text:appendMonthlyNoteLine', async (_event, payload) => {
+    const kind = payload?.kind === 'zh' ? 'zh' : 'en'
+    const targetPath = getMonthlyNoteFilePath(payload?.folderPath, kind)
+    if (!targetPath) return { ok: false, reason: 'monthly-notes-folder-not-set' }
+
+    const result = await appendTextLine(targetPath, payload?.line || '')
+    return { ...result, targetPath, kind }
+  })
+
+  ipcMain.handle('text:selectFolder', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, canceled: true }
+    }
+
+    return { ok: true, folderPath: result.filePaths[0] }
+  })
+
   ipcMain.handle('text:openExternal', async (_event, filePath) => {
     const normalizedPath = normalizeFilePath(filePath)
     if (path.extname(normalizedPath).toLowerCase() !== '.txt' || !(await fileExists(normalizedPath))) {
@@ -871,8 +1136,12 @@ function registerIpcHandlers() {
     return errorMessage ? { ok: false, reason: errorMessage } : { ok: true }
   })
 
+  ipcMain.handle('text:readClipboardText', async () => clipboard.readText() || '')
+  ipcMain.handle('text:getMDictInputText', async () => getMDictInputText())
   ipcMain.handle('text:lookupMDict', async (_event, word) => lookupMDict(word))
+  ipcMain.handle('text:lookupMDictRestore', async (_event, word) => lookupMDictRestore(word))
   ipcMain.handle('text:cycleMDictDictionary', async () => cycleMDictDictionary())
+  ipcMain.handle('text:lookupWebster', async (_event, word) => lookupWebster(word))
   ipcMain.handle('text:lookupWebsterAndRead', async (_event, word) => lookupWebsterAndRead(word))
   ipcMain.handle('text:findDictionaryWindows', async () => findDictionaryWindows())
   ipcMain.handle('text:captureWebsterOutput', async () => captureWebsterOutput())
@@ -929,7 +1198,34 @@ function registerIpcHandlers() {
 
   ipcMain.handle('app:saveRecentState', async (_event, recentState) => writeRecentState(recentState))
 
-  ipcMain.handle('app:dockTextModeWindow', async () => dockWindowForTextMode())
+  ipcMain.handle('app:loadSettings', async () => ({
+    ok: true,
+    settings: await readAppSettings(),
+  }))
+
+  ipcMain.handle('app:saveSettings', async (_event, settings) => writeAppSettings(settings))
+  ipcMain.handle('app:loadLastSessionState', async () => readLastSessionState())
+  ipcMain.handle('app:saveLastSessionState', async (_event, sessionState) => writeLastSessionState(sessionState))
+
+  ipcMain.handle('app:registerGlobalActivationShortcut', async (_event, shortcut) => {
+    const result = registerGlobalActivationShortcut(shortcut)
+    if (!result.ok) {
+      appendDebugInfo(`Global activation shortcut register failed: ${shortcut || '(empty)'} (${result.reason})`)
+    }
+    return result
+  })
+
+  ipcMain.handle('app:focusMainWindow', async () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+      mainWindow.webContents.focus()
+    }
+    return { ok: true }
+  })
+
+  ipcMain.handle('app:dockTextModeWindow', async (_event, options) => dockWindowForTextMode(options))
   ipcMain.handle('app:restoreWindowAfterTextMode', async () => restoreWindowAfterTextMode())
 
   ipcMain.handle('app:closeResponse', async (_event, canClose) => {
@@ -1016,6 +1312,11 @@ app.whenReady().then(async () => {
   createWindow();
   buildAppMenu();
   logStartup('menu built')
+  const startupSettings = await readAppSettings()
+  const globalShortcutResult = registerGlobalActivationShortcut(startupSettings.general.globalActivationShortcut)
+  if (!globalShortcutResult.ok) {
+    appendDebugInfo(`Global activation shortcut register failed: ${startupSettings.general.globalActivationShortcut} (${globalShortcutResult.reason})`)
+  }
   preloadWebsterBlueDetector()
 
   const reactDevToolsPath = path.join(
@@ -1051,6 +1352,10 @@ app.whenReady().then(async () => {
   //   }
   // });
 });
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+})
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits

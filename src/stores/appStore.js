@@ -106,9 +106,18 @@ export const useAppStore = create((set) => ({
   mode: APP_MODES.VIDEO,
   currentFile: null,
   dirty: false,
+  dirtyByMode: {
+    video: false,
+    image: false,
+    text: false,
+    search: false,
+  },
+  textAutoPlayRunning: false,
   recentFiles: initialRecentFiles,
   recentFolders: initialRecentFolders,
-  leaveGuard: null,
+  leaveGuards: {},
+  sessionProviders: {},
+  restoreSessionState: null,
 
   initializeRecentState: async () => {
     if (!window.appApi?.loadRecentState) {
@@ -139,8 +148,48 @@ export const useAppStore = create((set) => ({
   },
   setMode: (mode) => set({ mode }),
   setCurrentFile: (currentFile) => set({ currentFile }),
-  setDirty: (dirty) => set({ dirty }),
-  setLeaveGuard: (leaveGuard) => set({ leaveGuard }),
+  setDirty: (modeOrDirty, maybeDirty) =>
+    set((state) => {
+      if (typeof modeOrDirty === 'string') {
+        const dirty = Boolean(maybeDirty)
+        return {
+          dirty: Object.entries({
+            ...state.dirtyByMode,
+            [modeOrDirty]: dirty,
+          }).some(([, value]) => value),
+          dirtyByMode: {
+            ...state.dirtyByMode,
+            [modeOrDirty]: dirty,
+          },
+        }
+      }
+
+      return {
+        dirty: Boolean(modeOrDirty),
+      }
+    }),
+  setTextAutoPlayRunning: (textAutoPlayRunning) => set({ textAutoPlayRunning }),
+  setLeaveGuard: (modeOrGuard, maybeGuard) =>
+    set((state) => {
+      if (typeof modeOrGuard === 'string') {
+        const leaveGuards = { ...state.leaveGuards }
+        if (maybeGuard) {
+          leaveGuards[modeOrGuard] = maybeGuard
+        } else {
+          delete leaveGuards[modeOrGuard]
+        }
+        return { leaveGuards }
+      }
+
+      return { leaveGuards: { ...state.leaveGuards, global: modeOrGuard } }
+    }),
+  registerSessionProvider: (mode, provider) =>
+    set((state) => ({
+      sessionProviders: provider
+        ? { ...state.sessionProviders, [mode]: provider }
+        : Object.fromEntries(Object.entries(state.sessionProviders).filter(([key]) => key !== mode)),
+    })),
+  setRestoreSessionState: (restoreSessionState) => set({ restoreSessionState }),
   addRecentFile: (mode, filePath) =>
     set((state) => {
       if (!mode || !filePath) {

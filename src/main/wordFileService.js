@@ -104,3 +104,39 @@ export async function saveWordFile(filePath, records) {
     encoding: TEXT_ENCODING,
   }
 }
+
+export async function appendTextLine(filePath, line) {
+  const normalizedPath = normalizeFilePath(filePath)
+  if (!isTxtFile(normalizedPath)) {
+    return { ok: false, reason: 'invalid-text-file' }
+  }
+
+  const text = String(line ?? '')
+  const folderPath = path.dirname(normalizedPath)
+  let folderStat
+  try {
+    folderStat = await fs.stat(folderPath)
+  } catch {
+    return { ok: false, reason: 'target-folder-not-found' }
+  }
+  if (!folderStat.isDirectory()) {
+    return { ok: false, reason: 'target-folder-not-directory' }
+  }
+
+  const exists = await fileExists(normalizedPath)
+  const stat = exists ? await fs.stat(normalizedPath) : null
+  const prefix = stat?.size > 0 ? '\r\n' : ''
+  await fs.appendFile(normalizedPath, iconv.encode(`${prefix}${text}`, TEXT_ENCODING))
+
+  return {
+    ok: true,
+    filePath: normalizedPath,
+    fileName: path.basename(normalizedPath),
+    folderPath,
+    encoding: TEXT_ENCODING,
+  }
+}
+
+export function getTextEncoding() {
+  return TEXT_ENCODING
+}

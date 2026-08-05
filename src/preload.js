@@ -29,9 +29,16 @@ contextBridge.exposeInMainWorld('textApi', {
   readTextFile: (filePath) => ipcRenderer.invoke('text:readFile', filePath),
   listTxtFiles: (folderPath) => ipcRenderer.invoke('text:listTxtFiles', folderPath),
   saveTextFile: (filePath, records) => ipcRenderer.invoke('text:saveFile', filePath, records),
+  appendTextLine: (filePath, line) => ipcRenderer.invoke('text:appendLine', filePath, line),
+  appendMonthlyNoteLine: (payload) => ipcRenderer.invoke('text:appendMonthlyNoteLine', payload),
+  selectFolder: () => ipcRenderer.invoke('text:selectFolder'),
   openTextFileExternal: (filePath) => ipcRenderer.invoke('text:openExternal', filePath),
+  readClipboardText: () => ipcRenderer.invoke('text:readClipboardText'),
+  getMDictInputText: () => ipcRenderer.invoke('text:getMDictInputText'),
   lookupMDict: (word) => ipcRenderer.invoke('text:lookupMDict', word),
+  lookupMDictRestore: (word) => ipcRenderer.invoke('text:lookupMDictRestore', word),
   cycleMDictDictionary: () => ipcRenderer.invoke('text:cycleMDictDictionary'),
+  lookupWebster: (word) => ipcRenderer.invoke('text:lookupWebster', word),
   lookupWebsterAndRead: (word) => ipcRenderer.invoke('text:lookupWebsterAndRead', word),
   findDictionaryWindows: () => ipcRenderer.invoke('text:findDictionaryWindows'),
   captureWebsterOutput: () => ipcRenderer.invoke('text:captureWebsterOutput'),
@@ -42,13 +49,24 @@ contextBridge.exposeInMainWorld('textApi', {
 contextBridge.exposeInMainWorld('appApi', {
   loadRecentState: () => ipcRenderer.invoke('app:loadRecentState'),
   saveRecentState: (recentState) => ipcRenderer.invoke('app:saveRecentState', recentState),
+  loadSettings: () => ipcRenderer.invoke('app:loadSettings'),
+  saveSettings: (settings) => ipcRenderer.invoke('app:saveSettings', settings),
+  loadLastSessionState: () => ipcRenderer.invoke('app:loadLastSessionState'),
+  saveLastSessionState: (sessionState) => ipcRenderer.invoke('app:saveLastSessionState', sessionState),
+  registerGlobalActivationShortcut: (shortcut) => ipcRenderer.invoke('app:registerGlobalActivationShortcut', shortcut),
+  onShowSettings: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on('app:showSettings', listener)
+    return () => ipcRenderer.removeListener('app:showSettings', listener)
+  },
   onRequestClose: (handler) => {
     const listener = () => handler()
     ipcRenderer.on('app:requestClose', listener)
     return () => ipcRenderer.removeListener('app:requestClose', listener)
   },
   closeResponse: (canClose) => ipcRenderer.invoke('app:closeResponse', canClose),
-  dockTextModeWindow: () => ipcRenderer.invoke('app:dockTextModeWindow'),
+  focusMainWindow: () => ipcRenderer.invoke('app:focusMainWindow'),
+  dockTextModeWindow: (options) => ipcRenderer.invoke('app:dockTextModeWindow', options),
   restoreWindowAfterTextMode: () => ipcRenderer.invoke('app:restoreWindowAfterTextMode'),
 })
 

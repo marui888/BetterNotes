@@ -58,8 +58,21 @@ export async function lookupMDict(word) {
   return runAhkDictionaryCommand(['mdict', searchWord])
 }
 
+export async function lookupMDictRestore(word) {
+  const searchWord = normalizeWord(word)
+  if (!searchWord) {
+    return { ok: false, reason: 'empty-word' }
+  }
+
+  return runAhkDictionaryCommand(['mdict-sendmsg-restore', searchWord])
+}
+
 export async function cycleMDictDictionary() {
-  return runAhkDictionaryCommand(['mdict-cycle'])
+  return runAhkDictionaryCommand(['mdict-cycle-post'])
+}
+
+export async function getMDictInputText() {
+  return runAhkDictionaryCommand(['mdict-gettext'])
 }
 
 export async function lookupWebsterAndRead(word) {
@@ -69,6 +82,15 @@ export async function lookupWebsterAndRead(word) {
   }
 
   return runAhkDictionaryCommand(['webster-both', searchWord])
+}
+
+export async function lookupWebster(word) {
+  const searchWord = normalizeWord(word)
+  if (!searchWord) {
+    return { ok: false, reason: 'empty-word' }
+  }
+
+  return runAhkDictionaryCommand(['webster', searchWord])
 }
 
 export async function findDictionaryWindows() {

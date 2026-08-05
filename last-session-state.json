@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "savedAt": "2026-08-05T13:18:10.696Z",
+  "activeMode": "video",
+  "modes": {
+    "image": {
+      "currentFilePath": "",
+      "folderPath": "",
+      "leftTab": "current",
+      "selectedRecentPath": null
+    },
+    "text": {
+      "activeTab": "words",
+      "wordsTabViewMode": "input",
+      "currentTxtFilePath": "D:\\temp\\WordListExamples\\王玉梅TOEFL\\list020.txt",
+      "currentFolderPath": "D:\\temp\\WordListExamples\\王玉梅TOEFL",
+      "selectedRecordIndex": 7,
+      "specialTextFilePath": "D:\\temp\\WordListExamples\\特殊文件\\_不规则动词EE.txt",
+      "specialFolderPath": "D:\\temp\\WordListExamples\\特殊文件"
+    },
+    "video": {
+      "currentFilePath": "D:\\temp\\tempVideo\\1.BBC谈中国制造2025：中国科技崛起，众多领域引领全球(Av113961269726090,P1).mp4",
+      "folderPath": "D:\\temp\\tempVideo",
+      "leftTab": "notes",
+      "selectedNoteIndex": 0,
+      "playbackTime": 156.262201,
+      "playbackRate": 1,
+      "fullscreenCycleState": 0,
+      "panelsHidden": false
+    }
+  }
+}

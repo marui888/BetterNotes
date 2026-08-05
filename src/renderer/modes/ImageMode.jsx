@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_MODES, useAppStore } from '../../stores/appStore'
 import { IMAGE_SUFFIX_OPTIONS, useImageStore } from '../../stores/imageStore'
 import useModeHotkeys from '../hooks/useModeHotkeys'
@@ -52,7 +52,8 @@ export default function ImageMode() {
   const [selectedRecentPath, setSelectedRecentPath] = useState(null)
   const [txtNoteEnabled, setTxtNoteEnabled] = useState(false)
 
-  const dirty = useAppStore((state) => state.dirty)
+  const mode = useAppStore((state) => state.mode)
+  const dirty = useAppStore((state) => state.dirtyByMode.image)
   const recentImageFiles = useAppStore((state) => state.recentFiles.image || [])
   const recentImageFolders = useAppStore((state) => state.recentFolders.image || [])
   const setDirty = useAppStore((state) => state.setDirty)
@@ -60,6 +61,8 @@ export default function ImageMode() {
   const addRecentFile = useAppStore((state) => state.addRecentFile)
   const addRecentFolder = useAppStore((state) => state.addRecentFolder)
   const setLeaveGuard = useAppStore((state) => state.setLeaveGuard)
+  const registerSessionProvider = useAppStore((state) => state.registerSessionProvider)
+  const restoreSessionState = useAppStore((state) => state.restoreSessionState)
 
   const imageFile = useImageStore((state) => state.imageFile)
   const imageFiles = useImageStore((state) => state.imageFiles)
@@ -109,7 +112,7 @@ export default function ImageMode() {
     setDialog({
       title,
       message,
-      actions: [{ label: '确定', value: 'ok', primary: true }],
+      actions: [{ label: '纭畾', value: 'ok', primary: true }],
       autoClose: true,
     })
     setTimeout(() => closeDialog('ok'), timeout)
@@ -124,8 +127,8 @@ export default function ImageMode() {
     })
     if (!result?.ok) return false
 
-    setDirty(false)
-    if (!silent) showAutoMessage('保存完成', '图片笔记已经保存。')
+    setDirty(APP_MODES.IMAGE, false)
+    if (!silent) showAutoMessage('Saved', 'Picture note saved.')
     return true
   }
 
@@ -133,20 +136,20 @@ export default function ImageMode() {
     if (!dirty) return true
 
     const decision = await showActionDialog({
-      title: '图片笔记已修改',
-      message: '当前图片笔记已经修改，切换前需要处理这些修改。',
+      title: 'Picture note changed',
+      message: 'The current picture note has unsaved changes.',
       defaultValue: 'save',
       cancelValue: 'cancel',
       actions: [
-        { label: '保存并继续', value: 'save', primary: true },
-        { label: '放弃修改', value: 'discard', danger: true },
-        { label: '取消', value: 'cancel' },
+        { label: 'Save', value: 'save', primary: true },
+        { label: '鏀惧純淇敼', value: 'discard', danger: true },
+        { label: '鍙栨秷', value: 'cancel' },
       ],
     })
 
     if (decision === 'save') return saveImageNote({ silent: true })
     if (decision === 'discard') {
-      setDirty(false)
+      setDirty(APP_MODES.IMAGE, false)
       return true
     }
     return false
@@ -155,9 +158,41 @@ export default function ImageMode() {
   leaveGuardHandlerRef.current = confirmBeforeLeave
 
   useEffect(() => {
-    setLeaveGuard(() => leaveGuardHandlerRef.current?.() ?? true)
-    return () => setLeaveGuard(null)
+    setLeaveGuard(APP_MODES.IMAGE, () => leaveGuardHandlerRef.current?.() ?? true)
+    return () => setLeaveGuard(APP_MODES.IMAGE, null)
   }, [setLeaveGuard])
+
+  useEffect(() => {
+    registerSessionProvider(APP_MODES.IMAGE, () => ({
+      currentFilePath: imageFile?.filePath || '',
+      folderPath: imageFile?.folderPath || splitPath(selectedImagePath || '').folderPath,
+      leftTab,
+      selectedRecentPath,
+    }))
+    return () => registerSessionProvider(APP_MODES.IMAGE, null)
+  }, [
+    imageFile?.filePath,
+    imageFile?.folderPath,
+    leftTab,
+    registerSessionProvider,
+    selectedImagePath,
+    selectedRecentPath,
+  ])
+
+  useEffect(() => {
+    const snapshot = restoreSessionState?.modes?.image
+    if (!snapshot) return
+
+    if (snapshot.leftTab === 'current' || snapshot.leftTab === 'recent') setLeftTab(snapshot.leftTab)
+    if (snapshot.selectedRecentPath) setSelectedRecentPath(snapshot.selectedRecentPath)
+    if (snapshot.currentFilePath && window.imageApi?.getImageFileInfo) {
+      window.imageApi.getImageFileInfo(snapshot.currentFilePath).then((info) => {
+        if (info?.ok) applyImageInfo(info)
+      })
+    } else if (snapshot.folderPath) {
+      loadImageFolderPath(snapshot.folderPath)
+    }
+  }, [restoreSessionState])
 
   const applyTxtFallbackNote = async (filePath) => {
     if (!filePath || !window.imageApi?.readTxtFallbackNote) return
@@ -166,7 +201,7 @@ export default function ImageMode() {
     if (!result?.ok) return
 
     setNoteDraft(result.content || '')
-    setDirty(true)
+    setDirty(APP_MODES.IMAGE, true)
   }
 
   const applyImageInfo = (info) => {
@@ -180,7 +215,7 @@ export default function ImageMode() {
     if (info.folderPath) {
       addRecentFolder(APP_MODES.IMAGE, info.folderPath)
     }
-    setDirty(false)
+    setDirty(APP_MODES.IMAGE, false)
     if (txtNoteEnabled && info.filePath) {
       applyTxtFallbackNote(info.filePath)
     }
@@ -237,7 +272,7 @@ export default function ImageMode() {
       info: null,
     })
     setCurrentFile(null)
-    setDirty(false)
+    setDirty(APP_MODES.IMAGE, false)
   }
 
   const selectImageByIndex = (index) => {
@@ -309,7 +344,7 @@ export default function ImageMode() {
     return () => window.removeEventListener('click', closeMenu, true)
   }, [contextMenu])
 
-  const getSuffix = () => (suffixOption === '其它' ? customSuffix : suffixOption)
+  const getSuffix = () => (suffixOption === '鍏跺畠' ? customSuffix : suffixOption)
 
   const buildSuggestedFileName = (operation, fileName) => {
     if (operation === 'move') return fileName
@@ -317,9 +352,9 @@ export default function ImageMode() {
   }
 
   const getOperationTitle = (operation) => {
-    if (operation === 'rename') return '确认改名'
-    if (operation === 'move') return '确认移动'
-    return '确认改名并移动'
+    if (operation === 'rename') return '纭鏀瑰悕'
+    if (operation === 'move') return '纭绉诲姩'
+    return 'Confirm Rename and Move'
   }
 
   const refreshCurrentFolder = async (folderPath, nextSelectedPath = null) => {
@@ -347,8 +382,8 @@ export default function ImageMode() {
       oldFileName: selectedFile.fileName,
       newFileNameEditable: true,
       actions: [
-        { label: '确认', value: 'ok', primary: true },
-        { label: '取消', value: 'cancel' },
+        { label: '纭', value: 'ok', primary: true },
+        { label: '鍙栨秷', value: 'cancel' },
       ],
     })
     if (decision !== 'ok') return
@@ -371,7 +406,7 @@ export default function ImageMode() {
 
   const changeNoteDraft = (value) => {
     setNoteDraft(value)
-    setDirty(true)
+    setDirty(APP_MODES.IMAGE, true)
   }
 
   const toggleTxtNote = (checked) => {
@@ -413,11 +448,12 @@ export default function ImageMode() {
     'alt+e': () => toggleFocusBetweenCurrentListAndNoteInput(),
   }), [toggleFocusBetweenCurrentListAndNoteInput])
 
-  useModeHotkeys(dialog ? {} : handlers)
+  useModeHotkeys(dialog ? {} : handlers, mode === APP_MODES.IMAGE)
 
   return (
     <section className="image-mode">
-      <aside className="image-left-panel">
+      <div className="image-body">
+        <aside className="image-left-panel">
         <div className="left-tabs">
           <button
             className={leftTab === 'current' ? 'left-tab active' : 'left-tab'}
@@ -493,9 +529,9 @@ export default function ImageMode() {
             </div>
           </div>
         )}
-      </aside>
+        </aside>
 
-      <section className="image-center">
+        <section className="image-center">
         <div className="image-stage">
           {imageFile?.fileUrl ? (
             <img alt={imageFile.fileName} src={imageFile.fileUrl} />
@@ -521,9 +557,9 @@ export default function ImageMode() {
             <div className="info-file"><span>folder</span><strong title={imageInfo?.folderPath || ''}>{imageInfo?.folderPath || '--'}</strong></div>
           </div>
         </div>
-      </section>
+        </section>
 
-      <aside className="image-toolbar">
+        <aside className="image-toolbar">
         <button type="button" onClick={openImageFile}>Open File</button>
         <button type="button" onClick={openImageFolder}>Open Folder</button>
         <button type="button" onClick={saveImageNote}>Save</button>
@@ -535,7 +571,7 @@ export default function ImageMode() {
             ))}
           </select>
         </label>
-        {suffixOption === '其它' ? (
+        {suffixOption === '鍏跺畠' ? (
           <input
             className="toolbar-input"
             onChange={(event) => setCustomSuffix(event.target.value)}
@@ -554,7 +590,15 @@ export default function ImageMode() {
         <button type="button" onClick={() => operateSelectedFile('rename')}>Rename</button>
         <button type="button" onClick={() => operateSelectedFile('move')}>Move</button>
         <button type="button" onClick={() => operateSelectedFile('moveRename')}>Move&Re</button>
-      </aside>
+        </aside>
+      </div>
+
+      <footer className="image-statusbar">
+        <span>Status: <strong className={dirty ? 'status-unsaved' : ''}>{dirty ? 'Unsaved' : 'Saved'}</strong></span>
+        <span>File: <strong title={imageInfo?.fileName || ''}>{imageInfo?.fileName || '--'}</strong></span>
+        <span>Res: <strong>{imageInfo?.width && imageInfo?.height ? `${imageInfo.width} x ${imageInfo.height}` : '--'}</strong></span>
+        <span>Current: <strong>{selectedIndex >= 0 ? selectedIndex + 1 : '--'} / {imageFiles.length}</strong></span>
+      </footer>
 
       {contextMenu ? (
         <div
@@ -563,30 +607,29 @@ export default function ImageMode() {
           onClick={(event) => event.stopPropagation()}
         >
           <label className="context-field">
-            <span>后缀</span>
+            <span>鍚庣紑</span>
             <select value={suffixOption} onChange={(event) => setSuffixOption(event.target.value)}>
               {IMAGE_SUFFIX_OPTIONS.map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
           </label>
-          {suffixOption === '其它' ? (
+          {suffixOption === '鍏跺畠' ? (
             <input
               className="context-input"
               onChange={(event) => setCustomSuffix(event.target.value)}
-              placeholder="输入后缀"
+              placeholder="杈撳叆鍚庣紑"
               value={customSuffix}
             />
           ) : null}
           <button className="context-menu-item" onMouseDown={() => operateSelectedFile('rename')} type="button">
-            改名
+            鏀瑰悕
           </button>
           <button className="context-menu-item" onMouseDown={() => operateSelectedFile('move')} type="button">
-            移动
+            绉诲姩
           </button>
           <button className="context-menu-item" onMouseDown={() => operateSelectedFile('moveRename')} type="button">
-            改名并移动
-          </button>
+            鏀瑰悕骞剁Щ鍔?          </button>
         </div>
       ) : null}
 
@@ -597,11 +640,11 @@ export default function ImageMode() {
             {dialog.newFileNameEditable ? (
               <div className="file-operation-fields">
                 <label>
-                  <span>旧文件名</span>
+                  <span>鏃ф枃浠跺悕</span>
                   <strong>{dialog.oldFileName}</strong>
                 </label>
                 <label>
-                  <span>新文件名</span>
+                  <span>鏂版枃浠跺悕</span>
                   <input
                     onChange={(event) => {
                       pendingFileNameRef.current = event.target.value

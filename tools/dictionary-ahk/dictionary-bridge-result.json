@@ -1,1 +1,1 @@
-﻿{"ok":true,"command":"mdict-cycle","startedAt":"2026-08-03 21:04:20","writtenAt":"2026-08-03 21:04:20","pid":13216,"reason":"","main":"0x108C4","input":"0x108E8","firstChild":"0x108C8","mainMenu":"0x108E8","toolbar":"0x108E6","dictionaryIndex":0,"commandId":2000,"commandIdHex":"0x7D0"}
+﻿{"ok":true,"command":"webster-both","startedAt":"2026-08-05 19:07:27","writtenAt":"2026-08-05 19:07:28","pid":15308,"reason":"","main":"0x2909C8","output":"0x505F8","searchButton":"0x605EE","editBox":"0xC0428"}

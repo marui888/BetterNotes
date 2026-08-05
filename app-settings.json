@@ -1,0 +1,35 @@
+{
+  "general": {
+    "defaultMode": "text",
+    "globalActivationShortcut": "Ctrl+Alt+F",
+    "monthlyNotesFolder": "D:\\",
+    "specialTextFolder": "D:\\temp\\WordListExamples\\特殊文件",
+    "textAutoPlayAll": true,
+    "textAutoLookupDelayMs": 2500,
+    "wordsReviewFontSize": 30,
+    "websterSpellOut": true,
+    "textAutoPlayDicts": {
+      "mdict": true,
+      "webster": true
+    }
+  },
+  "shortcuts": {
+    "video": {},
+    "image": {},
+    "text": {
+      "text.lookup": "Ctrl+Enter",
+      "text.pasteAndLookup": "Ctrl+G",
+      "text.saveTo": "",
+      "text.saveToEn": "",
+      "text.saveToZh": "",
+      "text.lookupMDict": "Ctrl+M",
+      "text.lookupWebster": "Ctrl+W",
+      "text.previousWord": "Ctrl+ArrowUp",
+      "text.nextWord": "Ctrl+ArrowDown",
+      "text.rotateMDict": "Ctrl+B",
+      "text.getMDictThenLookup": "Ctrl+F"
+    },
+    "search": {},
+    "global": {}
+  }
+}

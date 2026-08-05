@@ -13,8 +13,10 @@ function normalizeKey(event) {
   return parts.join('+')
 }
 
-export default function useModeHotkeys(handlers) {
+export default function useModeHotkeys(handlers, enabled = true) {
   useEffect(() => {
+    if (!enabled) return undefined
+
     const onKeyDown = (event) => {
       const key = normalizeKey(event)
       const handler = handlers[key]
@@ -30,5 +32,5 @@ export default function useModeHotkeys(handlers) {
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [handlers])
+  }, [enabled, handlers])
 }

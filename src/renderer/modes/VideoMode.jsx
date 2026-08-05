@@ -1,7 +1,7 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { APP_MODES, useAppStore } from '../../stores/appStore'
 import { useVideoStore } from '../../stores/videoStore'
-import useModeHotkeys from '../hooks/useModeHotkeys'
+import { registerActions, runAction } from '../actions/actionRegistry'
 import VideoPlayer from '../video/VideoPlayer'
 
 const PLAYBACK_RATES = [0.1, 0.3, 0.5, 0.8, 0.9, 1, 1.2, 1.4, 1.6, 1.8, 2.0]
@@ -78,8 +78,11 @@ export default function VideoMode() {
   const [playAll, setPlayAll] = useState(true)
   const [titleOn, setTitleOn] = useState(true)
   const [selectedSubtitle, setSelectedSubtitle] = useState(null)
+  const [videoControlMode, setVideoControlMode] = useState(false)
+  const [volume, setVolume] = useState(1)
 
-  const dirty = useAppStore((state) => state.dirty)
+  const mode = useAppStore((state) => state.mode)
+  const dirty = useAppStore((state) => state.dirtyByMode.video)
   const recentVideoFiles = useAppStore((state) => state.recentFiles.video || [])
   const recentVideoFolders = useAppStore((state) => state.recentFolders.video || [])
   const setDirty = useAppStore((state) => state.setDirty)
@@ -87,6 +90,8 @@ export default function VideoMode() {
   const addRecentFile = useAppStore((state) => state.addRecentFile)
   const addRecentFolder = useAppStore((state) => state.addRecentFolder)
   const setLeaveGuard = useAppStore((state) => state.setLeaveGuard)
+  const registerSessionProvider = useAppStore((state) => state.registerSessionProvider)
+  const restoreSessionState = useAppStore((state) => state.restoreSessionState)
 
   const videoFile = useVideoStore((state) => state.videoFile)
   const notes = useVideoStore((state) => state.notes)
@@ -259,6 +264,36 @@ export default function VideoMode() {
     player.currentTime(nextTime)
   }
 
+  const seekToCurrentStart = () => {
+    const startSeconds = parseTime(curStart)
+    if (!Number.isFinite(startSeconds)) {
+      showAutoMessage('当前 start 时间无效。', '提示', 900)
+      return
+    }
+
+    const duration = getDuration()
+    const nextTime = Math.min(duration, Math.max(0, startSeconds))
+    playerRef.current?.currentTime?.(nextTime)
+    setPlayingTime(formatTime(nextTime))
+  }
+
+  const seekWhenReady = (seconds) => {
+    const player = playerRef.current
+    const targetTime = Number(seconds)
+    if (!player || !Number.isFinite(targetTime)) return
+
+    const applySeek = () => {
+      const duration = getDuration()
+      const nextTime = Math.min(duration, Math.max(0, targetTime))
+      player.currentTime(nextTime)
+      setPlayingTime(formatTime(nextTime))
+    }
+
+    player.one?.('loadedmetadata', applySeek)
+    player.one?.('loadeddata', applySeek)
+    setTimeout(applySeek, 120)
+  }
+
   const buildCaptureRange = (forwardSeconds = QUICK_NOTE_FORWARD_SECONDS, backwardSeconds = QUICK_NOTE_BACKWARD_SECONDS) => {
     const currentTime = getPlayerTime()
     const duration = getDuration()
@@ -406,7 +441,7 @@ export default function VideoMode() {
       return false
     }
 
-    setDirty(false)
+    setDirty(APP_MODES.VIDEO, false)
     if (!silent) {
       showAutoMessage('文件已经保存。', '保存完成', 900)
     }
@@ -433,7 +468,7 @@ export default function VideoMode() {
     }
 
     if (decision === 'discard') {
-      setDirty(false)
+      setDirty(APP_MODES.VIDEO, false)
       return true
     }
 
@@ -443,9 +478,49 @@ export default function VideoMode() {
   leaveGuardHandlerRef.current = confirmBeforeSwitchVideo
 
   useEffect(() => {
-    setLeaveGuard(() => leaveGuardHandlerRef.current?.() ?? true)
-    return () => setLeaveGuard(null)
+    setLeaveGuard(APP_MODES.VIDEO, () => leaveGuardHandlerRef.current?.() ?? true)
+    return () => setLeaveGuard(APP_MODES.VIDEO, null)
   }, [setLeaveGuard])
+
+  useEffect(() => {
+    registerSessionProvider(APP_MODES.VIDEO, () => ({
+      currentFilePath: videoFile?.filePath || '',
+      folderPath: videoFile?.folderPath || '',
+      leftTab,
+      selectedNoteIndex: notes.findIndex((note) => note.id === selectedNoteId),
+      playbackTime: getPlayerTime(),
+      playbackRate: getPlaybackRate(),
+      fullscreenCycleState,
+      panelsHidden,
+    }))
+    return () => registerSessionProvider(APP_MODES.VIDEO, null)
+  }, [
+    fullscreenCycleState,
+    leftTab,
+    notes,
+    panelsHidden,
+    registerSessionProvider,
+    selectedNoteId,
+    videoFile?.filePath,
+    videoFile?.folderPath,
+  ])
+
+  useEffect(() => {
+    const snapshot = restoreSessionState?.modes?.video
+    if (!snapshot) return
+
+    if (snapshot.leftTab === 'notes' || snapshot.leftTab === 'files') setLeftTab(snapshot.leftTab)
+    setFullscreenCycleState(Number(snapshot.fullscreenCycleState) || 0)
+    setPanelsHidden(snapshot.panelsHidden === true)
+    if (snapshot.currentFilePath) {
+      openVideoFileFullPath(snapshot.currentFilePath, {
+        autoplay: false,
+        playbackRate: Number(snapshot.playbackRate) || 1,
+        selectedNoteIndex: snapshot.selectedNoteIndex,
+        seekTime: snapshot.playbackTime,
+      })
+    }
+  }, [restoreSessionState])
 
   const chooseSubtitle = async (subtitleCandidates = []) => {
     if (subtitleCandidates.length === 0) {
@@ -537,27 +612,35 @@ export default function VideoMode() {
     if (info.folderPath) {
       addRecentFolder(APP_MODES.VIDEO, info.folderPath)
     }
-    setNotes(
-      info.notes.map((note, index) => ({
-        id: `${info.filePath}-${index}`,
-        start: note.Start || note.start || '',
-        end: note.End || note.end || '',
-        content: note.Content || note.content || '',
-        raw: note,
-      })),
-    )
+    const loadedNotes = info.notes.map((note, index) => ({
+      id: `${info.filePath}-${index}`,
+      start: note.Start || note.start || '',
+      end: note.End || note.end || '',
+      content: note.Content || note.content || '',
+      raw: note,
+    }))
+    const restoredNoteIndex = Number.isFinite(Number(options.selectedNoteIndex))
+      ? Math.max(0, Math.min(Number(options.selectedNoteIndex), loadedNotes.length - 1))
+      : -1
+    const restoredNote = restoredNoteIndex >= 0 ? loadedNotes[restoredNoteIndex] : null
+
+    setNotes(loadedNotes)
     setDirectoryMp4Files(info.mp4Files || [])
     setSelectedDirectoryMp4Name(info.fileName || '')
-    setSelectedNoteId(null)
-    setNoteDraft('')
-    setSelectedStart('')
-    setSelectedEnd('')
+    setSelectedNoteId(restoredNote?.id || null)
+    setNoteDraft(restoredNote?.content || '')
+    setSelectedStart(restoredNote?.start || '')
+    setSelectedEnd(restoredNote?.end || '')
     setCurStart('')
     setCurEnd('')
-    setDirty(false)
+    setDirty(APP_MODES.VIDEO, false)
 
     if (options.playbackRate) {
       applyPlaybackRate(options.playbackRate)
+    }
+
+    if (Number.isFinite(Number(options.seekTime))) {
+      seekWhenReady(Number(options.seekTime))
     }
 
     if (options.autoplay) {
@@ -694,8 +777,37 @@ export default function VideoMode() {
     if (!range) return
 
     addNote(createQuickNote(range))
-    setDirty(true)
+    setDirty(APP_MODES.VIDEO, true)
     showAutoMessage('已追加视频笔记。', '操作完成', 900)
+  }
+
+  const appendCurrentMark = () => {
+    if (!videoFile?.filePath) return
+
+    const startSeconds = parseTime(curStart)
+    const endSeconds = parseTime(curEnd)
+    if (!Number.isFinite(startSeconds)) {
+      showAutoMessage('当前 start 时间无效。', '提示', 1200)
+      return
+    }
+
+    const duration = getDuration()
+    const safeStart = Math.max(0, startSeconds)
+    let safeEnd = Number.isFinite(endSeconds) ? endSeconds : safeStart + 2
+    if (safeEnd < safeStart + 2) safeEnd = safeStart + 2
+    if (Number.isFinite(duration)) safeEnd = Math.min(duration, safeEnd)
+    if (safeEnd <= safeStart) safeEnd = safeStart + 2
+
+    const note = {
+      id: `${videoFile.filePath}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      start: formatTime(safeStart),
+      end: formatTime(safeEnd),
+      content: noteDraft || '',
+      raw: {},
+    }
+    addNote(note)
+    setDirty(APP_MODES.VIDEO, true)
+    showAutoMessage('已追加标记。', '操作完成', 900)
   }
 
   const createQuickNote = (range) => ({
@@ -723,7 +835,7 @@ export default function VideoMode() {
 
     const insertIndex = position === 'before' ? selectedIndex : selectedIndex + 1
     insertNoteAt(insertIndex, createQuickNote(range))
-    setDirty(true)
+    setDirty(APP_MODES.VIDEO, true)
     showAutoMessage('已插入视频笔记。', '操作完成', 900)
   }
 
@@ -746,7 +858,7 @@ export default function VideoMode() {
     if (decision !== 'delete') return
 
     deleteNote(selectedNoteId)
-    setDirty(true)
+    setDirty(APP_MODES.VIDEO, true)
   }
 
   const clearNotesList = async () => {
@@ -765,7 +877,7 @@ export default function VideoMode() {
     clearNotes()
     setCurStart('')
     setCurEnd('')
-    setDirty(true)
+    setDirty(APP_MODES.VIDEO, true)
   }
   const updateSelectedRange = async () => {
     if (!selectedNoteId) {
@@ -779,7 +891,7 @@ export default function VideoMode() {
     updateNote(selectedNoteId, range)
     setSelectedStart(range.start)
     setSelectedEnd(range.end)
-    setDirty(true)
+    setDirty(APP_MODES.VIDEO, true)
     showAutoMessage('已更新时间段。', '操作完成', 900)
   }
   const writeCurrentRangeToSelected = async () => {
@@ -803,7 +915,7 @@ export default function VideoMode() {
     updateNote(selectedNoteId, range)
     setSelectedStart(range.start)
     setSelectedEnd(range.end)
-    setDirty(true)
+    setDirty(APP_MODES.VIDEO, true)
   }
 
   const updateSelectedContent = (content) => {
@@ -829,7 +941,7 @@ export default function VideoMode() {
     if (decision !== 'update') return
 
     updateNote(selectedNoteId, { content: noteDraft })
-    setDirty(true)
+    setDirty(APP_MODES.VIDEO, true)
     showAutoMessage('已更新视频笔记内容。', '操作完成', 900)
   }
 
@@ -845,6 +957,22 @@ export default function VideoMode() {
 
     playerRef.current?.playbackRate?.(nextRate)
     setPlaybackRate(nextRate)
+  }
+
+  const volumeByStep = (step) => {
+    const player = playerRef.current
+    if (!player?.volume) return
+
+    const currentVolume = Number(player.volume())
+    const baseVolume = Number.isFinite(currentVolume) ? currentVolume : volume
+    const nextVolume = Math.max(0, Math.min(1, baseVolume + step))
+    player.volume(nextVolume)
+    setVolume(nextVolume)
+  }
+
+  const runInVideoControlMode = (handler) => {
+    if (!videoControlMode) return
+    handler()
   }
 
   const cycleFullscreenPanelState = () => {
@@ -947,7 +1075,8 @@ export default function VideoMode() {
 
   const getContextMenuItems = () => {
     const noteItems = [
-      { label: '追加快捷标记', action: addQuickNote },
+      { label: '追加快捷标记', action: () => runAction('video.appendQuickMark') },
+      { label: '追加标记', action: () => runAction('video.appendMark') },
       { label: '前插入快捷标记', action: () => insertQuickNoteNearSelected('before') },
       { label: '后插入快捷标记', action: () => insertQuickNoteNearSelected('after') },
       { label: '更新当前标记', action: updateSelectedRange },
@@ -970,55 +1099,191 @@ export default function VideoMode() {
     ]
   }
 
-  const handlers = useMemo(
-    () => ({
-      f1: () => seekByScaledSeconds(-SHORT_JUMP_SECONDS),
-      f2: () => {
-        const currentTime = formatTime(getPlayerTime())
-        setCurStart(currentTime)
-      },
-      f3: () => {
-        const currentTime = formatTime(getPlayerTime())
-        setCurEnd(currentTime)
-      },
-      f4: () => seekByScaledSeconds(SHORT_JUMP_SECONDS),
-      f6: () => togglePlayPause(),
-      f9: () => saveVideoNotes(),
-      arrowleft: () => seekByScaledSeconds(-SHORT_JUMP_SECONDS),
-      arrowright: () => seekByScaledSeconds(SHORT_JUMP_SECONDS),
-      'ctrl+arrowleft': () => seekByScaledSeconds(-LONG_JUMP_SECONDS),
-      'ctrl+arrowright': () => seekByScaledSeconds(LONG_JUMP_SECONDS),
-      'ctrl+arrowup': () => speedByStep(1),
-      'ctrl+arrowdown': () => speedByStep(-1),
-      'ctrl+f': () => cycleFullscreenPanelState(),
-      'ctrl+q': () => confirmUpdateSelectedContent(),
-      'ctrl+s': () => addQuickNote(),
-      'ctrl+g': () => updateSelectedRange(),
-      'ctrl+w': () => writeCurrentRangeToSelected(),
-      'alt+e': () => toggleFocusBetweenNotesListAndTextInput(),
-      'alt+p': () => togglePlayPause(),
-      'shift+alt+s': () => saveVideoNotes(),
-    }),
-    [
-      addQuickNote,
-      togglePlayPause,
-      saveVideoNotes,
-      setCurEnd,
-      setCurStart,
-      confirmUpdateSelectedContent,
-      updateSelectedRange,
-      writeCurrentRangeToSelected,
-      toggleFocusBetweenNotesListAndTextInput,
-    ],
-  )
-
-  useModeHotkeys(dialog ? {} : handlers)
+  useEffect(() => registerActions([
+    {
+      id: 'video.seekStart',
+      label: 'Seek Start',
+      scope: APP_MODES.VIDEO,
+      handler: seekToCurrentStart,
+    },
+    {
+      id: 'video.jumpBack',
+      label: 'Jump Back',
+      scope: APP_MODES.VIDEO,
+      handler: () => seekByScaledSeconds(-SHORT_JUMP_SECONDS),
+    },
+    {
+      id: 'video.setStart',
+      label: 'Set Start',
+      scope: APP_MODES.VIDEO,
+      handler: () => setCurStart(formatTime(getPlayerTime())),
+    },
+    {
+      id: 'video.setEnd',
+      label: 'Set End',
+      scope: APP_MODES.VIDEO,
+      handler: () => setCurEnd(formatTime(getPlayerTime())),
+    },
+    {
+      id: 'video.jumpForward',
+      label: 'Jump Forward',
+      scope: APP_MODES.VIDEO,
+      handler: () => seekByScaledSeconds(SHORT_JUMP_SECONDS),
+    },
+    {
+      id: 'video.toggleFocus',
+      label: 'Toggle Focus',
+      scope: APP_MODES.VIDEO,
+      handler: toggleFocusBetweenNotesListAndTextInput,
+    },
+    {
+      id: 'video.appendMark',
+      label: 'Append Mark',
+      scope: APP_MODES.VIDEO,
+      handler: appendCurrentMark,
+    },
+    {
+      id: 'video.togglePlay',
+      label: 'Play / Pause',
+      scope: APP_MODES.VIDEO,
+      handler: togglePlayPause,
+    },
+    {
+      id: 'video.togglePlayAlt',
+      label: 'Play / Pause Alt',
+      scope: APP_MODES.VIDEO,
+      handler: togglePlayPause,
+    },
+    {
+      id: 'video.toggleControlMode',
+      label: 'Toggle Control Mode',
+      scope: APP_MODES.VIDEO,
+      handler: () => setVideoControlMode((value) => !value),
+    },
+    {
+      id: 'video.saveNotes',
+      label: 'Save Notes',
+      scope: APP_MODES.VIDEO,
+      handler: saveVideoNotes,
+    },
+    {
+      id: 'video.saveNotesAlt',
+      label: 'Save Notes Alt',
+      scope: APP_MODES.VIDEO,
+      handler: saveVideoNotes,
+    },
+    {
+      id: 'video.jumpBackShort',
+      label: 'Short Back',
+      scope: APP_MODES.VIDEO,
+      handler: () => runInVideoControlMode(() => seekByScaledSeconds(-SHORT_JUMP_SECONDS)),
+    },
+    {
+      id: 'video.jumpForwardShort',
+      label: 'Short Forward',
+      scope: APP_MODES.VIDEO,
+      handler: () => runInVideoControlMode(() => seekByScaledSeconds(SHORT_JUMP_SECONDS)),
+    },
+    {
+      id: 'video.jumpBackLong',
+      label: 'Long Back',
+      scope: APP_MODES.VIDEO,
+      handler: () => runInVideoControlMode(() => seekByScaledSeconds(-LONG_JUMP_SECONDS)),
+    },
+    {
+      id: 'video.jumpForwardLong',
+      label: 'Long Forward',
+      scope: APP_MODES.VIDEO,
+      handler: () => runInVideoControlMode(() => seekByScaledSeconds(LONG_JUMP_SECONDS)),
+    },
+    {
+      id: 'video.speedUp',
+      label: 'Speed Up',
+      scope: APP_MODES.VIDEO,
+      handler: () => runInVideoControlMode(() => speedByStep(1)),
+    },
+    {
+      id: 'video.speedDown',
+      label: 'Speed Down',
+      scope: APP_MODES.VIDEO,
+      handler: () => runInVideoControlMode(() => speedByStep(-1)),
+    },
+    {
+      id: 'video.volumeUp',
+      label: 'Volume Up',
+      scope: APP_MODES.VIDEO,
+      handler: () => runInVideoControlMode(() => volumeByStep(0.1)),
+    },
+    {
+      id: 'video.volumeDown',
+      label: 'Volume Down',
+      scope: APP_MODES.VIDEO,
+      handler: () => runInVideoControlMode(() => volumeByStep(-0.1)),
+    },
+    {
+      id: 'video.toggleView',
+      label: 'Toggle View',
+      scope: APP_MODES.VIDEO,
+      handler: cycleFullscreenPanelState,
+    },
+    {
+      id: 'video.toggleLeftTab',
+      label: 'Toggle Left Tab',
+      scope: APP_MODES.VIDEO,
+      handler: () => setLeftTab((tab) => (tab === 'notes' ? 'files' : 'notes')),
+    },
+    {
+      id: 'video.updateContent',
+      label: 'Update Content',
+      scope: APP_MODES.VIDEO,
+      handler: confirmUpdateSelectedContent,
+    },
+    {
+      id: 'video.appendQuickMark',
+      label: 'Append Quick Mark',
+      scope: APP_MODES.VIDEO,
+      handler: addQuickNote,
+    },
+    {
+      id: 'video.updateRange',
+      label: 'Update Range',
+      scope: APP_MODES.VIDEO,
+      handler: updateSelectedRange,
+    },
+    {
+      id: 'video.writeCurrentRange',
+      label: 'Write Current Range',
+      scope: APP_MODES.VIDEO,
+      handler: writeCurrentRangeToSelected,
+    },
+  ]), [
+    addQuickNote,
+    appendCurrentMark,
+    confirmUpdateSelectedContent,
+    cycleFullscreenPanelState,
+    runInVideoControlMode,
+    seekToCurrentStart,
+    seekByScaledSeconds,
+    saveVideoNotes,
+    setCurEnd,
+    setCurStart,
+    speedByStep,
+    togglePlayPause,
+    toggleFocusBetweenNotesListAndTextInput,
+    updateSelectedRange,
+    volumeByStep,
+    writeCurrentRangeToSelected,
+  ])
 
   const onPlayerReady = (player) => {
     playerRef.current = player
     setPlaybackRate(player.playbackRate?.() || 1)
+    setVolume(player.volume?.() ?? 1)
     player.on('ratechange', () => {
       setPlaybackRate(player.playbackRate?.() || 1)
+    })
+    player.on('volumechange', () => {
+      setVolume(player.volume?.() ?? 1)
     })
   }
 
@@ -1028,10 +1293,12 @@ export default function VideoMode() {
 
   const fullscreenClass = `fullscreen-state-${fullscreenCycleState}`
   const panelsClass = panelsHidden ? 'panels-hidden' : ''
+  const controlModeClass = videoControlMode ? 'video-control-mode' : ''
 
   return (
-    <section className={`video-mode ${fullscreenClass} ${panelsClass}`}>
-      <aside className="video-left-panel">
+    <section className={`video-mode ${fullscreenClass} ${panelsClass} ${controlModeClass}`}>
+      <div className="video-body">
+        <aside className="video-left-panel">
         <div className="left-tabs">
           <button
             className={leftTab === 'notes' ? 'left-tab active' : 'left-tab'}
@@ -1143,9 +1410,9 @@ export default function VideoMode() {
             </div>
           </div>
         )}
-      </aside>
+        </aside>
 
-      <section className="video-center">
+        <section className="video-center">
         <div className="video-stage" onContextMenu={(event) => openContextMenu(event, 'video')}>
           <VideoPlayer
             onEnded={playNextDirectoryVideo}
@@ -1188,7 +1455,7 @@ export default function VideoMode() {
             </div>
             <div>
               <span>playing</span>
-              <strong>{playingTime}</strong>
+              <strong className="playing-time">{playingTime}</strong>
             </div>
             <div>
               <span>Mode</span>
@@ -1204,15 +1471,23 @@ export default function VideoMode() {
             </div>
           </div>
         </div>
-      </section>
+        </section>
 
-      <aside className="video-toolbar">
+        <aside className="video-toolbar">
         <button type="button" onClick={openVideoFile}>Open</button>
         <button type="button" onClick={saveVideoNotes}>Save</button>
         <button type="button" onClick={addQuickNote}>QuickNote</button>
         <button type="button" onClick={() => setRepeat(!repeat)}>Repeat</button>
         <button type="button" onClick={updateSelectedRange}>Update</button>
         <button type="button" onClick={openFromClipboard}>GetClip</button>
+        <label className={videoControlMode ? 'toolbar-check video-toolbar-check control-on-check' : 'toolbar-check video-toolbar-check'}>
+          <input
+            checked={videoControlMode}
+            onChange={() => runAction('video.toggleControlMode')}
+            type="checkbox"
+          />
+          <span>ControlOn</span>
+        </label>
         <label className="toolbar-check video-toolbar-check">
           <input
             checked={playAll}
@@ -1229,7 +1504,17 @@ export default function VideoMode() {
           />
           <span>Subtitle</span>
         </label>
-      </aside>
+        </aside>
+      </div>
+
+      <footer className="video-statusbar">
+        <span>Status: <strong className={dirty ? 'status-unsaved' : ''}>{dirty ? 'Unsaved' : 'Saved'}</strong></span>
+        <span>Control: <strong className={videoControlMode ? 'control-on' : ''}>{videoControlMode ? 'ON' : 'OFF'}</strong></span>
+        <span>File: <strong title={videoFile?.fileName || ''}>{videoFile?.fileName || '--'}</strong></span>
+        <span>Playing: <strong className="playing-time">{playingTime}</strong></span>
+        <span>Speed: <strong>{playbackRate}x</strong></span>
+        <span>Vol: <strong>{Math.round(volume * 100)}%</strong></span>
+      </footer>
 
       {dialog && !dialog.autoClose ? (
         <div className="inline-dialog-mask">

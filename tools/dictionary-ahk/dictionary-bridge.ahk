@@ -2,7 +2,11 @@
 ; Usage:
 ;   AutoHotkey.exe dictionary-bridge.ahk list
 ;   AutoHotkey.exe dictionary-bridge.ahk mdict anesthesia
+;   AutoHotkey.exe dictionary-bridge.ahk mdict-sendmsg anesthesia
+;   AutoHotkey.exe dictionary-bridge.ahk mdict-sendmsg-restore anesthesia
 ;   AutoHotkey.exe dictionary-bridge.ahk mdict-cycle
+;   AutoHotkey.exe dictionary-bridge.ahk mdict-cycle-post
+;   AutoHotkey.exe dictionary-bridge.ahk mdict-gettext
 ;   AutoHotkey.exe dictionary-bridge.ahk webster anesthesia
 ;   AutoHotkey.exe dictionary-bridge.ahk webster-read
 ;   AutoHotkey.exe dictionary-bridge.ahk webster-both anesthesia
@@ -41,8 +45,28 @@ if (mode = "mdict") {
     ExitApp, %commandExitCode%
 }
 
+if (mode = "mdict-sendmsg") {
+    commandExitCode := LookupMDictByMessage(word)
+    ExitApp, %commandExitCode%
+}
+
+if (mode = "mdict-sendmsg-restore") {
+    commandExitCode := LookupMDictByMessageRestore(word)
+    ExitApp, %commandExitCode%
+}
+
 if (mode = "mdict-cycle") {
     commandExitCode := CycleMDictDictionary()
+    ExitApp, %commandExitCode%
+}
+
+if (mode = "mdict-cycle-post") {
+    commandExitCode := CycleMDictDictionaryPost()
+    ExitApp, %commandExitCode%
+}
+
+if (mode = "mdict-gettext") {
+    commandExitCode := GetMDictInputTextCommand()
     ExitApp, %commandExitCode%
 }
 
@@ -151,6 +175,63 @@ LookupMDict(word) {
     return 0
 }
 
+LookupMDictByMessage(word) {
+    word := Trim(word)
+    if (word = "") {
+        WriteJson(false, "empty-word")
+        if (!IsSilentCommand()) {
+            MsgBox, 48, Dictionary Bridge, No word to lookup.
+        }
+        return 2
+    }
+
+    handles := InitMDictHandlesCopy()
+    if (!handles.ok) {
+        WriteMDictHandlesJson(false, handles.reason, handles, -1, 0)
+        if (!IsSilentCommand()) {
+            MsgBox, 48, Dictionary Bridge, % handles.reason
+        }
+        return 12
+    }
+
+    if (!handles.input) {
+        WriteMDictHandlesJson(false, "mdict-input-not-found", handles, -1, 0)
+        if (!IsSilentCommand()) {
+            MsgBox, 48, Dictionary Bridge, MDict input not found.
+        }
+        return 13
+    }
+
+    WM_SETTEXT := 0x000C
+    WM_KEYDOWN := 0x0100
+    WM_KEYUP := 0x0101
+    VK_RETURN := 0x0D
+    scanCode := DllCall("MapVirtualKey", "UInt", VK_RETURN, "UInt", 0)
+    keyDownLParam := 1 | (scanCode << 16)
+    keyUpLParam := 1 | (scanCode << 16) | (1 << 30) | (1 << 31)
+
+    DllCall("SendMessage", "Ptr", handles.input, "UInt", WM_SETTEXT, "Ptr", 0, "Str", word, "Ptr")
+    Sleep, 80
+    DllCall("PostMessage", "Ptr", handles.input, "UInt", WM_KEYDOWN, "Ptr", VK_RETURN, "Ptr", keyDownLParam)
+    DllCall("PostMessage", "Ptr", handles.input, "UInt", WM_KEYUP, "Ptr", VK_RETURN, "Ptr", keyUpLParam)
+    Sleep, 80
+    DllCall("PostMessage", "Ptr", handles.input, "UInt", WM_KEYDOWN, "Ptr", VK_RETURN, "Ptr", keyDownLParam)
+    DllCall("PostMessage", "Ptr", handles.input, "UInt", WM_KEYUP, "Ptr", VK_RETURN, "Ptr", keyUpLParam)
+    Sleep, 300
+    WriteMDictHandlesJson(true, "", handles, -1, 0)
+    return 0
+}
+
+LookupMDictByMessageRestore(word) {
+    oldForeground := DllCall("GetForegroundWindow", "Ptr")
+    exitCode := LookupMDictByMessage(word)
+    if (exitCode = 0 && oldForeground) {
+        Sleep, 160
+        DllCall("SetForegroundWindow", "Ptr", oldForeground)
+    }
+    return exitCode
+}
+
 InitMDictHandlesCopy() {
     handles := {}
     mainHwnd := DllCall("FindWindow", "Ptr", 0, "Str", "MDict", "Ptr")
@@ -160,8 +241,8 @@ InitMDictHandlesCopy() {
         return handles
     }
 
-    inputHwnd := DllCall("FindWindowEx", "Ptr", mainHwnd, "Ptr", 0, "Ptr", 0, "Ptr", 0, "Ptr")
-    inputHwnd := DllCall("FindWindowEx", "Ptr", mainHwnd, "Ptr", inputHwnd, "Ptr", 0, "Ptr", 0, "Ptr")
+    inputParentHwnd := DllCall("FindWindowEx", "Ptr", mainHwnd, "Ptr", 0, "Ptr", 0, "Ptr", 0, "Ptr")
+    inputHwnd := inputParentHwnd ? DllCall("FindWindowEx", "Ptr", inputParentHwnd, "Ptr", 0, "Ptr", 0, "Ptr", 0, "Ptr") : 0
 
     firstChildHwnd := DllCall("FindWindowEx", "Ptr", mainHwnd, "Ptr", 0, "Ptr", 0, "Ptr", 0, "Ptr")
     mainMenuHwnd := firstChildHwnd ? DllCall("GetWindow", "Ptr", firstChildHwnd, "UInt", 2, "Ptr") : 0
@@ -171,6 +252,7 @@ InitMDictHandlesCopy() {
         handles.ok := false
         handles.reason := "mdict-main-menu-not-found"
         handles.main := mainHwnd
+        handles.inputParent := inputParentHwnd
         handles.input := inputHwnd
         handles.firstChild := firstChildHwnd
         handles.mainMenu := mainMenuHwnd
@@ -181,6 +263,7 @@ InitMDictHandlesCopy() {
     handles.ok := true
     handles.reason := ""
     handles.main := mainHwnd
+    handles.inputParent := inputParentHwnd
     handles.input := inputHwnd
     handles.firstChild := firstChildHwnd
     handles.mainMenu := mainMenuHwnd
@@ -228,6 +311,67 @@ CycleMDictDictionary() {
     if (!IsSilentCommand()) {
         MsgBox, 64, Dictionary Bridge - MDict, % "Dictionary index: " . nextIndex . "`nCommand: " . Format("0x{:X}", commandId)
     }
+    return 0
+}
+
+CycleMDictDictionaryPost() {
+    handles := InitMDictHandlesCopy()
+    if (!handles.ok) {
+        WriteMDictHandlesJson(false, handles.reason, handles, -1, 0)
+        if (!IsSilentCommand()) {
+            MsgBox, 48, Dictionary Bridge, % handles.reason
+        }
+        return 11
+    }
+
+    currentIndex := ReadMDictCycleIndex()
+    nextIndex := currentIndex + 1
+    if (nextIndex > 4 || nextIndex < 0) {
+        nextIndex := 0
+    }
+
+    commandId := 0x7D0 + nextIndex
+    WM_COMMAND := 0x0111
+    DllCall("PostMessage", "Ptr", handles.mainMenu, "UInt", WM_COMMAND, "Ptr", commandId, "Ptr", 0, "Int")
+    WriteMDictCycleIndex(nextIndex)
+    WriteMDictHandlesJson(true, "", handles, nextIndex, commandId)
+
+    if (!IsSilentCommand()) {
+        MsgBox, 64, Dictionary Bridge - MDict, % "Dictionary index: " . nextIndex . "`nPost command: " . Format("0x{:X}", commandId)
+    }
+    return 0
+}
+
+GetMDictInputTextCommand() {
+    handles := InitMDictHandlesCopy()
+    if (!handles.ok) {
+        WriteMDictTextJson(false, handles.reason, handles, "")
+        if (!IsSilentCommand()) {
+            MsgBox, 48, Dictionary Bridge, % handles.reason
+        }
+        return 11
+    }
+    if (!handles.input) {
+        WriteMDictTextJson(false, "mdict-input-not-found", handles, "")
+        return 12
+    }
+
+    WM_GETTEXTLENGTH := 0x000E
+    WM_GETTEXT := 0x000D
+    textLength := DllCall("SendMessage", "Ptr", handles.input, "UInt", WM_GETTEXTLENGTH, "Ptr", 0, "Ptr", 0, "Ptr")
+    if (textLength <= 0) {
+        WriteMDictTextJson(true, "", handles, "")
+        return 0
+    }
+    if (textLength > 512) {
+        WriteMDictTextJson(false, "mdict-input-too-long", handles, "")
+        return 13
+    }
+
+    VarSetCapacity(textBuffer, (textLength + 1) * 2, 0)
+    DllCall("SendMessage", "Ptr", handles.input, "UInt", WM_GETTEXT, "Ptr", textLength + 1, "Ptr", &textBuffer, "Ptr")
+    text := StrGet(&textBuffer, "UTF-16")
+    WriteMDictTextJson(true, "", handles, text)
     return 0
 }
 
@@ -944,6 +1088,21 @@ WriteMDictHandlesJson(ok, reason, handles, dictionaryIndex, commandId) {
         . ",""dictionaryIndex"":" . dictionaryIndex
         . ",""commandId"":" . commandId
         . ",""commandIdHex"":""" . (commandId > 0 ? Format("0x{:X}", commandId) : "0x0") . """}"
+    FileDelete, %resultPath%
+    FileAppend, %json%, %resultPath%, UTF-8
+}
+
+WriteMDictTextJson(ok, reason, handles, text) {
+    global resultPath
+    okText := ok ? "true" : "false"
+    main := handles.HasKey("main") ? handles.main : 0
+    input := handles.HasKey("input") ? handles.input : 0
+    json := "{""ok"":" . okText
+        . "," . ResultMetaJson()
+        . ",""reason"":""" . JsonEscape(reason) . """"
+        . ",""main"":""" . FormatHwnd(main) . """"
+        . ",""input"":""" . FormatHwnd(input) . """"
+        . ",""text"":""" . JsonEscape(text) . """}"
     FileDelete, %resultPath%
     FileAppend, %json%, %resultPath%, UTF-8
 }
