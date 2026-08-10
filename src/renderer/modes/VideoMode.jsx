@@ -1,5 +1,6 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import { APP_MODES, useAppStore } from '../../stores/appStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 import { useVideoStore } from '../../stores/videoStore'
 import { registerActions, runAction } from '../actions/actionRegistry'
 import VideoPlayer from '../video/VideoPlayer'
@@ -9,6 +10,10 @@ const SHORT_JUMP_SECONDS = 2
 const LONG_JUMP_SECONDS = 8
 const QUICK_NOTE_FORWARD_SECONDS = 5
 const QUICK_NOTE_BACKWARD_SECONDS = 2
+const CONTEXT_MENU_WIDTH = 210
+const CONTEXT_MENU_ITEM_HEIGHT = 36
+const CONTEXT_MENU_OFFSET = 8
+const CONTEXT_MENU_PADDING = 8
 
 function formatTime(seconds) {
   const value = Number.isFinite(seconds) ? Math.max(0, seconds) : 0
@@ -61,6 +66,34 @@ function removeFileExtension(fileName) {
   return dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName
 }
 
+function matchesSubtitleSuffix(subtitle, suffix) {
+  const cleanSuffix = String(suffix || '').trim().toLowerCase()
+  if (!cleanSuffix) return false
+
+  const subtitleName = String(subtitle?.fileName || subtitle?.filePath || '').toLowerCase()
+  const suffixes = cleanSuffix.endsWith('.vtt')
+    ? [cleanSuffix, `${cleanSuffix.slice(0, -4)}.srt`]
+    : [cleanSuffix]
+
+  return suffixes.some((candidate) => subtitleName.endsWith(candidate))
+}
+
+function getContextMenuPosition(event, itemCount) {
+  const estimatedHeight = Math.max(1, itemCount) * CONTEXT_MENU_ITEM_HEIGHT
+  const maxLeft = Math.max(CONTEXT_MENU_PADDING, window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_PADDING)
+  const maxTop = Math.max(CONTEXT_MENU_PADDING, window.innerHeight - estimatedHeight - CONTEXT_MENU_PADDING)
+  let left = event.clientX + CONTEXT_MENU_OFFSET
+  let top = event.clientY + CONTEXT_MENU_OFFSET
+
+  if (left > maxLeft) left = event.clientX - CONTEXT_MENU_WIDTH - CONTEXT_MENU_OFFSET
+  if (top > maxTop) top = event.clientY - estimatedHeight - CONTEXT_MENU_OFFSET
+
+  return {
+    x: Math.max(CONTEXT_MENU_PADDING, Math.min(left, maxLeft)),
+    y: Math.max(CONTEXT_MENU_PADDING, Math.min(top, maxTop)),
+  }
+}
+
 export default function VideoMode() {
   const playerRef = useRef(null)
   const notesListRef = useRef(null)
@@ -81,6 +114,7 @@ export default function VideoMode() {
   const [videoControlMode, setVideoControlMode] = useState(false)
   const [volume, setVolume] = useState(1)
 
+  const playAllSubtitleSuffix = useSettingsStore((state) => state.settings.general.playAllSubtitleSuffix)
   const mode = useAppStore((state) => state.mode)
   const dirty = useAppStore((state) => state.dirtyByMode.video)
   const recentVideoFiles = useAppStore((state) => state.recentFiles.video || [])
@@ -122,6 +156,7 @@ export default function VideoMode() {
   const updateNote = useVideoStore((state) => state.updateNote)
   const deleteNote = useVideoStore((state) => state.deleteNote)
   const clearNotes = useVideoStore((state) => state.clearNotes)
+  const moveNote = useVideoStore((state) => state.moveNote)
 
   useEffect(() => {
     console.log(`[startup:renderer] VideoMode mounted +${Math.round(performance.now())}ms`)
@@ -522,13 +557,17 @@ export default function VideoMode() {
     }
   }, [restoreSessionState])
 
-  const chooseSubtitle = async (subtitleCandidates = []) => {
+  const chooseSubtitle = async (subtitleCandidates = [], options = {}) => {
     if (subtitleCandidates.length === 0) {
       return null
     }
 
     if (subtitleCandidates.length === 1) {
       return subtitleCandidates[0]
+    }
+
+    if (options.playAllAuto) {
+      return subtitleCandidates.find((subtitle) => matchesSubtitleSuffix(subtitle, playAllSubtitleSuffix)) || null
     }
 
     const selectedPath = await showSubtitleChoiceDialog(subtitleCandidates)
@@ -539,7 +578,7 @@ export default function VideoMode() {
     return subtitleCandidates.find((subtitle) => subtitle.filePath === selectedPath) || null
   }
 
-  const chooseSrtSubtitleForConversion = async (srtSubtitleCandidates = []) => {
+  const chooseSrtSubtitleForConversion = async (srtSubtitleCandidates = [], options = {}) => {
     if (srtSubtitleCandidates.length === 0) {
       return null
     }
@@ -547,6 +586,10 @@ export default function VideoMode() {
     let selectedSrt = srtSubtitleCandidates[0]
 
     if (srtSubtitleCandidates.length > 1) {
+      if (options.playAllAuto) {
+        return srtSubtitleCandidates.find((subtitle) => matchesSubtitleSuffix(subtitle, playAllSubtitleSuffix)) || null
+      }
+
       const selectedPath = await showSubtitleChoiceDialog(
         srtSubtitleCandidates,
         { title: '选择SRT字幕文件', noneLabel: '不转换字幕' },
@@ -557,6 +600,10 @@ export default function VideoMode() {
 
     if (!selectedSrt) {
       return null
+    }
+
+    if (options.playAllAuto) {
+      return selectedSrt
     }
 
     const decision = await showActionDialog({
@@ -602,8 +649,8 @@ export default function VideoMode() {
       return
     }
 
-    const subtitle = await chooseSubtitle(info.subtitleCandidates || [])
-    const srtSubtitle = subtitle ? null : await chooseSrtSubtitleForConversion(info.srtSubtitleCandidates || [])
+    const subtitle = await chooseSubtitle(info.subtitleCandidates || [], options)
+    const srtSubtitle = subtitle ? null : await chooseSrtSubtitleForConversion(info.srtSubtitleCandidates || [], options)
 
     setVideoFile(info)
     setSelectedSubtitle(subtitle)
@@ -655,8 +702,10 @@ export default function VideoMode() {
   const openVideoFileFullPath = async (fullPath, options = {}) => {
     if (!fullPath || !window.videoApi?.getVideoFileInfo) return
 
-    const canSwitch = await confirmBeforeSwitchVideo()
-    if (!canSwitch) return
+    if (!options.skipSwitchConfirm) {
+      const canSwitch = await confirmBeforeSwitchVideo()
+      if (!canSwitch) return
+    }
 
     const info = await window.videoApi.getVideoFileInfo(fullPath)
     await loadVideoInfo(info, options)
@@ -667,16 +716,49 @@ export default function VideoMode() {
     openVideoFileFullPath(joinPath(videoFile.folderPath, fileName), { autoplay: true })
   }
 
-  const playNextDirectoryVideo = () => {
+  const confirmBeforePlayNextVideo = async () => {
+    if (!dirty) return true
+
+    const decision = await showActionDialog({
+      title: '自动播放下一视频',
+      message: '当前视频笔记有未保存修改，如何处理？',
+      defaultValue: 'save-next',
+      cancelValue: 'stay',
+      actions: [
+        { label: '保存并播放下一视频', value: 'save-next', primary: true },
+        { label: '放弃修改并播放下一视频', value: 'discard-next' },
+        { label: '停留当前视频', value: 'stay' },
+      ],
+    })
+
+    if (decision === 'save-next') {
+      return saveVideoNotes({ silent: true })
+    }
+
+    if (decision === 'discard-next') {
+      setDirty(APP_MODES.VIDEO, false)
+      return true
+    }
+
+    playerRef.current?.pause?.()
+    return false
+  }
+
+  const playNextDirectoryVideo = async () => {
     if (!playAll || repeat || !videoFile?.folderPath || directoryMp4Files.length === 0) return
 
     const currentIndex = directoryMp4Files.findIndex((fileName) => fileName === videoFile.fileName)
     if (currentIndex < 0 || currentIndex >= directoryMp4Files.length - 1) return
 
+    const canPlayNext = await confirmBeforePlayNextVideo()
+    if (!canPlayNext) return
+
     const nextFileName = directoryMp4Files[currentIndex + 1]
     openVideoFileFullPath(joinPath(videoFile.folderPath, nextFileName), {
       autoplay: true,
       playbackRate: getPlaybackRate(),
+      playAllAuto: true,
+      skipSwitchConfirm: true,
     })
   }
 
@@ -777,6 +859,8 @@ export default function VideoMode() {
     if (!range) return
 
     addNote(createQuickNote(range))
+    setCurStart(range.start)
+    setCurEnd(range.end)
     setDirty(APP_MODES.VIDEO, true)
     showAutoMessage('已追加视频笔记。', '操作完成', 900)
   }
@@ -970,11 +1054,6 @@ export default function VideoMode() {
     setVolume(nextVolume)
   }
 
-  const runInVideoControlMode = (handler) => {
-    if (!videoControlMode) return
-    handler()
-  }
-
   const cycleFullscreenPanelState = () => {
     setFullscreenCycleState((state) => {
       if (state === 0) return 2
@@ -984,15 +1063,18 @@ export default function VideoMode() {
   }
 
   const toggleFocusBetweenNotesListAndTextInput = () => {
-    const editor = noteEditorRef.current
-    const notesList = notesListRef.current
+    const focusEditor = () => {
+      const editor = noteEditorRef.current
+      if (!editor) return
 
-    if (!editor || !notesList) return
+      editor.focus()
+      editor.selectionStart = editor.selectionEnd = editor.value.length
+    }
 
-    if (document.activeElement === editor) {
-      if (leftTab !== 'notes') {
-        setLeftTab('notes')
-      }
+    if (document.activeElement === noteEditorRef.current) {
+      const notesList = notesListRef.current
+      if (!notesList) return
+      if (leftTab !== 'notes') setLeftTab('notes')
       setTimeout(() => {
         notesList.focus()
       }, 0)
@@ -1001,24 +1083,11 @@ export default function VideoMode() {
 
     if (leftTab !== 'notes') {
       setLeftTab('notes')
-      setTimeout(() => {
-        notesList.focus()
-      }, 0)
+      setTimeout(focusEditor, 0)
       return
     }
 
-    if (document.activeElement === notesList) {
-      editor.focus()
-      setTimeout(() => {
-        editor.selectionStart = editor.selectionEnd = editor.value.length
-      }, 0)
-      return
-    }
-
-    if (leftTab === 'notes') {
-      notesList.focus()
-      return
-    }
+    focusEditor()
   }
 
   const handleNotesListKeyDown = (event) => {
@@ -1051,6 +1120,8 @@ export default function VideoMode() {
     setPanelsHidden((value) => !value)
   }
 
+  const getContextMenuItemCount = (type) => (type === 'video' ? 11 : 10)
+
   const openContextMenu = (event, type, note = null) => {
     event.preventDefault()
     event.stopPropagation()
@@ -1059,11 +1130,31 @@ export default function VideoMode() {
       selectNote(note)
     }
 
+    const position = getContextMenuPosition(event, getContextMenuItemCount(type))
     setContextMenu({
       type,
-      x: event.clientX,
-      y: event.clientY,
+      x: position.x,
+      y: position.y,
     })
+  }
+
+  const moveSelectedNote = (direction) => {
+    if (!selectedNoteId) {
+      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      return
+    }
+
+    const currentIndex = notes.findIndex((note) => note.id === selectedNoteId)
+    if (
+      currentIndex < 0
+      || (direction === 'up' && currentIndex === 0)
+      || (direction === 'down' && currentIndex === notes.length - 1)
+    ) {
+      return
+    }
+
+    moveNote(selectedNoteId, direction)
+    setDirty(APP_MODES.VIDEO, true)
   }
 
   const runContextMenuAction = (handler) => {
@@ -1079,8 +1170,10 @@ export default function VideoMode() {
       { label: '追加标记', action: () => runAction('video.appendMark') },
       { label: '前插入快捷标记', action: () => insertQuickNoteNearSelected('before') },
       { label: '后插入快捷标记', action: () => insertQuickNoteNearSelected('after') },
-      { label: '更新当前标记', action: updateSelectedRange },
-      { label: '删除当前选中', action: deleteSelectedNote },
+      { label: '更新当前标记', action: updateSelectedRange, separator: true },
+      { label: '向上移动', action: () => moveSelectedNote('up') },
+      { label: '向下移动', action: () => moveSelectedNote('down') },
+      { label: '删除当前选中', action: deleteSelectedNote, separator: true },
     ]
 
     if (contextMenu?.type === 'video') {
@@ -1094,7 +1187,7 @@ export default function VideoMode() {
 
     return [
       ...noteItems,
-      { label: '清空笔记列表', action: clearNotesList, separator: true },
+      { label: '清空笔记列表', action: clearNotesList },
       { label: '关闭菜单', action: () => {}, separator: true },
     ]
   }
@@ -1176,49 +1269,49 @@ export default function VideoMode() {
       id: 'video.jumpBackShort',
       label: 'Short Back',
       scope: APP_MODES.VIDEO,
-      handler: () => runInVideoControlMode(() => seekByScaledSeconds(-SHORT_JUMP_SECONDS)),
+      handler: () => seekByScaledSeconds(-SHORT_JUMP_SECONDS),
     },
     {
       id: 'video.jumpForwardShort',
       label: 'Short Forward',
       scope: APP_MODES.VIDEO,
-      handler: () => runInVideoControlMode(() => seekByScaledSeconds(SHORT_JUMP_SECONDS)),
+      handler: () => seekByScaledSeconds(SHORT_JUMP_SECONDS),
     },
     {
       id: 'video.jumpBackLong',
       label: 'Long Back',
       scope: APP_MODES.VIDEO,
-      handler: () => runInVideoControlMode(() => seekByScaledSeconds(-LONG_JUMP_SECONDS)),
+      handler: () => seekByScaledSeconds(-LONG_JUMP_SECONDS),
     },
     {
       id: 'video.jumpForwardLong',
       label: 'Long Forward',
       scope: APP_MODES.VIDEO,
-      handler: () => runInVideoControlMode(() => seekByScaledSeconds(LONG_JUMP_SECONDS)),
+      handler: () => seekByScaledSeconds(LONG_JUMP_SECONDS),
     },
     {
       id: 'video.speedUp',
       label: 'Speed Up',
       scope: APP_MODES.VIDEO,
-      handler: () => runInVideoControlMode(() => speedByStep(1)),
+      handler: () => speedByStep(1),
     },
     {
       id: 'video.speedDown',
       label: 'Speed Down',
       scope: APP_MODES.VIDEO,
-      handler: () => runInVideoControlMode(() => speedByStep(-1)),
+      handler: () => speedByStep(-1),
     },
     {
       id: 'video.volumeUp',
       label: 'Volume Up',
       scope: APP_MODES.VIDEO,
-      handler: () => runInVideoControlMode(() => volumeByStep(0.1)),
+      handler: () => volumeByStep(0.1),
     },
     {
       id: 'video.volumeDown',
       label: 'Volume Down',
       scope: APP_MODES.VIDEO,
-      handler: () => runInVideoControlMode(() => volumeByStep(-0.1)),
+      handler: () => volumeByStep(-0.1),
     },
     {
       id: 'video.toggleView',
@@ -1261,7 +1354,6 @@ export default function VideoMode() {
     appendCurrentMark,
     confirmUpdateSelectedContent,
     cycleFullscreenPanelState,
-    runInVideoControlMode,
     seekToCurrentStart,
     seekByScaledSeconds,
     saveVideoNotes,
@@ -1432,42 +1524,73 @@ export default function VideoMode() {
             ref={noteEditorRef}
             value={noteDraft}
           />
-          <div className="video-info">
-            <div className="info-pair">
-              <div>
-                <span>start</span>
-                <strong>{selectedStart || selectedNote?.start || '--:--:--.-'}</strong>
+          <div className="video-side-panel">
+            <div className="video-info">
+              <div className="info-pair">
+                <div>
+                  <span>start</span>
+                  <strong>{selectedStart || selectedNote?.start || '--:--:--.-'}</strong>
+                </div>
+                <div>
+                  <span>end</span>
+                  <strong>{selectedEnd || selectedNote?.end || '--:--:--.-'}</strong>
+                </div>
+              </div>
+              <div className="info-pair">
+                <div>
+                  <span>curStart</span>
+                  <strong>{curStart || '--:--:--.-'}</strong>
+                </div>
+                <div>
+                  <span>curEnd</span>
+                  <strong>{curEnd || '--:--:--.-'}</strong>
+                </div>
               </div>
               <div>
-                <span>end</span>
-                <strong>{selectedEnd || selectedNote?.end || '--:--:--.-'}</strong>
-              </div>
-            </div>
-            <div className="info-pair">
-              <div>
-                <span>curStart</span>
-                <strong>{curStart || '--:--:--.-'}</strong>
+                <span>playing</span>
+                <strong className="playing-time">{playingTime}</strong>
               </div>
               <div>
-                <span>curEnd</span>
-                <strong>{curEnd || '--:--:--.-'}</strong>
+                <span>Mode</span>
+                <strong className={repeat ? 'repeat-mode' : ''}>{repeat ? 'repeat' : 'normal'}</strong>
+              </div>
+              <div>
+                <span>speed</span>
+                <strong>{playbackRate}x</strong>
+              </div>
+              <div className="info-file">
+                <span>file</span>
+                <strong title={videoFile?.fileName || ''}>{videoFile?.fileName || '--'}</strong>
               </div>
             </div>
-            <div>
-              <span>playing</span>
-              <strong className="playing-time">{playingTime}</strong>
-            </div>
-            <div>
-              <span>Mode</span>
-              <strong className={repeat ? 'repeat-mode' : ''}>{repeat ? 'repeat' : 'normal'}</strong>
-            </div>
-            <div>
-              <span>speed</span>
-              <strong>{playbackRate}x</strong>
-            </div>
-            <div className="info-file">
-              <span>file</span>
-              <strong title={videoFile?.fileName || ''}>{videoFile?.fileName || '--'}</strong>
+            <div className="video-mini-controls" aria-label="Video controls">
+              <button data-tooltip="Play / Pause" onClick={() => runAction('video.togglePlay')} type="button">
+                <i className={`fa-solid ${playerRef.current?.paused?.() === false ? 'fa-pause' : 'fa-play'}`} aria-hidden="true" />
+              </button>
+              <button data-tooltip="Long Back" onClick={() => runAction('video.jumpBackLong')} type="button">
+                <i className="fa-solid fa-backward-fast" aria-hidden="true" />
+              </button>
+              <button data-tooltip="Short Back" onClick={() => runAction('video.jumpBackShort')} type="button">
+                <i className="fa-solid fa-backward-step" aria-hidden="true" />
+              </button>
+              <button data-tooltip="Short Forward" onClick={() => runAction('video.jumpForwardShort')} type="button">
+                <i className="fa-solid fa-forward-step" aria-hidden="true" />
+              </button>
+              <button data-tooltip="Long Forward" onClick={() => runAction('video.jumpForwardLong')} type="button">
+                <i className="fa-solid fa-forward-fast" aria-hidden="true" />
+              </button>
+              <button data-tooltip="Speed Down" onClick={() => runAction('video.speedDown')} type="button">
+                <i className="fa-solid fa-minus" aria-hidden="true" />
+              </button>
+              <button data-tooltip="Speed Up" onClick={() => runAction('video.speedUp')} type="button">
+                <i className="fa-solid fa-plus" aria-hidden="true" />
+              </button>
+              <button data-tooltip="Volume Down" onClick={() => runAction('video.volumeDown')} type="button">
+                <i className="fa-solid fa-volume-low" aria-hidden="true" />
+              </button>
+              <button data-tooltip="Volume Up" onClick={() => runAction('video.volumeUp')} type="button">
+                <i className="fa-solid fa-volume-high" aria-hidden="true" />
+              </button>
             </div>
           </div>
         </div>

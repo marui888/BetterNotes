@@ -28,8 +28,6 @@ function findActionByShortcut(shortcuts, scope, shortcut) {
 const VIDEO_CONTROL_ACTIONS = new Set([
   'video.jumpBackShort',
   'video.jumpForwardShort',
-  'video.jumpBackLong',
-  'video.jumpForwardLong',
   'video.speedUp',
   'video.speedDown',
   'video.volumeUp',

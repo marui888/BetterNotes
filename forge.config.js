@@ -1,11 +1,29 @@
 // const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 
+const fs = require('node:fs');
+const path = require('node:path');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
 module.exports = {
   packagerConfig: {
     asar: true,
     icon: './assets/icon',
+    afterCopy: [
+      (buildPath, electronVersion, platform, arch, callback) => {
+        try {
+          const source = path.join(__dirname, 'tools');
+          const target = path.join(buildPath, 'tools');
+
+          if (fs.existsSync(source)) {
+            fs.cpSync(source, target, { recursive: true, force: true });
+          }
+
+          callback();
+        } catch (error) {
+          callback(error);
+        }
+      },
+    ],
   },
   rebuildConfig: {},
   makers: [

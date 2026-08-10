@@ -1382,9 +1382,9 @@ button:hover {
 
 .video-bottom-panel {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(310px, 360px);
   gap: 8px;
-  height: 130px;
+  height: 148px;
   padding: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   background: #181818;
@@ -1405,6 +1405,14 @@ button:hover {
   border-color: #ff9900;
 }
 
+.video-side-panel {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+}
+
 .video-info {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1415,6 +1423,7 @@ button:hover {
   background: rgba(32, 32, 32, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.12);
   font-size: 12px;
+  min-height: 0;
 }
 
 .video-info > div {
@@ -1457,6 +1466,33 @@ button:hover {
 
 .video-info .info-file {
   grid-column: 1 / -1;
+}
+
+.video-mini-controls {
+  display: grid;
+  grid-template-columns: repeat(9, 28px);
+  gap: 5px;
+  justify-content: end;
+  min-width: 0;
+}
+
+.video-mini-controls button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: #f5deb3;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.video-mini-controls button:hover {
+  color: #111;
+  background: #ffb347;
+  border-color: #ffb347;
 }
 
 .video-toolbar {
@@ -1640,6 +1676,7 @@ button:hover {
 .context-menu {
   position: fixed;
   z-index: 80;
+  width: 210px;
   min-width: 170px;
   padding: 5px 0;
   background: rgba(45, 45, 45, 0.96);

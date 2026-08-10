@@ -312,6 +312,22 @@ export default function SettingsDialog({ onClose, onDefaultModeSaved }) {
                     <i className="fa-solid fa-folder-open" aria-hidden="true" />
                   </button>
                 </div>
+                <label htmlFor="settings-play-all-subtitle-suffix">PlayAll Subtitle Suffix</label>
+                <input
+                  id="settings-play-all-subtitle-suffix"
+                  placeholder=".en.vtt"
+                  value={draft.general.playAllSubtitleSuffix}
+                  onChange={(event) => {
+                    setMessage('')
+                    setDraft((current) => ({
+                      ...current,
+                      general: {
+                        ...current.general,
+                        playAllSubtitleSuffix: event.target.value,
+                      },
+                    }))
+                  }}
+                />
                 <label htmlFor="settings-text-auto-play-all">AutoPlay All</label>
                 <label className="settings-checkbox-row" htmlFor="settings-text-auto-play-all">
                   <input

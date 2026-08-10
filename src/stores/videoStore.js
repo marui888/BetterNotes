@@ -62,6 +62,20 @@ export const useVideoStore = create((set) => ({
         note.id === noteId ? { ...note, ...patch } : note
       )),
     })),
+  moveNote: (noteId, direction) =>
+    set((state) => {
+      const currentIndex = state.notes.findIndex((note) => note.id === noteId)
+      if (currentIndex < 0) return {}
+
+      const offset = direction === 'up' ? -1 : 1
+      const nextIndex = currentIndex + offset
+      if (nextIndex < 0 || nextIndex >= state.notes.length) return {}
+
+      const notes = [...state.notes]
+      const [note] = notes.splice(currentIndex, 1)
+      notes.splice(nextIndex, 0, note)
+      return { notes }
+    }),
   deleteNote: (noteId) =>
     set((state) => {
       const index = state.notes.findIndex((note) => note.id === noteId)

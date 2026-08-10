@@ -2,8 +2,9 @@ import cvModule from '@techstark/opencv-js'
 import { nativeImage } from 'electron'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { getDictionaryToolsRoot } from './toolPaths'
 
-const BLUE_RESULT_PATH = path.join(process.cwd(), 'tools', 'dictionary-ahk', 'webster-blue-result.json')
+const BLUE_RESULT_PATH = path.join(getDictionaryToolsRoot(), 'webster-blue-result.json')
 const MERGE_Y_GAP = 8
 const MERGE_X_GAP = 14
 

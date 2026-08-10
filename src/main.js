@@ -48,6 +48,7 @@ const DEFAULT_APP_SETTINGS = {
     globalActivationShortcut: 'Ctrl+Alt+F',
     monthlyNotesFolder: '',
     specialTextFolder: '',
+    playAllSubtitleSuffix: '.en.vtt',
     textAutoPlayAll: false,
     textAutoLookupDelayMs: 1500,
     wordsReviewFontSize: 13,
@@ -152,6 +153,9 @@ function normalizeAppSettings(value) {
   const specialTextFolder = typeof value?.general?.specialTextFolder === 'string'
     ? normalizeFilePath(value.general.specialTextFolder)
     : DEFAULT_APP_SETTINGS.general.specialTextFolder
+  const playAllSubtitleSuffix = typeof value?.general?.playAllSubtitleSuffix === 'string'
+    ? value.general.playAllSubtitleSuffix
+    : DEFAULT_APP_SETTINGS.general.playAllSubtitleSuffix
   const rawTextAutoLookupDelayMs = Number(value?.general?.textAutoLookupDelayMs)
   const textAutoLookupDelayMs = Number.isFinite(rawTextAutoLookupDelayMs)
     ? Math.max(200, Math.min(60000, Math.round(rawTextAutoLookupDelayMs)))
@@ -168,6 +172,7 @@ function normalizeAppSettings(value) {
       globalActivationShortcut,
       monthlyNotesFolder,
       specialTextFolder,
+      playAllSubtitleSuffix,
       textAutoPlayAll: value?.general?.textAutoPlayAll === true,
       textAutoLookupDelayMs,
       wordsReviewFontSize,

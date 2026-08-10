@@ -3,13 +3,15 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import { getDictionaryToolsRoot } from './toolPaths'
 
 const execFileAsync = promisify(execFile)
+const DICTIONARY_TOOLS_ROOT = getDictionaryToolsRoot()
 
 const AHK_EXE_PATH = 'D:\\AutoHotKey\\AutoHotkey.exe'
-const DICTIONARY_AHK_PATH = path.join(process.cwd(), 'tools', 'dictionary-ahk', 'dictionary-bridge.ahk')
-const DICTIONARY_RESULT_PATH = path.join(process.cwd(), 'tools', 'dictionary-ahk', 'dictionary-bridge-result.json')
-const WEBSTER_OUTPUT_IMAGE_PATH = path.join(process.cwd(), 'tools', 'dictionary-ahk', 'webster-output.png')
+const DICTIONARY_AHK_PATH = path.join(DICTIONARY_TOOLS_ROOT, 'dictionary-bridge.ahk')
+const DICTIONARY_RESULT_PATH = path.join(DICTIONARY_TOOLS_ROOT, 'dictionary-bridge-result.json')
+const WEBSTER_OUTPUT_IMAGE_PATH = path.join(DICTIONARY_TOOLS_ROOT, 'webster-output.png')
 const WEBSTER_OUTPUT_SCROLLBAR_WIDTH = 24
 
 async function readAhkResultJson() {

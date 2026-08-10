@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "savedAt": "2026-08-05T13:18:10.696Z",
+  "savedAt": "2026-08-10T03:06:49.956Z",
   "activeMode": "video",
   "modes": {
     "image": {
@@ -11,21 +11,21 @@
     },
     "text": {
       "activeTab": "words",
-      "wordsTabViewMode": "input",
+      "wordsTabViewMode": "review",
       "currentTxtFilePath": "D:\\temp\\WordListExamples\\王玉梅TOEFL\\list020.txt",
       "currentFolderPath": "D:\\temp\\WordListExamples\\王玉梅TOEFL",
-      "selectedRecordIndex": 7,
+      "selectedRecordIndex": 26,
       "specialTextFilePath": "D:\\temp\\WordListExamples\\特殊文件\\_不规则动词EE.txt",
       "specialFolderPath": "D:\\temp\\WordListExamples\\特殊文件"
     },
     "video": {
-      "currentFilePath": "D:\\temp\\tempVideo\\1.BBC谈中国制造2025：中国科技崛起，众多领域引领全球(Av113961269726090,P1).mp4",
-      "folderPath": "D:\\temp\\tempVideo",
+      "currentFilePath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中 高考\\一数 高考数学 最后十课2025\\高考最后十课-2025-函数与导数.mp4",
+      "folderPath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中 高考\\一数 高考数学 最后十课2025",
       "leftTab": "notes",
-      "selectedNoteIndex": 0,
-      "playbackTime": 156.262201,
+      "selectedNoteIndex": -1,
+      "playbackTime": 2230.772113,
       "playbackRate": 1,
-      "fullscreenCycleState": 0,
+      "fullscreenCycleState": 3,
       "panelsHidden": false
     }
   }
