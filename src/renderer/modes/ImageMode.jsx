@@ -1,7 +1,8 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_MODES, useAppStore } from '../../stores/appStore'
 import { IMAGE_SUFFIX_OPTIONS, useImageStore } from '../../stores/imageStore'
-import useModeHotkeys from '../hooks/useModeHotkeys'
+import { useSettingsStore } from '../../stores/settingsStore'
+import { registerActions, runAction } from '../actions/actionRegistry'
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return '--'
@@ -28,6 +29,12 @@ function splitPath(filePath) {
   }
 }
 
+function joinPath(folderPath, fileName) {
+  if (!folderPath || !fileName) return ''
+  const separator = folderPath.endsWith('\\') || folderPath.endsWith('/') ? '' : '\\'
+  return `${folderPath}${separator}${fileName}`
+}
+
 function addSuffixOnce(fileName, suffix) {
   const cleanSuffix = typeof suffix === 'string' ? suffix.trim() : ''
   if (!cleanSuffix) return fileName
@@ -38,22 +45,66 @@ function addSuffixOnce(fileName, suffix) {
   return `${name}${normalizedSuffix}${ext}`
 }
 
+const IMAGE_SORT_OPTIONS = [
+  { value: 'name', label: 'name' },
+  { value: 'modifiedTime', label: 'modified' },
+  { value: 'createdTime', label: 'created' },
+  { value: 'type', label: 'type' },
+]
+
+function getImageFileType(file) {
+  return file?.type || splitFileName(file?.fileName || '').ext.replace('.', '').toUpperCase()
+}
+
+function compareText(a, b) {
+  return String(a || '').localeCompare(String(b || ''), undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  })
+}
+
+function compareImageFiles(a, b, sortKey) {
+  if (sortKey === 'modifiedTime' || sortKey === 'createdTime') {
+    const result = (Number(a?.[sortKey]) || 0) - (Number(b?.[sortKey]) || 0)
+    return result || compareText(a?.fileName, b?.fileName)
+  }
+
+  if (sortKey === 'type') {
+    return compareText(getImageFileType(a), getImageFileType(b))
+      || compareText(a?.fileName, b?.fileName)
+  }
+
+  return compareText(a?.fileName, b?.fileName)
+}
+
 export default function ImageMode() {
   const currentListRef = useRef(null)
   const recentListRef = useRef(null)
   const noteEditorRef = useRef(null)
+  const contextMenuRef = useRef(null)
   const dialogResolveRef = useRef(null)
   const leaveGuardHandlerRef = useRef(null)
   const pendingFileNameRef = useRef('')
+  const pendingFolderPathRef = useRef('')
+  const autoLoadTimerRef = useRef(null)
+  const imageFilesRef = useRef([])
+  const selectedImagePathRef = useRef(null)
+  const selectedRecentPathRef = useRef(null)
   const [leftTab, setLeftTab] = useState('current')
   const [contextMenu, setContextMenu] = useState(null)
   const [dialog, setDialog] = useState(null)
   const [pendingFileName, setPendingFileName] = useState('')
+  const [pendingFolderPath, setPendingFolderPath] = useState('')
+  const [usingPicModeWideMoveFolder, setUsingPicModeWideMoveFolder] = useState(false)
   const [selectedRecentPath, setSelectedRecentPath] = useState(null)
   const [txtNoteEnabled, setTxtNoteEnabled] = useState(false)
+  const [currentSortKey, setCurrentSortKey] = useState('name')
+  const [currentSortDirection, setCurrentSortDirection] = useState('asc')
 
-  const mode = useAppStore((state) => state.mode)
   const dirty = useAppStore((state) => state.dirtyByMode.image)
+  const imageAutoLoadDelayMs = useSettingsStore((state) => state.settings.general.imageAutoLoadDelayMs)
+  const locallyMoveFolder = useSettingsStore((state) => state.settings.general.locallyMoveFolder)
+  const picModeWideMoveFolder = useSettingsStore((state) => state.settings.general.picModeWideMoveFolder)
   const recentImageFiles = useAppStore((state) => state.recentFiles.image || [])
   const recentImageFolders = useAppStore((state) => state.recentFolders.image || [])
   const setDirty = useAppStore((state) => state.setDirty)
@@ -78,8 +129,16 @@ export default function ImageMode() {
   const setSuffixOption = useImageStore((state) => state.setSuffixOption)
   const setCustomSuffix = useImageStore((state) => state.setCustomSuffix)
 
-  const selectedIndex = imageFiles.findIndex((item) => item.filePath === selectedImagePath)
+  const sortedImageFiles = useMemo(() => {
+    const direction = currentSortDirection === 'desc' ? -1 : 1
+    return [...imageFiles].sort((a, b) => compareImageFiles(a, b, currentSortKey) * direction)
+  }, [currentSortDirection, currentSortKey, imageFiles])
+
+  const selectedIndex = sortedImageFiles.findIndex((item) => item.filePath === selectedImagePath)
   const selectedRecentIndex = recentImageFiles.findIndex((filePath) => filePath === selectedRecentPath)
+  imageFilesRef.current = sortedImageFiles
+  selectedImagePathRef.current = selectedImagePath
+  selectedRecentPathRef.current = selectedRecentPath
 
   const scrollSelectedRowIntoView = (listRef) => {
     window.requestAnimationFrame(() => {
@@ -90,11 +149,18 @@ export default function ImageMode() {
 
   useEffect(() => {
     if (leftTab === 'current') scrollSelectedRowIntoView(currentListRef)
-  }, [leftTab, selectedImagePath])
+  }, [currentSortDirection, currentSortKey, leftTab, selectedImagePath, sortedImageFiles])
 
   useEffect(() => {
     if (leftTab === 'recent') scrollSelectedRowIntoView(recentListRef)
   }, [leftTab, selectedRecentPath])
+
+  useEffect(() => () => {
+    if (autoLoadTimerRef.current) {
+      clearTimeout(autoLoadTimerRef.current)
+      autoLoadTimerRef.current = null
+    }
+  }, [])
 
   const closeDialog = (decision) => {
     const resolve = dialogResolveRef.current
@@ -112,7 +178,7 @@ export default function ImageMode() {
     setDialog({
       title,
       message,
-      actions: [{ label: '纭畾', value: 'ok', primary: true }],
+      actions: [{ label: '确定', value: 'ok', primary: true }],
       autoClose: true,
     })
     setTimeout(() => closeDialog('ok'), timeout)
@@ -142,8 +208,8 @@ export default function ImageMode() {
       cancelValue: 'cancel',
       actions: [
         { label: 'Save', value: 'save', primary: true },
-        { label: '鏀惧純淇敼', value: 'discard', danger: true },
-        { label: '鍙栨秷', value: 'cancel' },
+        { label: '放弃修改', value: 'discard', danger: true },
+        { label: '取消', value: 'cancel' },
       ],
     })
 
@@ -238,11 +304,51 @@ export default function ImageMode() {
   }
 
   const loadImageFile = async (filePath) => {
-    if (!filePath || !window.imageApi?.getImageFileInfo) return
-    if (!(await confirmBeforeLeave())) return
+    if (!filePath || !window.imageApi?.getImageFileInfo) return false
+    if (!(await confirmBeforeLeave())) return false
 
     const info = await window.imageApi.getImageFileInfo(filePath)
     applyImageInfo(info)
+    return true
+  }
+
+  const scheduleImageLoad = (filePath, {
+    previousImagePath = selectedImagePathRef.current,
+    previousRecentPath = selectedRecentPathRef.current,
+    restoreEditorFocus = false,
+  } = {}) => {
+    if (!filePath) return
+    if (autoLoadTimerRef.current) {
+      clearTimeout(autoLoadTimerRef.current)
+      autoLoadTimerRef.current = null
+    }
+
+    const delay = Number.isFinite(Number(imageAutoLoadDelayMs))
+      ? Math.max(100, Math.min(10000, Math.round(Number(imageAutoLoadDelayMs))))
+      : 500
+
+    autoLoadTimerRef.current = setTimeout(async () => {
+      autoLoadTimerRef.current = null
+      const loaded = await loadImageFile(filePath)
+      if (!loaded) {
+        if (previousImagePath) {
+          selectedImagePathRef.current = previousImagePath
+          setSelectedImagePath(previousImagePath)
+        }
+        if (previousRecentPath) {
+          selectedRecentPathRef.current = previousRecentPath
+          setSelectedRecentPath(previousRecentPath)
+        }
+      }
+      if (restoreEditorFocus) {
+        setTimeout(() => {
+          const editor = noteEditorRef.current
+          if (!editor) return
+          editor.focus()
+          editor.selectionStart = editor.selectionEnd = editor.value.length
+        }, 0)
+      }
+    }, delay)
   }
 
   const loadImageFolderPath = async (folderPath) => {
@@ -276,9 +382,11 @@ export default function ImageMode() {
   }
 
   const selectImageByIndex = (index) => {
-    if (imageFiles.length === 0) return null
-    const safeIndex = Math.max(0, Math.min(index, imageFiles.length - 1))
-    const item = imageFiles[safeIndex]
+    const files = imageFilesRef.current || []
+    if (files.length === 0) return null
+    const safeIndex = Math.max(0, Math.min(index, files.length - 1))
+    const item = files[safeIndex]
+    selectedImagePathRef.current = item.filePath
     setSelectedImagePath(item.filePath)
     return item
   }
@@ -287,6 +395,7 @@ export default function ImageMode() {
     if (recentImageFiles.length === 0) return null
     const safeIndex = Math.max(0, Math.min(index, recentImageFiles.length - 1))
     const filePath = recentImageFiles[safeIndex]
+    selectedRecentPathRef.current = filePath
     setSelectedRecentPath(filePath)
     return filePath
   }
@@ -298,15 +407,17 @@ export default function ImageMode() {
     event.stopPropagation()
 
     if (event.key === 'Enter') {
-      const item = imageFiles.find((file) => file.filePath === selectedImagePath) || selectImageByIndex(0)
+      const item = imageFilesRef.current.find((file) => file.filePath === selectedImagePath) || selectImageByIndex(0)
       if (item) loadImageFile(item.filePath)
       return
     }
 
     const baseIndex = selectedIndex >= 0 ? selectedIndex : 0
-    selectImageByIndex(selectedIndex >= 0
+    const previousPath = selectedImagePathRef.current
+    const item = selectImageByIndex(selectedIndex >= 0
       ? baseIndex + (event.key === 'ArrowUp' ? -1 : 1)
       : 0)
+    if (item) scheduleImageLoad(item.filePath, { previousImagePath: previousPath })
   }
 
   const handleRecentListKeyDown = (event) => {
@@ -322,14 +433,17 @@ export default function ImageMode() {
     }
 
     const baseIndex = selectedRecentIndex >= 0 ? selectedRecentIndex : 0
-    selectRecentByIndex(selectedRecentIndex >= 0
+    const previousPath = selectedRecentPathRef.current
+    const filePath = selectRecentByIndex(selectedRecentIndex >= 0
       ? baseIndex + (event.key === 'ArrowUp' ? -1 : 1)
       : 0)
+    if (filePath) scheduleImageLoad(filePath, { previousRecentPath: previousPath })
   }
 
   const openFileMenu = (event, file) => {
     event.preventDefault()
     event.stopPropagation()
+    selectedImagePathRef.current = file.filePath
     setSelectedImagePath(file.filePath)
     setContextMenu({
       x: event.clientX,
@@ -339,12 +453,15 @@ export default function ImageMode() {
 
   useEffect(() => {
     if (!contextMenu) return undefined
-    const closeMenu = () => setContextMenu(null)
+    const closeMenu = (event) => {
+      if (contextMenuRef.current?.contains(event.target)) return
+      setContextMenu(null)
+    }
     window.addEventListener('click', closeMenu, true)
     return () => window.removeEventListener('click', closeMenu, true)
   }, [contextMenu])
 
-  const getSuffix = () => (suffixOption === '鍏跺畠' ? customSuffix : suffixOption)
+  const getSuffix = () => (suffixOption === '其它' ? customSuffix : suffixOption)
 
   const buildSuggestedFileName = (operation, fileName) => {
     if (operation === 'move') return fileName
@@ -352,9 +469,40 @@ export default function ImageMode() {
   }
 
   const getOperationTitle = (operation) => {
-    if (operation === 'rename') return '纭鏀瑰悕'
-    if (operation === 'move') return '纭绉诲姩'
-    return 'Confirm Rename and Move'
+    if (operation === 'rename') return '确认改名'
+    if (operation === 'move') return '确认移动'
+    return '确认改名并移动'
+  }
+
+  const getDefaultMoveFolderPath = (folderPath) => {
+    const folderName = typeof locallyMoveFolder === 'string' && locallyMoveFolder.trim()
+      ? locallyMoveFolder.trim()
+      : 'tempPictures'
+    return joinPath(folderPath, folderName)
+  }
+
+  const changeUsingPicModeWideMoveFolder = (checked, operation, oldFolderPath) => {
+    setUsingPicModeWideMoveFolder(checked)
+    const nextFolderPath = checked
+      ? (picModeWideMoveFolder || '')
+      : operation === 'move' || operation === 'moveRename'
+        ? getDefaultMoveFolderPath(oldFolderPath)
+        : oldFolderPath
+    pendingFolderPathRef.current = nextFolderPath
+    setPendingFolderPath(nextFolderPath)
+  }
+
+  const choosePendingTargetFolder = async () => {
+    if (!window.appApi?.selectFolder) {
+      showAutoMessage('Folder API unavailable', 'Cannot choose target folder.')
+      return
+    }
+
+    const result = await window.appApi.selectFolder()
+    if (!result?.ok || result.canceled) return
+
+    pendingFolderPathRef.current = result.folderPath || ''
+    setPendingFolderPath(result.folderPath || '')
   }
 
   const refreshCurrentFolder = async (folderPath, nextSelectedPath = null) => {
@@ -367,36 +515,48 @@ export default function ImageMode() {
   }
 
   const operateSelectedFile = async (operation) => {
-    if (!selectedImagePath || !window.imageApi?.operateFile) return
+    const activeImagePath = selectedImagePathRef.current || selectedImagePath
+    if (!activeImagePath || !window.imageApi?.operateFile) return
 
-    const selectedFile = imageFiles.find((file) => file.filePath === selectedImagePath)
+    const selectedFile = imageFiles.find((file) => file.filePath === activeImagePath)
     if (!selectedFile) return
 
+    const oldFolderPath = selectedFile.folderPath || splitPath(selectedFile.filePath).folderPath
     const suggestedFileName = buildSuggestedFileName(operation, selectedFile.fileName)
+    const suggestedFolderPath = operation === 'move' || operation === 'moveRename'
+      ? getDefaultMoveFolderPath(oldFolderPath)
+      : oldFolderPath
+    pendingFolderPathRef.current = suggestedFolderPath
     pendingFileNameRef.current = suggestedFileName
+    setPendingFolderPath(suggestedFolderPath)
     setPendingFileName(suggestedFileName)
+    setUsingPicModeWideMoveFolder(false)
     const decision = await showActionDialog({
       title: getOperationTitle(operation),
       defaultValue: 'ok',
       cancelValue: 'cancel',
+      operation,
+      oldFolderPath,
       oldFileName: selectedFile.fileName,
-      newFileNameEditable: true,
+      targetPathEditable: true,
       actions: [
-        { label: '纭', value: 'ok', primary: true },
-        { label: '鍙栨秷', value: 'cancel' },
+        { label: '确认', value: 'ok', primary: true },
+        { label: '取消', value: 'cancel' },
       ],
     })
     if (decision !== 'ok') return
 
     const result = await window.imageApi.operateFile({
-      filePath: selectedImagePath,
+      filePath: activeImagePath,
       operation,
+      targetFolderPath: pendingFolderPathRef.current || suggestedFolderPath,
       targetFileName: pendingFileNameRef.current || suggestedFileName,
     })
     setContextMenu(null)
     if (!result?.ok) return
 
-    const movedAway = operation === 'move' || operation === 'moveRename'
+    const movedAway = result.targetFolder
+      && result.targetFolder.toLowerCase() !== result.folderPath.toLowerCase()
     await refreshCurrentFolder(result.folderPath, movedAway ? null : result.filePath)
     if (!movedAway) {
       const info = await window.imageApi.getImageFileInfo(result.filePath)
@@ -417,38 +577,98 @@ export default function ImageMode() {
   }
 
   const toggleFocusBetweenCurrentListAndNoteInput = () => {
-    const list = currentListRef.current
-    const editor = noteEditorRef.current
-    if (!list || !editor) return
+    const focusEditor = () => {
+      const editor = noteEditorRef.current
+      if (!editor) return
 
-    if (document.activeElement === editor) {
+      editor.focus()
+      editor.selectionStart = editor.selectionEnd = editor.value.length
+    }
+
+    if (document.activeElement === noteEditorRef.current) {
+      const list = currentListRef.current
+      if (!list) return
       if (leftTab !== 'current') setLeftTab('current')
-      setTimeout(() => list.focus(), 0)
+      setTimeout(() => {
+        list.focus()
+      }, 0)
       return
     }
 
     if (leftTab !== 'current') {
       setLeftTab('current')
-      setTimeout(() => list.focus(), 0)
+      setTimeout(focusEditor, 0)
       return
     }
 
-    if (document.activeElement === list) {
-      editor.focus()
-      setTimeout(() => {
-        editor.selectionStart = editor.selectionEnd = editor.value.length
-      }, 0)
-      return
-    }
-
-    list.focus()
+    focusEditor()
   }
 
-  const handlers = useMemo(() => ({
-    'alt+e': () => toggleFocusBetweenCurrentListAndNoteInput(),
-  }), [toggleFocusBetweenCurrentListAndNoteInput])
+  const moveCurrentImageByStep = (step) => {
+    if (imageFilesRef.current.length === 0) return
 
-  useModeHotkeys(dialog ? {} : handlers, mode === APP_MODES.IMAGE)
+    const shouldRestoreEditorFocus = document.activeElement === noteEditorRef.current
+    const currentIndex = imageFilesRef.current.findIndex((item) => item.filePath === selectedImagePathRef.current)
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0
+    const previousPath = selectedImagePathRef.current
+    const item = selectImageByIndex(baseIndex + step)
+    if (item) {
+      scheduleImageLoad(item.filePath, {
+        previousImagePath: previousPath,
+        restoreEditorFocus: shouldRestoreEditorFocus,
+      })
+    }
+  }
+
+  useEffect(() => registerActions([
+    {
+      id: 'image.intoEditingFocus',
+      label: 'Into Editing Focus',
+      scope: APP_MODES.IMAGE,
+      handler: toggleFocusBetweenCurrentListAndNoteInput,
+    },
+    {
+      id: 'image.previousImage',
+      label: 'Previous Image',
+      scope: APP_MODES.IMAGE,
+      handler: () => moveCurrentImageByStep(-1),
+    },
+    {
+      id: 'image.nextImage',
+      label: 'Next Image',
+      scope: APP_MODES.IMAGE,
+      handler: () => moveCurrentImageByStep(1),
+    },
+    {
+      id: 'image.saveNote',
+      label: 'Save',
+      scope: APP_MODES.IMAGE,
+      handler: saveImageNote,
+    },
+    {
+      id: 'image.renameFile',
+      label: 'Rename',
+      scope: APP_MODES.IMAGE,
+      handler: () => operateSelectedFile('rename'),
+    },
+    {
+      id: 'image.moveFile',
+      label: 'Move',
+      scope: APP_MODES.IMAGE,
+      handler: () => operateSelectedFile('move'),
+    },
+    {
+      id: 'image.moveRenameFile',
+      label: 'Move&Re',
+      scope: APP_MODES.IMAGE,
+      handler: () => operateSelectedFile('moveRename'),
+    },
+  ]), [
+    moveCurrentImageByStep,
+    operateSelectedFile,
+    saveImageNote,
+    toggleFocusBetweenCurrentListAndNoteInput,
+  ])
 
   return (
     <section className="image-mode">
@@ -473,16 +693,46 @@ export default function ImageMode() {
 
         {leftTab === 'current' ? (
           <div className="image-list-panel">
-            <div className="list-title">Current files</div>
+            <div className="list-title">Files:</div>
+            <div className="image-sort-bar" aria-label="Image file sorting">
+              <label>
+                <span>Sort</span>
+                <select
+                  onChange={(event) => setCurrentSortKey(event.target.value)}
+                  value={currentSortKey}
+                >
+                  {IMAGE_SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                aria-label={currentSortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                className="image-sort-direction"
+                data-tooltip={currentSortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                onClick={() => setCurrentSortDirection((value) => (value === 'asc' ? 'desc' : 'asc'))}
+                type="button"
+              >
+                <i
+                  className={currentSortDirection === 'asc'
+                    ? 'fa-solid fa-arrow-up-a-z'
+                    : 'fa-solid fa-arrow-down-z-a'}
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
             <div className="image-file-list" onKeyDown={handleCurrentListKeyDown} ref={currentListRef} tabIndex={0}>
-              {imageFiles.length === 0 ? (
+              {sortedImageFiles.length === 0 ? (
                 <div className="empty-list">No image files loaded</div>
               ) : (
-                imageFiles.map((file) => (
+                sortedImageFiles.map((file) => (
                   <button
                     className={file.filePath === selectedImagePath ? 'image-list-row active' : 'image-list-row'}
                     key={file.filePath}
-                    onClick={() => setSelectedImagePath(file.filePath)}
+                    onClick={() => {
+                      selectedImagePathRef.current = file.filePath
+                      setSelectedImagePath(file.filePath)
+                    }}
                     onContextMenu={(event) => openFileMenu(event, file)}
                     onDoubleClick={() => loadImageFile(file.filePath)}
                     title={file.filePath}
@@ -562,7 +812,9 @@ export default function ImageMode() {
         <aside className="image-toolbar">
         <button type="button" onClick={openImageFile}>Open File</button>
         <button type="button" onClick={openImageFolder}>Open Folder</button>
-        <button type="button" onClick={saveImageNote}>Save</button>
+        <button type="button" onClick={() => runAction('image.saveNote')}>Save</button>
+        <button type="button" onClick={() => runAction('image.previousImage')}>Pre</button>
+        <button type="button" onClick={() => runAction('image.nextImage')}>Next</button>
         <label className="toolbar-field">
           <span>Suffix</span>
           <select value={suffixOption} onChange={(event) => setSuffixOption(event.target.value)}>
@@ -571,7 +823,7 @@ export default function ImageMode() {
             ))}
           </select>
         </label>
-        {suffixOption === '鍏跺畠' ? (
+        {suffixOption === '其它' ? (
           <input
             className="toolbar-input"
             onChange={(event) => setCustomSuffix(event.target.value)}
@@ -587,9 +839,9 @@ export default function ImageMode() {
           />
           <span>txtNote</span>
         </label>
-        <button type="button" onClick={() => operateSelectedFile('rename')}>Rename</button>
-        <button type="button" onClick={() => operateSelectedFile('move')}>Move</button>
-        <button type="button" onClick={() => operateSelectedFile('moveRename')}>Move&Re</button>
+        <button type="button" onClick={() => runAction('image.renameFile')}>Rename</button>
+        <button type="button" onClick={() => runAction('image.moveFile')}>Move</button>
+        <button type="button" onClick={() => runAction('image.moveRenameFile')}>Move&Re</button>
         </aside>
       </div>
 
@@ -603,33 +855,35 @@ export default function ImageMode() {
       {contextMenu ? (
         <div
           className="context-menu image-context-menu"
+          ref={contextMenuRef}
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(event) => event.stopPropagation()}
         >
           <label className="context-field">
-            <span>鍚庣紑</span>
+            <span>后缀</span>
             <select value={suffixOption} onChange={(event) => setSuffixOption(event.target.value)}>
               {IMAGE_SUFFIX_OPTIONS.map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
           </label>
-          {suffixOption === '鍏跺畠' ? (
+          {suffixOption === '其它' ? (
             <input
               className="context-input"
               onChange={(event) => setCustomSuffix(event.target.value)}
-              placeholder="杈撳叆鍚庣紑"
+              placeholder="输入后缀"
               value={customSuffix}
             />
           ) : null}
-          <button className="context-menu-item" onMouseDown={() => operateSelectedFile('rename')} type="button">
-            鏀瑰悕
+          <button className="context-menu-item" onMouseDown={() => runAction('image.renameFile')} type="button">
+            改名
           </button>
-          <button className="context-menu-item" onMouseDown={() => operateSelectedFile('move')} type="button">
-            绉诲姩
+          <button className="context-menu-item" onMouseDown={() => runAction('image.moveFile')} type="button">
+            移动
           </button>
-          <button className="context-menu-item" onMouseDown={() => operateSelectedFile('moveRename')} type="button">
-            鏀瑰悕骞剁Щ鍔?          </button>
+          <button className="context-menu-item" onMouseDown={() => runAction('image.moveRenameFile')} type="button">
+            改名并移动
+          </button>
         </div>
       ) : null}
 
@@ -637,14 +891,52 @@ export default function ImageMode() {
         <div className="inline-dialog-mask">
           <div className="inline-dialog">
             <div className="inline-dialog-title">{dialog.title}</div>
-            {dialog.newFileNameEditable ? (
+            {dialog.targetPathEditable ? (
               <div className="file-operation-fields">
                 <label>
-                  <span>鏃ф枃浠跺悕</span>
-                  <strong>{dialog.oldFileName}</strong>
+                  <span>旧文件夹</span>
+                  <strong className="wrap-value" title={dialog.oldFolderPath}>{dialog.oldFolderPath}</strong>
                 </label>
                 <label>
-                  <span>鏂版枃浠跺悕</span>
+                  <span>旧文件名</span>
+                  <strong className="wrap-value">{dialog.oldFileName}</strong>
+                </label>
+                <label className="file-operation-wide-check">
+                  <input
+                    checked={usingPicModeWideMoveFolder}
+                    disabled={!picModeWideMoveFolder}
+                    onChange={(event) => {
+                      changeUsingPicModeWideMoveFolder(
+                        event.target.checked,
+                        dialog.operation,
+                        dialog.oldFolderPath
+                      )
+                    }}
+                    type="checkbox"
+                  />
+                  <span>Using PicMode-wide Move Folder</span>
+                </label>
+                <label>
+                  <span>新文件夹</span>
+                  <div className="file-operation-folder-row">
+                    <input
+                      onChange={(event) => {
+                        pendingFolderPathRef.current = event.target.value
+                        setPendingFolderPath(event.target.value)
+                      }}
+                      value={pendingFolderPath}
+                    />
+                    <button
+                      data-tooltip="Choose folder"
+                      onClick={choosePendingTargetFolder}
+                      type="button"
+                    >
+                      <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                    </button>
+                  </div>
+                </label>
+                <label>
+                  <span>新文件名</span>
                   <input
                     onChange={(event) => {
                       pendingFileNameRef.current = event.target.value

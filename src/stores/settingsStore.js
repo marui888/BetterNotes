@@ -16,6 +16,10 @@ export const DEFAULT_APP_SETTINGS = {
     monthlyNotesFolder: '',
     specialTextFolder: '',
     playAllSubtitleSuffix: '.en.vtt',
+    subtitleConvertPromptTimeoutSec: 5,
+    imageAutoLoadDelayMs: 500,
+    locallyMoveFolder: 'tempPictures',
+    picModeWideMoveFolder: '',
     textAutoPlayAll: false,
     textAutoLookupDelayMs: 1500,
     wordsReviewFontSize: 13,
@@ -32,7 +36,7 @@ export const DEFAULT_APP_SETTINGS = {
       'video.setStart': 'F2',
       'video.setEnd': 'F3',
       'video.jumpForward': 'F4',
-      'video.toggleFocus': 'Alt+E',
+      'video.intoEditingFocus': 'Alt+E',
       'video.appendMark': '',
       'video.appendQuickMark': 'Ctrl+S',
       'video.toggleControlMode': 'Alt+V',
@@ -54,24 +58,47 @@ export const DEFAULT_APP_SETTINGS = {
       'video.updateRange': 'Ctrl+G',
       'video.writeCurrentRange': 'Ctrl+W',
     },
-    [APP_MODES.IMAGE]: {},
+    [APP_MODES.IMAGE]: {
+      'image.intoEditingFocus': 'Alt+E',
+      'image.previousImage': '',
+      'image.nextImage': '',
+      'image.saveNote': '',
+      'image.renameFile': '',
+      'image.moveFile': '',
+      'image.moveRenameFile': '',
+    },
     [APP_MODES.TEXT]: {
+      'text.intoEditingFocus': 'Alt+E',
       'text.lookup': 'Ctrl+Enter',
       'text.pasteAndLookup': 'Ctrl+G',
-      'text.saveTo': '',
+      'text.toggleView': '',
+      'text.replace': '',
+      'text.replaceLine': '',
+      'text.saveToSpecificFile': '',
       'text.saveToEn': '',
       'text.saveToZh': '',
     },
     [APP_MODES.SEARCH]: {},
-    global: {},
+    global: {
+      'global.cycleMode': '',
+    },
   },
 }
 
 function mergeShortcutBucket(scope, value) {
   const defaults = DEFAULT_APP_SETTINGS.shortcuts[scope] || {}
-  return value && typeof value === 'object'
+  const merged = value && typeof value === 'object'
     ? { ...defaults, ...value }
     : { ...defaults }
+  if (scope === APP_MODES.VIDEO && !merged['video.intoEditingFocus'] && value?.['video.toggleFocus']) {
+    merged['video.intoEditingFocus'] = value['video.toggleFocus']
+  }
+  if (scope === APP_MODES.TEXT && !merged['text.saveToSpecificFile'] && value?.['text.saveTo']) {
+    merged['text.saveToSpecificFile'] = value['text.saveTo']
+  }
+  delete merged['video.toggleFocus']
+  delete merged['text.saveTo']
+  return merged
 }
 
 function normalizeShortcutBuckets(value) {
@@ -100,10 +127,29 @@ export function normalizeAppSettings(value) {
   const playAllSubtitleSuffix = typeof value?.general?.playAllSubtitleSuffix === 'string'
     ? value.general.playAllSubtitleSuffix
     : DEFAULT_APP_SETTINGS.general.playAllSubtitleSuffix
+  const rawSubtitleConvertPromptTimeoutSec = Number(value?.general?.subtitleConvertPromptTimeoutSec)
+  const subtitleConvertPromptTimeoutSec = Number.isFinite(rawSubtitleConvertPromptTimeoutSec)
+    ? Math.max(1, Math.min(60, Math.round(rawSubtitleConvertPromptTimeoutSec)))
+    : DEFAULT_APP_SETTINGS.general.subtitleConvertPromptTimeoutSec
   const rawTextAutoLookupDelayMs = Number(value?.general?.textAutoLookupDelayMs)
   const textAutoLookupDelayMs = Number.isFinite(rawTextAutoLookupDelayMs)
     ? Math.max(200, Math.min(60000, Math.round(rawTextAutoLookupDelayMs)))
     : DEFAULT_APP_SETTINGS.general.textAutoLookupDelayMs
+  const rawImageAutoLoadDelayMs = Number(value?.general?.imageAutoLoadDelayMs)
+  const imageAutoLoadDelayMs = Number.isFinite(rawImageAutoLoadDelayMs)
+    ? Math.max(100, Math.min(10000, Math.round(rawImageAutoLoadDelayMs)))
+    : DEFAULT_APP_SETTINGS.general.imageAutoLoadDelayMs
+  const rawLocallyMoveFolder = typeof value?.general?.locallyMoveFolder === 'string'
+    ? value.general.locallyMoveFolder.trim()
+    : typeof value?.general?.pictureMoveFolderName === 'string'
+      ? value.general.pictureMoveFolderName.trim()
+      : ''
+  const locallyMoveFolder = rawLocallyMoveFolder && !/[\\/]/.test(rawLocallyMoveFolder)
+    ? rawLocallyMoveFolder
+    : DEFAULT_APP_SETTINGS.general.locallyMoveFolder
+  const picModeWideMoveFolder = typeof value?.general?.picModeWideMoveFolder === 'string'
+    ? value.general.picModeWideMoveFolder.trim()
+    : ''
   const rawWordsReviewFontSize = Number(value?.general?.wordsReviewFontSize)
   const wordsReviewFontSize = Number.isFinite(rawWordsReviewFontSize)
     ? Math.max(10, Math.min(32, Math.round(rawWordsReviewFontSize)))
@@ -117,6 +163,10 @@ export function normalizeAppSettings(value) {
       monthlyNotesFolder,
       specialTextFolder,
       playAllSubtitleSuffix,
+      subtitleConvertPromptTimeoutSec,
+      imageAutoLoadDelayMs,
+      locallyMoveFolder,
+      picModeWideMoveFolder,
       textAutoPlayAll: value?.general?.textAutoPlayAll === true,
       textAutoLookupDelayMs,
       wordsReviewFontSize,

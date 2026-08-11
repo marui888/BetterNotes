@@ -73,7 +73,7 @@ function validateGlobalActivationShortcut(shortcut) {
   return { ok: true }
 }
 
-export default function SettingsDialog({ onClose, onDefaultModeSaved }) {
+export default function SettingsDialog({ onClose }) {
   const settings = useSettingsStore((state) => state.settings)
   const saveSettings = useSettingsStore((state) => state.saveSettings)
   const [draft, setDraft] = useState(() => normalizeAppSettings(settings))
@@ -119,12 +119,12 @@ export default function SettingsDialog({ onClose, onDefaultModeSaved }) {
   }
 
   const chooseMonthlyNotesFolder = async () => {
-    if (!window.textApi?.selectFolder) {
+    if (!window.appApi?.selectFolder) {
       setMessage('Folder API unavailable')
       return
     }
 
-    const result = await window.textApi.selectFolder()
+    const result = await window.appApi.selectFolder()
     if (!result?.ok || result.canceled) return
 
     setMessage('')
@@ -138,12 +138,12 @@ export default function SettingsDialog({ onClose, onDefaultModeSaved }) {
   }
 
   const chooseSpecialTextFolder = async () => {
-    if (!window.textApi?.selectFolder) {
+    if (!window.appApi?.selectFolder) {
       setMessage('Folder API unavailable')
       return
     }
 
-    const result = await window.textApi.selectFolder()
+    const result = await window.appApi.selectFolder()
     if (!result?.ok || result.canceled) return
 
     setMessage('')
@@ -152,6 +152,25 @@ export default function SettingsDialog({ onClose, onDefaultModeSaved }) {
       general: {
         ...current.general,
         specialTextFolder: result.folderPath || '',
+      },
+    }))
+  }
+
+  const choosePicModeWideMoveFolder = async () => {
+    if (!window.appApi?.selectFolder) {
+      setMessage('Folder API unavailable')
+      return
+    }
+
+    const result = await window.appApi.selectFolder()
+    if (!result?.ok || result.canceled) return
+
+    setMessage('')
+    setDraft((current) => ({
+      ...current,
+      general: {
+        ...current.general,
+        picModeWideMoveFolder: result.folderPath || '',
       },
     }))
   }
@@ -190,7 +209,6 @@ export default function SettingsDialog({ onClose, onDefaultModeSaved }) {
       return null
     }
 
-    onDefaultModeSaved?.(savedSettings.general.defaultMode)
     setMessage('Saved')
     return savedSettings
   }
@@ -221,231 +239,309 @@ export default function SettingsDialog({ onClose, onDefaultModeSaved }) {
 
           <div className="settings-tab-page">
             {mainTab === MAIN_TABS.GENERAL ? (
-              <div className="settings-form-grid">
-                <label htmlFor="settings-default-mode">Default mode</label>
-                <select
-                  id="settings-default-mode"
-                  value={draft.general.defaultMode}
-                  onChange={(event) => {
-                    setMessage('')
-                    setDraft((current) => ({
-                      ...current,
-                      general: {
-                        ...current.general,
-                        defaultMode: event.target.value,
-                      },
-                    }))
-                  }}
-                >
-                  {Object.values(APP_MODES).map((mode) => (
-                    <option key={mode} value={mode}>
-                      {modeLabels[mode]}
-                    </option>
-                  ))}
-                </select>
-                <label htmlFor="settings-global-activation-shortcut">Global Activation Shortcut</label>
-                <input
-                  id="settings-global-activation-shortcut"
-                  value={draft.general.globalActivationShortcut}
-                  placeholder="Ctrl+Alt+F"
-                  onKeyDown={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    const shortcut = formatShortcutEvent(event)
-                    if (!shortcut) return
-                    setMessage('')
-                    setDraft((current) => ({
-                      ...current,
-                      general: {
-                        ...current.general,
-                        globalActivationShortcut: shortcut,
-                      },
-                    }))
-                  }}
-                  onChange={() => {}}
-                />
-                <label htmlFor="settings-monthly-notes-folder">Monthly Text Folder</label>
-                <div className="settings-folder-row">
-                  <input
-                    id="settings-monthly-notes-folder"
-                    value={draft.general.monthlyNotesFolder}
-                    onChange={(event) => {
-                      setMessage('')
-                      setDraft((current) => ({
-                        ...current,
-                        general: {
-                          ...current.general,
-                          monthlyNotesFolder: event.target.value,
-                        },
-                      }))
-                    }}
-                  />
-                  <button
-                    data-tooltip="Choose folder"
-                    onClick={chooseMonthlyNotesFolder}
-                    type="button"
-                  >
-                    <i className="fa-solid fa-folder-open" aria-hidden="true" />
-                  </button>
-                </div>
-                <label htmlFor="settings-special-text-folder">Special Text Folder</label>
-                <div className="settings-folder-row">
-                  <input
-                    id="settings-special-text-folder"
-                    value={draft.general.specialTextFolder}
-                    onChange={(event) => {
-                      setMessage('')
-                      setDraft((current) => ({
-                        ...current,
-                        general: {
-                          ...current.general,
-                          specialTextFolder: event.target.value,
-                        },
-                      }))
-                    }}
-                  />
-                  <button
-                    data-tooltip="Choose folder"
-                    onClick={chooseSpecialTextFolder}
-                    type="button"
-                  >
-                    <i className="fa-solid fa-folder-open" aria-hidden="true" />
-                  </button>
-                </div>
-                <label htmlFor="settings-play-all-subtitle-suffix">PlayAll Subtitle Suffix</label>
-                <input
-                  id="settings-play-all-subtitle-suffix"
-                  placeholder=".en.vtt"
-                  value={draft.general.playAllSubtitleSuffix}
-                  onChange={(event) => {
-                    setMessage('')
-                    setDraft((current) => ({
-                      ...current,
-                      general: {
-                        ...current.general,
-                        playAllSubtitleSuffix: event.target.value,
-                      },
-                    }))
-                  }}
-                />
-                <label htmlFor="settings-text-auto-play-all">AutoPlay All</label>
-                <label className="settings-checkbox-row" htmlFor="settings-text-auto-play-all">
-                  <input
-                    checked={draft.general.textAutoPlayAll}
-                    id="settings-text-auto-play-all"
-                    type="checkbox"
-                    onChange={(event) => {
-                      setMessage('')
-                      setDraft((current) => ({
-                        ...current,
-                        general: {
-                          ...current.general,
-                          textAutoPlayAll: event.target.checked,
-                        },
-                      }))
-                    }}
-                  />
-                  <span>Enabled</span>
-                </label>
-                <label htmlFor="settings-text-auto-lookup-delay">AutoPlay Delay</label>
-                <input
-                  id="settings-text-auto-lookup-delay"
-                  min="200"
-                  step="100"
-                  type="number"
-                  value={draft.general.textAutoLookupDelayMs}
-                  onChange={(event) => {
-                    setMessage('')
-                    setDraft((current) => ({
-                      ...current,
-                      general: {
-                        ...current.general,
-                        textAutoLookupDelayMs: event.target.value,
-                      },
-                    }))
-                  }}
-                />
-                <label htmlFor="settings-words-review-font-size">Words Review Font Size</label>
-                <input
-                  id="settings-words-review-font-size"
-                  min="10"
-                  max="32"
-                  step="1"
-                  type="number"
-                  value={draft.general.wordsReviewFontSize}
-                  onChange={(event) => {
-                    setMessage('')
-                    setDraft((current) => ({
-                      ...current,
-                      general: {
-                        ...current.general,
-                        wordsReviewFontSize: event.target.value,
-                      },
-                    }))
-                  }}
-                />
-                <label htmlFor="settings-webster-spell-out">Webster Spell Out</label>
-                <label className="settings-checkbox-row" htmlFor="settings-webster-spell-out">
-                  <input
-                    checked={draft.general.websterSpellOut}
-                    id="settings-webster-spell-out"
-                    type="checkbox"
-                    onChange={(event) => {
-                      setMessage('')
-                      setDraft((current) => ({
-                        ...current,
-                        general: {
-                          ...current.general,
-                          websterSpellOut: event.target.checked,
-                        },
-                      }))
-                    }}
-                  />
-                  <span>Enabled</span>
-                </label>
-                <label>Dicts For AutoPlay</label>
-                <div className="settings-checkbox-group">
-                  <label className="settings-checkbox-row">
+              <div className="settings-general-sections">
+                <section className="settings-section">
+                  <div className="settings-section-title">Common</div>
+                  <div className="settings-form-grid">
+                    <label htmlFor="settings-global-activation-shortcut">Global Activation Shortcut</label>
                     <input
-                      checked={draft.general.textAutoPlayDicts?.mdict !== false}
-                      type="checkbox"
+                      id="settings-global-activation-shortcut"
+                      value={draft.general.globalActivationShortcut}
+                      placeholder="Ctrl+Alt+F"
+                      onKeyDown={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        const shortcut = formatShortcutEvent(event)
+                        if (!shortcut) return
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            globalActivationShortcut: shortcut,
+                          },
+                        }))
+                      }}
+                      onChange={() => {}}
+                    />
+                  </div>
+                </section>
+
+                <section className="settings-section">
+                  <div className="settings-section-title">Video</div>
+                  <div className="settings-form-grid">
+                    <label htmlFor="settings-play-all-subtitle-suffix">PlayAll Subtitle Suffix</label>
+                    <input
+                      id="settings-play-all-subtitle-suffix"
+                      placeholder=".en.vtt"
+                      value={draft.general.playAllSubtitleSuffix}
                       onChange={(event) => {
                         setMessage('')
                         setDraft((current) => ({
                           ...current,
                           general: {
                             ...current.general,
-                            textAutoPlayDicts: {
-                              ...(current.general.textAutoPlayDicts || {}),
-                              mdict: event.target.checked,
-                            },
+                            playAllSubtitleSuffix: event.target.value,
                           },
                         }))
                       }}
                     />
-                    <span>MDict</span>
-                  </label>
-                  <label className="settings-checkbox-row">
+                    <label htmlFor="settings-subtitle-convert-timeout">Subtitle Convert Timeout</label>
                     <input
-                      checked={draft.general.textAutoPlayDicts?.webster !== false}
-                      type="checkbox"
+                      id="settings-subtitle-convert-timeout"
+                      min="1"
+                      max="60"
+                      step="1"
+                      type="number"
+                      value={draft.general.subtitleConvertPromptTimeoutSec}
                       onChange={(event) => {
                         setMessage('')
                         setDraft((current) => ({
                           ...current,
                           general: {
                             ...current.general,
-                            textAutoPlayDicts: {
-                              ...(current.general.textAutoPlayDicts || {}),
-                              webster: event.target.checked,
-                            },
+                            subtitleConvertPromptTimeoutSec: event.target.value,
                           },
                         }))
                       }}
                     />
-                    <span>Webster</span>
-                  </label>
-                </div>
+                  </div>
+                </section>
+
+                <section className="settings-section">
+                  <div className="settings-section-title">Picture</div>
+                  <div className="settings-form-grid">
+                    <label htmlFor="settings-image-auto-load-delay">Image Auto Load Delay</label>
+                    <input
+                      id="settings-image-auto-load-delay"
+                      min="100"
+                      step="100"
+                      type="number"
+                      value={draft.general.imageAutoLoadDelayMs}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            imageAutoLoadDelayMs: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                    <label htmlFor="settings-locally-move-folder">Locally Move Folder</label>
+                    <input
+                      id="settings-locally-move-folder"
+                      value={draft.general.locallyMoveFolder}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            locallyMoveFolder: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                    <label htmlFor="settings-picmode-wide-move-folder">PicMode-wide Move Folder</label>
+                    <div className="settings-folder-row">
+                      <input
+                        id="settings-picmode-wide-move-folder"
+                        value={draft.general.picModeWideMoveFolder}
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              picModeWideMoveFolder: event.target.value,
+                            },
+                          }))
+                        }}
+                      />
+                      <button
+                        data-tooltip="Choose folder"
+                        onClick={choosePicModeWideMoveFolder}
+                        type="button"
+                      >
+                        <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="settings-section">
+                  <div className="settings-section-title">Text</div>
+                  <div className="settings-form-grid">
+                    <label htmlFor="settings-text-auto-play-all">AutoPlay All</label>
+                    <label className="settings-checkbox-row" htmlFor="settings-text-auto-play-all">
+                      <input
+                        checked={draft.general.textAutoPlayAll}
+                        id="settings-text-auto-play-all"
+                        type="checkbox"
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              textAutoPlayAll: event.target.checked,
+                            },
+                          }))
+                        }}
+                      />
+                      <span>Enabled</span>
+                    </label>
+                    <label htmlFor="settings-text-auto-lookup-delay">AutoPlay Delay</label>
+                    <input
+                      id="settings-text-auto-lookup-delay"
+                      min="200"
+                      step="100"
+                      type="number"
+                      value={draft.general.textAutoLookupDelayMs}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            textAutoLookupDelayMs: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                    <label htmlFor="settings-words-review-font-size">Words Review Font Size</label>
+                    <input
+                      id="settings-words-review-font-size"
+                      min="10"
+                      max="32"
+                      step="1"
+                      type="number"
+                      value={draft.general.wordsReviewFontSize}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            wordsReviewFontSize: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                    <label htmlFor="settings-webster-spell-out">Webster Spell Out</label>
+                    <label className="settings-checkbox-row" htmlFor="settings-webster-spell-out">
+                      <input
+                        checked={draft.general.websterSpellOut}
+                        id="settings-webster-spell-out"
+                        type="checkbox"
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              websterSpellOut: event.target.checked,
+                            },
+                          }))
+                        }}
+                      />
+                      <span>Enabled</span>
+                    </label>
+                    <label>Dicts For AutoPlay</label>
+                    <div className="settings-checkbox-group">
+                      <label className="settings-checkbox-row">
+                        <input
+                          checked={draft.general.textAutoPlayDicts?.mdict !== false}
+                          type="checkbox"
+                          onChange={(event) => {
+                            setMessage('')
+                            setDraft((current) => ({
+                              ...current,
+                              general: {
+                                ...current.general,
+                                textAutoPlayDicts: {
+                                  ...(current.general.textAutoPlayDicts || {}),
+                                  mdict: event.target.checked,
+                                },
+                              },
+                            }))
+                          }}
+                        />
+                        <span>MDict</span>
+                      </label>
+                      <label className="settings-checkbox-row">
+                        <input
+                          checked={draft.general.textAutoPlayDicts?.webster !== false}
+                          type="checkbox"
+                          onChange={(event) => {
+                            setMessage('')
+                            setDraft((current) => ({
+                              ...current,
+                              general: {
+                                ...current.general,
+                                textAutoPlayDicts: {
+                                  ...(current.general.textAutoPlayDicts || {}),
+                                  webster: event.target.checked,
+                                },
+                              },
+                            }))
+                          }}
+                        />
+                        <span>Webster</span>
+                      </label>
+                    </div>
+                    <label htmlFor="settings-monthly-notes-folder">Monthly Text Folder</label>
+                    <div className="settings-folder-row">
+                      <input
+                        id="settings-monthly-notes-folder"
+                        value={draft.general.monthlyNotesFolder}
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              monthlyNotesFolder: event.target.value,
+                            },
+                          }))
+                        }}
+                      />
+                      <button
+                        data-tooltip="Choose folder"
+                        onClick={chooseMonthlyNotesFolder}
+                        type="button"
+                      >
+                        <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                      </button>
+                    </div>
+                    <label htmlFor="settings-special-text-folder">Special Text Folder</label>
+                    <div className="settings-folder-row">
+                      <input
+                        id="settings-special-text-folder"
+                        value={draft.general.specialTextFolder}
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              specialTextFolder: event.target.value,
+                            },
+                          }))
+                        }}
+                      />
+                      <button
+                        data-tooltip="Choose folder"
+                        onClick={chooseSpecialTextFolder}
+                        type="button"
+                      >
+                        <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                </section>
               </div>
             ) : (
               <div className="settings-shortcuts">

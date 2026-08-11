@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('appApi', {
   saveRecentState: (recentState) => ipcRenderer.invoke('app:saveRecentState', recentState),
   loadSettings: () => ipcRenderer.invoke('app:loadSettings'),
   saveSettings: (settings) => ipcRenderer.invoke('app:saveSettings', settings),
+  selectFolder: () => ipcRenderer.invoke('app:selectFolder'),
   loadLastSessionState: () => ipcRenderer.invoke('app:loadLastSessionState'),
   saveLastSessionState: (sessionState) => ipcRenderer.invoke('app:saveLastSessionState', sessionState),
   registerGlobalActivationShortcut: (shortcut) => ipcRenderer.invoke('app:registerGlobalActivationShortcut', shortcut),

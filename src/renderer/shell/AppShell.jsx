@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { APP_MODES, useAppStore } from '../../stores/appStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import ImageMode from '../modes/ImageMode'
@@ -8,6 +8,7 @@ import VideoMode from '../modes/VideoMode'
 import AppTooltip from '../components/AppTooltip'
 import SettingsDialog from '../settings/SettingsDialog'
 import useShortcutManager from '../hooks/useShortcutManager'
+import { registerActions } from '../actions/actionRegistry'
 
 const modeTooltips = {
   [APP_MODES.VIDEO]: 'Video',
@@ -24,6 +25,7 @@ const modeIconClasses = {
 }
 
 const guardOrder = [APP_MODES.VIDEO, APP_MODES.IMAGE, APP_MODES.TEXT, APP_MODES.SEARCH]
+const modeOrder = [APP_MODES.VIDEO, APP_MODES.IMAGE, APP_MODES.TEXT, APP_MODES.SEARCH]
 
 export default function AppShell() {
   const mode = useAppStore((state) => state.mode)
@@ -35,12 +37,11 @@ export default function AppShell() {
   const initializeRecentState = useAppStore((state) => state.initializeRecentState)
   const initializeSettings = useSettingsStore((state) => state.initializeSettings)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [restorePrompt, setRestorePrompt] = useState(null)
   const leaveGuardsRef = useRef(leaveGuards)
   const sessionProvidersRef = useRef(sessionProviders)
   const modeRef = useRef(mode)
   const previousModeRef = useRef(mode)
-  const defaultModeAppliedRef = useRef(false)
+  const initialRestoreModeRef = useRef(null)
 
   useShortcutManager(mode, settingsOpen)
 
@@ -53,19 +54,8 @@ export default function AppShell() {
   }, [initializeRecentState])
 
   useEffect(() => {
-    let canceled = false
-    initializeSettings?.().then((settings) => {
-      if (canceled || defaultModeAppliedRef.current) return
-      defaultModeAppliedRef.current = true
-      if (settings?.general?.defaultMode && settings.general.defaultMode !== mode) {
-        setMode(settings.general.defaultMode)
-      }
-    })
-
-    return () => {
-      canceled = true
-    }
-  }, [initializeSettings, mode, setMode])
+    initializeSettings?.().finally(() => {})
+  }, [initializeSettings])
 
   useEffect(() => {
     let canceled = false
@@ -81,8 +71,13 @@ export default function AppShell() {
         return
       }
 
-      window.debugApi?.log('Last session found. Restore prompt shown.')
-      setRestorePrompt(result.sessionState)
+      window.debugApi?.log('Last session restored automatically.')
+      setRestoreSessionState(result.sessionState)
+      const restoredMode = result.sessionState.activeMode || result.sessionState.mode
+      if (Object.values(APP_MODES).includes(restoredMode)) {
+        initialRestoreModeRef.current = restoredMode
+        setMode(restoredMode)
+      }
     }).catch((error) => {
       window.debugApi?.log(`Last session load failed: ${error?.message || error}`)
     })
@@ -90,7 +85,7 @@ export default function AppShell() {
     return () => {
       canceled = true
     }
-  }, [])
+  }, [setMode, setRestoreSessionState])
 
   useEffect(() => {
     if (!window.appApi?.onShowSettings) {
@@ -125,6 +120,7 @@ export default function AppShell() {
 
     return {
       activeMode: modeRef.current,
+      mode: modeRef.current,
       modes,
     }
   }
@@ -163,7 +159,11 @@ export default function AppShell() {
     const previousMode = previousModeRef.current
 
     if (mode === APP_MODES.TEXT) {
-      window.appApi?.dockTextModeWindow?.()
+      if (initialRestoreModeRef.current === APP_MODES.TEXT) {
+        initialRestoreModeRef.current = null
+      } else {
+        window.appApi?.dockTextModeWindow?.()
+      }
     } else if (previousMode === APP_MODES.TEXT) {
       window.appApi?.restoreWindowAfterTextMode?.()
     }
@@ -171,25 +171,26 @@ export default function AppShell() {
     previousModeRef.current = mode
   }, [mode])
 
-  const switchMode = async (nextMode) => {
+  const switchMode = useCallback(async (nextMode) => {
     if (textAutoPlayRunning) return
     if (nextMode === mode) return
     setMode(nextMode)
-  }
+  }, [mode, setMode, textAutoPlayRunning])
 
-  const restoreLastSession = () => {
-    const sessionState = restorePrompt
-    setRestorePrompt(null)
-    setRestoreSessionState(sessionState)
-    if (Object.values(APP_MODES).includes(sessionState?.activeMode)) {
-      setMode(sessionState.activeMode)
-    }
-  }
+  const cycleMode = useCallback(() => {
+    const currentIndex = modeOrder.indexOf(modeRef.current)
+    const nextMode = modeOrder[(currentIndex + 1) % modeOrder.length] || APP_MODES.VIDEO
+    switchMode(nextMode)
+  }, [switchMode])
 
-  const discardLastSession = () => {
-    setRestorePrompt(null)
-    setRestoreSessionState(null)
-  }
+  useEffect(() => registerActions([
+    {
+      id: 'global.cycleMode',
+      label: 'Cycle Mode',
+      scope: 'global',
+      handler: cycleMode,
+    },
+  ]), [cycleMode])
 
   return (
     <div className="app-shell">
@@ -229,27 +230,7 @@ export default function AppShell() {
       {settingsOpen ? (
         <SettingsDialog
           onClose={() => setSettingsOpen(false)}
-          onDefaultModeSaved={(defaultMode) => {
-            if (Object.values(APP_MODES).includes(defaultMode)) {
-              defaultModeAppliedRef.current = true
-            }
-          }}
         />
-      ) : null}
-
-      {restorePrompt ? (
-        <div className="startup-restore-layer">
-          <div className="startup-restore-dialog" role="dialog" aria-modal="true">
-            <div className="startup-restore-title">Restore Last Session</div>
-            <div className="startup-restore-message">
-              Restore the state saved when the app was last closed?
-            </div>
-            <div className="startup-restore-actions">
-              <button className="primary" onClick={restoreLastSession} type="button">Restore</button>
-              <button onClick={discardLastSession} type="button">Discard</button>
-            </div>
-          </div>
-        </div>
       ) : null}
 
       <AppTooltip />

@@ -4,6 +4,11 @@
     "globalActivationShortcut": "Ctrl+Alt+F",
     "monthlyNotesFolder": "D:\\",
     "specialTextFolder": "D:\\temp\\WordListExamples\\特殊文件",
+    "playAllSubtitleSuffix": ".en.vtt",
+    "subtitleConvertPromptTimeoutSec": 5,
+    "imageAutoLoadDelayMs": 250,
+    "locallyMoveFolder": "tempPictures",
+    "picModeWideMoveFolder": "D:\\temp",
     "textAutoPlayAll": true,
     "textAutoLookupDelayMs": 2500,
     "wordsReviewFontSize": 30,
@@ -14,12 +19,51 @@
     }
   },
   "shortcuts": {
-    "video": {},
-    "image": {},
+    "video": {
+      "video.seekStart": "Escape",
+      "video.jumpBack": "F1",
+      "video.setStart": "F2",
+      "video.setEnd": "F3",
+      "video.jumpForward": "F4",
+      "video.intoEditingFocus": "Alt+E",
+      "video.appendMark": "",
+      "video.appendQuickMark": "Ctrl+S",
+      "video.toggleControlMode": "Alt+V",
+      "video.togglePlay": "F6",
+      "video.togglePlayAlt": "Alt+P",
+      "video.saveNotes": "F9",
+      "video.saveNotesAlt": "Shift+Alt+S",
+      "video.jumpBackShort": "ArrowLeft",
+      "video.jumpForwardShort": "ArrowRight",
+      "video.jumpBackLong": "Ctrl+ArrowLeft",
+      "video.jumpForwardLong": "Ctrl+ArrowRight",
+      "video.speedUp": "Ctrl+ArrowUp",
+      "video.speedDown": "Ctrl+ArrowDown",
+      "video.volumeUp": "ArrowUp",
+      "video.volumeDown": "ArrowDown",
+      "video.toggleView": "Ctrl+F",
+      "video.toggleLeftTab": "Alt+F",
+      "video.updateContent": "Ctrl+Q",
+      "video.updateRange": "Ctrl+G",
+      "video.writeCurrentRange": "Ctrl+W"
+    },
+    "image": {
+      "image.intoEditingFocus": "Alt+E",
+      "image.previousImage": "Ctrl+ArrowUp",
+      "image.nextImage": "Ctrl+ArrowDown",
+      "image.saveNote": "",
+      "image.renameFile": "",
+      "image.moveFile": "",
+      "image.moveRenameFile": ""
+    },
     "text": {
+      "text.intoEditingFocus": "Alt+E",
       "text.lookup": "Ctrl+Enter",
       "text.pasteAndLookup": "Ctrl+G",
-      "text.saveTo": "",
+      "text.toggleView": "Alt+F",
+      "text.replace": "Ctrl+R",
+      "text.replaceLine": "Ctrl+Q",
+      "text.saveToSpecificFile": "",
       "text.saveToEn": "",
       "text.saveToZh": "",
       "text.lookupMDict": "Ctrl+M",
@@ -30,6 +74,8 @@
       "text.getMDictThenLookup": "Ctrl+F"
     },
     "search": {},
-    "global": {}
+    "global": {
+      "global.cycleMode": "Ctrl+N"
+    }
   }
 }

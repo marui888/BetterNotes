@@ -115,6 +115,7 @@ export default function VideoMode() {
   const [volume, setVolume] = useState(1)
 
   const playAllSubtitleSuffix = useSettingsStore((state) => state.settings.general.playAllSubtitleSuffix)
+  const subtitleConvertPromptTimeoutSec = useSettingsStore((state) => state.settings.general.subtitleConvertPromptTimeoutSec)
   const mode = useAppStore((state) => state.mode)
   const dirty = useAppStore((state) => state.dirtyByMode.video)
   const recentVideoFiles = useAppStore((state) => state.recentFiles.video || [])
@@ -187,6 +188,11 @@ export default function VideoMode() {
   }, [leftTab, selectedDirectoryMp4Name])
 
   const closeDialog = (decision) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = null
+    }
+
     const resolve = dialogResolveRef.current
     dialogResolveRef.current = null
     setDialog(null)
@@ -201,6 +207,12 @@ export default function VideoMode() {
 
     dialogResolveRef.current = resolve
     setDialog(options)
+
+    if (Number.isFinite(Number(options.timeoutMs)) && Number(options.timeoutMs) > 0) {
+      toastTimerRef.current = setTimeout(() => {
+        closeDialog(options.timeoutValue || options.cancelValue || 'cancel')
+      }, Number(options.timeoutMs))
+    }
   })
 
   const showSubtitleChoiceDialog = (subtitleCandidates, options = {}) => new Promise((resolve) => {
@@ -602,15 +614,13 @@ export default function VideoMode() {
       return null
     }
 
-    if (options.playAllAuto) {
-      return selectedSrt
-    }
-
     const decision = await showActionDialog({
       title: '转换SRT字幕',
       message: `未找到VTT字幕，发现SRT字幕：${selectedSrt.fileName}。是否转换为VTT？`,
       defaultValue: 'convert',
       cancelValue: 'cancel',
+      timeoutMs: subtitleConvertPromptTimeoutSec * 1000,
+      timeoutValue: 'cancel',
       actions: [
         { label: '转换', value: 'convert', primary: true },
         { label: '取消', value: 'cancel' },
@@ -1224,8 +1234,8 @@ export default function VideoMode() {
       handler: () => seekByScaledSeconds(SHORT_JUMP_SECONDS),
     },
     {
-      id: 'video.toggleFocus',
-      label: 'Toggle Focus',
+      id: 'video.intoEditingFocus',
+      label: 'Into Editing Focus',
       scope: APP_MODES.VIDEO,
       handler: toggleFocusBetweenNotesListAndTextInput,
     },

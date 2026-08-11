@@ -159,6 +159,7 @@ export default function TextMode() {
   const recordsRef = useRef([])
   const selectedRecordIdRef = useRef(null)
   const independentInputRef = useRef(null)
+  const lineDraftInputRef = useRef(null)
   const toastTimerRef = useRef(null)
   const leaveGuardHandlerRef = useRef(null)
   const autoLookupTimerRef = useRef(null)
@@ -194,6 +195,8 @@ export default function TextMode() {
   const websterSpellOut = useSettingsStore((state) => state.settings.general.websterSpellOut)
   const recentTextFiles = useAppStore((state) => state.recentFiles.text || [])
   const recentTextFolders = useAppStore((state) => state.recentFolders.text || [])
+  const currentMode = useAppStore((state) => state.mode)
+  const currentModeRef = useRef(currentMode)
   const setDirty = useAppStore((state) => state.setDirty)
   const setTextAutoPlayRunning = useAppStore((state) => state.setTextAutoPlayRunning)
   const setCurrentFile = useAppStore((state) => state.setCurrentFile)
@@ -212,6 +215,7 @@ export default function TextMode() {
   selectedRecordIdRef.current = selectedRecordId
   lineDraftRef.current = lineDraft
   dirtyRef.current = dirty
+  currentModeRef.current = currentMode
 
   const currentTxtFilePath = textFile?.filePath || ''
 
@@ -675,9 +679,11 @@ export default function TextMode() {
     }
     if (Object.values(WORDS_TAB_VIEW_MODES).includes(snapshot.wordsTabViewMode)) {
       setWordsTabViewMode(snapshot.wordsTabViewMode)
-      window.appApi?.dockTextModeWindow?.({
-        scale: snapshot.wordsTabViewMode === WORDS_TAB_VIEW_MODES.REVIEW ? 1.5 : 1,
-      })
+      if (currentModeRef.current === APP_MODES.TEXT) {
+        window.appApi?.dockTextModeWindow?.({
+          scale: snapshot.wordsTabViewMode === WORDS_TAB_VIEW_MODES.REVIEW ? 1.5 : 1,
+        })
+      }
     }
 
     if (snapshot.specialFolderPath) {
@@ -842,7 +848,7 @@ export default function TextMode() {
     return line
   }
 
-  const saveToSpecialTextFile = async () => {
+  const saveToSpecificFile = async () => {
     const line = buildIndependentInputLine()
     if (!line) return
     if (!specialTextFile?.filePath) {
@@ -856,12 +862,12 @@ export default function TextMode() {
 
     const result = await window.textApi.appendTextLine(specialTextFile.filePath, line)
     if (!result?.ok) {
-      showAutoMessage(`SaveTo failed: ${result?.reason || 'unknown error'}`)
+      showAutoMessage(`SaveToSpecificFile failed: ${result?.reason || 'unknown error'}`)
       return
     }
 
     setIndependentInput('')
-    window.debugApi?.log(`SaveTo: ${result.filePath || specialTextFile.filePath}`)
+    window.debugApi?.log(`SaveToSpecificFile: ${result.filePath || specialTextFile.filePath}`)
     showAutoMessage('Saved.')
   }
 
@@ -1307,121 +1313,38 @@ export default function TextMode() {
     setTextAutoPlayRunning(false)
   }, [setTextAutoPlayRunning])
 
-  useEffect(() => registerActions([
-    {
-      id: 'text.lookupMDict',
-      label: 'MDict',
-      scope: APP_MODES.TEXT,
-      handler: lookupMDictWord,
-    },
-    {
-      id: 'text.rotateMDict',
-      label: 'Rotate Dict',
-      scope: APP_MODES.TEXT,
-      handler: cycleMDictDictionary,
-    },
-    {
-      id: 'text.lookupWebster',
-      label: 'Webster',
-      scope: APP_MODES.TEXT,
-      handler: lookupWebsterWord,
-    },
-    {
-      id: 'text.lookup',
-      label: 'LookUp',
-      scope: APP_MODES.TEXT,
-      handler: lookupSelectedWord,
-    },
-    {
-      id: 'text.pasteAndLookup',
-      label: 'Paste & LookUp',
-      scope: APP_MODES.TEXT,
-      handler: pasteAndLookupWord,
-    },
-    {
-      id: 'text.getMDictThenLookup',
-      label: 'Get MDict then Lookup',
-      scope: APP_MODES.TEXT,
-      handler: getMDictThenLookupWord,
-    },
-    {
-      id: 'text.captureWebster',
-      label: 'Capture',
-      scope: APP_MODES.TEXT,
-      handler: captureWebsterOutput,
-    },
-    {
-      id: 'text.detectBlue',
-      label: 'Blue',
-      scope: APP_MODES.TEXT,
-      handler: detectWebsterBlueText,
-    },
-    {
-      id: 'text.readBlue',
-      label: 'ReadBlue',
-      scope: APP_MODES.TEXT,
-      handler: clickWebsterBlueText,
-    },
-    {
-      id: 'text.startAutoLookup',
-      label: 'Start',
-      scope: APP_MODES.TEXT,
-      handler: startAutoLookup,
-    },
-    {
-      id: 'text.stopAutoLookup',
-      label: 'Stop',
-      scope: APP_MODES.TEXT,
-      handler: stopAutoLookup,
-    },
-    {
-      id: 'text.previousWord',
-      label: 'Previous Word',
-      scope: APP_MODES.TEXT,
-      handler: selectPreviousWord,
-    },
-    {
-      id: 'text.nextWord',
-      label: 'Next Word',
-      scope: APP_MODES.TEXT,
-      handler: selectNextWord,
-    },
-    {
-      id: 'text.saveTo',
-      label: 'SaveTo',
-      scope: APP_MODES.TEXT,
-      handler: saveToSpecialTextFile,
-    },
-    {
-      id: 'text.saveToEn',
-      label: 'SaveToEn',
-      scope: APP_MODES.TEXT,
-      handler: saveToEn,
-    },
-    {
-      id: 'text.saveToZh',
-      label: 'SaveToZh',
-      scope: APP_MODES.TEXT,
-      handler: saveToZh,
-    },
-  ]), [
-    lookupMDictWord,
-    cycleMDictDictionary,
-    lookupWebsterWord,
-    captureWebsterOutput,
-    detectWebsterBlueText,
-    clickWebsterBlueText,
-    startAutoLookup,
-    stopAutoLookup,
-    selectPreviousWord,
-    selectNextWord,
-    lookupSelectedWord,
-    pasteAndLookupWord,
-    getMDictThenLookupWord,
-    saveToSpecialTextFile,
-    saveToEn,
-    saveToZh,
-  ])
+  const intoEditingFocus = () => {
+    const independentInput = independentInputRef.current
+    const lineDraftInput = lineDraftInputRef.current
+    if (!independentInput) return
+
+    const focusIndependentInput = () => {
+      independentInput.focus()
+      independentInput.selectionStart = independentInput.selectionEnd = independentInput.value.length
+    }
+
+    const focusLineDraftInput = () => {
+      if (!lineDraftInput || lineDraftInput.disabled) {
+        focusIndependentInput()
+        return
+      }
+
+      lineDraftInput.focus()
+      lineDraftInput.selectionStart = lineDraftInput.selectionEnd = lineDraftInput.value.length
+    }
+
+    if (document.activeElement === independentInput) {
+      focusLineDraftInput()
+      return
+    }
+
+    if (document.activeElement === lineDraftInput) {
+      focusIndependentInput()
+      return
+    }
+
+    focusIndependentInput()
+  }
 
   const loadFolderPath = async (folderPath) => {
     if (!folderPath || !window.textApi?.listTxtFiles) return
@@ -1538,6 +1461,150 @@ export default function TextMode() {
 
     markRecordsChanged(nextRecords, selectedRecordIdRef.current)
   }
+
+  useEffect(() => registerActions([
+    {
+      id: 'text.intoEditingFocus',
+      label: 'Into Editing Focus',
+      scope: APP_MODES.TEXT,
+      handler: intoEditingFocus,
+    },
+    {
+      id: 'text.lookupMDict',
+      label: 'MDict',
+      scope: APP_MODES.TEXT,
+      handler: lookupMDictWord,
+    },
+    {
+      id: 'text.rotateMDict',
+      label: 'Rotate Dict',
+      scope: APP_MODES.TEXT,
+      handler: cycleMDictDictionary,
+    },
+    {
+      id: 'text.lookupWebster',
+      label: 'Webster',
+      scope: APP_MODES.TEXT,
+      handler: lookupWebsterWord,
+    },
+    {
+      id: 'text.lookup',
+      label: 'LookUp',
+      scope: APP_MODES.TEXT,
+      handler: lookupSelectedWord,
+    },
+    {
+      id: 'text.pasteAndLookup',
+      label: 'Paste & LookUp',
+      scope: APP_MODES.TEXT,
+      handler: pasteAndLookupWord,
+    },
+    {
+      id: 'text.getMDictThenLookup',
+      label: 'Get MDict then Lookup',
+      scope: APP_MODES.TEXT,
+      handler: getMDictThenLookupWord,
+    },
+    {
+      id: 'text.toggleView',
+      label: 'Toggle View',
+      scope: APP_MODES.TEXT,
+      handler: toggleWordsTabView,
+    },
+    {
+      id: 'text.replace',
+      label: 'Replace',
+      scope: APP_MODES.TEXT,
+      handler: replaceRecordWord,
+    },
+    {
+      id: 'text.replaceLine',
+      label: 'Replace Line',
+      scope: APP_MODES.TEXT,
+      handler: replaceCurrentLine,
+    },
+    {
+      id: 'text.captureWebster',
+      label: 'Capture',
+      scope: APP_MODES.TEXT,
+      handler: captureWebsterOutput,
+    },
+    {
+      id: 'text.detectBlue',
+      label: 'Blue',
+      scope: APP_MODES.TEXT,
+      handler: detectWebsterBlueText,
+    },
+    {
+      id: 'text.readBlue',
+      label: 'ReadBlue',
+      scope: APP_MODES.TEXT,
+      handler: clickWebsterBlueText,
+    },
+    {
+      id: 'text.startAutoLookup',
+      label: 'Start',
+      scope: APP_MODES.TEXT,
+      handler: startAutoLookup,
+    },
+    {
+      id: 'text.stopAutoLookup',
+      label: 'Stop',
+      scope: APP_MODES.TEXT,
+      handler: stopAutoLookup,
+    },
+    {
+      id: 'text.previousWord',
+      label: 'Previous Word',
+      scope: APP_MODES.TEXT,
+      handler: selectPreviousWord,
+    },
+    {
+      id: 'text.nextWord',
+      label: 'Next Word',
+      scope: APP_MODES.TEXT,
+      handler: selectNextWord,
+    },
+    {
+      id: 'text.saveToSpecificFile',
+      label: 'SaveToSpecificFile',
+      scope: APP_MODES.TEXT,
+      handler: saveToSpecificFile,
+    },
+    {
+      id: 'text.saveToEn',
+      label: 'SaveToEn',
+      scope: APP_MODES.TEXT,
+      handler: saveToEn,
+    },
+    {
+      id: 'text.saveToZh',
+      label: 'SaveToZh',
+      scope: APP_MODES.TEXT,
+      handler: saveToZh,
+    },
+  ]), [
+    lookupMDictWord,
+    cycleMDictDictionary,
+    lookupWebsterWord,
+    captureWebsterOutput,
+    detectWebsterBlueText,
+    clickWebsterBlueText,
+    startAutoLookup,
+    stopAutoLookup,
+    selectPreviousWord,
+    selectNextWord,
+    lookupSelectedWord,
+    pasteAndLookupWord,
+    getMDictThenLookupWord,
+    intoEditingFocus,
+    replaceCurrentLine,
+    replaceRecordWord,
+    saveToSpecificFile,
+    saveToEn,
+    saveToZh,
+    toggleWordsTabView,
+  ])
 
   const showMarksDummy = () => {
     showAutoMessage('Marks editor not implemented.')
@@ -1728,7 +1795,7 @@ export default function TextMode() {
                   aria-label="Replace"
                   className="text-tool-button"
                   data-tooltip="Replace"
-                  onClick={replaceRecordWord}
+                  onClick={() => runAction('text.replace')}
                   type="button"
                 >
                   <i className="fa-solid fa-right-left" aria-hidden="true" />
@@ -1755,7 +1822,7 @@ export default function TextMode() {
                   aria-label="Toggle View"
                   className="text-tool-button"
                   data-tooltip="Toggle View"
-                  onClick={toggleWordsTabView}
+                  onClick={() => runAction('text.toggleView')}
                   type="button"
                 >
                   <i className="fa-solid fa-table-columns" aria-hidden="true" />
@@ -1907,26 +1974,12 @@ export default function TextMode() {
                 rows={1}
                 value={independentInput}
               />
-            </div>
-
-            <div className="text-edit-lower">
-              <textarea
-                className="text-annotation-input"
-                disabled={!selectedRecord}
-                onChange={(event) => {
-                  lineDraftRef.current = event.target.value
-                  setLineDraft(event.target.value)
-                }}
-                placeholder="full line"
-                value={lineDraft}
-              />
-
-              <div className="text-edit-toolbar" aria-label="Edit commands">
+              <div className="text-save-toolbar-horizontal" aria-label="Independent input save commands">
                 <button
-                  aria-label="SaveTo"
+                  aria-label="SaveToSpecificFile"
                   className="text-tool-button"
-                  data-tooltip="SaveTo"
-                  onClick={() => runAction('text.saveTo')}
+                  data-tooltip="SaveToSpecificFile"
+                  onClick={() => runAction('text.saveToSpecificFile')}
                   type="button"
                 >
                   <i className="fa-solid fa-file-export" aria-hidden="true" />
@@ -1949,11 +2002,28 @@ export default function TextMode() {
                 >
                   <i className="fa-solid fa-language" aria-hidden="true" />
                 </button>
+              </div>
+            </div>
+
+            <div className="text-edit-lower">
+              <textarea
+                className="text-annotation-input"
+                disabled={!selectedRecord}
+                onChange={(event) => {
+                  lineDraftRef.current = event.target.value
+                  setLineDraft(event.target.value)
+                }}
+                placeholder="full line"
+                ref={lineDraftInputRef}
+                value={lineDraft}
+              />
+
+              <div className="text-edit-toolbar" aria-label="Edit commands">
                 <button
                   aria-label="Replace Line"
                   className="text-tool-button"
                   data-tooltip="Replace Line"
-                  onClick={replaceCurrentLine}
+                  onClick={() => runAction('text.replaceLine')}
                   type="button"
                 >
                   <i className="fa-solid fa-file-pen" aria-hidden="true" />
