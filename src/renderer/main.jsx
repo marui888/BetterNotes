@@ -54,6 +54,10 @@ async function mountRoot() {
     const { default: DebugWindow } = await import('./debug/DebugWindow')
     logRendererStartup('DebugWindow module loaded')
     root.render(<DebugWindow />)
+  } else if (window.location.hash === '#keyword') {
+    const { default: KeywordPickerWindow } = await import('./keyword/KeywordPickerWindow')
+    logRendererStartup('KeywordPickerWindow module loaded')
+    root.render(<KeywordPickerWindow />)
   } else {
     root.render(<App />)
   }

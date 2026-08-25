@@ -2,6 +2,8 @@
 import { APP_MODES, useAppStore } from '../../stores/appStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { registerActions, runAction } from '../actions/actionRegistry'
+import SimpleContextMenu from '../components/SimpleContextMenu'
+import useKeywordInsertion from '../hooks/useKeywordInsertion'
 import { getAutoPlaySkipReason } from './textWordValidator'
 
 const TEXT_TABS = {
@@ -218,6 +220,22 @@ export default function TextMode() {
   currentModeRef.current = currentMode
 
   const currentTxtFilePath = textFile?.filePath || ''
+  const keywordInsertion = useKeywordInsertion({
+    isActive: currentMode === APP_MODES.TEXT,
+    targets: {
+      independentInput: {
+        ref: independentInputRef,
+        setValue: setIndependentInput,
+      },
+      lineDraft: {
+        ref: lineDraftInputRef,
+        setValue: (value) => {
+          lineDraftRef.current = value
+          setLineDraft(value)
+        },
+      },
+    },
+  })
 
   const closeDialog = (decision) => {
     const resolve = dialogResolveRef.current
@@ -449,11 +467,11 @@ export default function TextMode() {
     if (!inputContextMenu) return undefined
 
     const closeInputContextMenu = () => setInputContextMenu(null)
-    window.addEventListener('mousedown', closeInputContextMenu)
+    window.addEventListener('click', closeInputContextMenu)
     window.addEventListener('resize', closeInputContextMenu)
     window.addEventListener('scroll', closeInputContextMenu, true)
     return () => {
-      window.removeEventListener('mousedown', closeInputContextMenu)
+      window.removeEventListener('click', closeInputContextMenu)
       window.removeEventListener('resize', closeInputContextMenu)
       window.removeEventListener('scroll', closeInputContextMenu, true)
     }
@@ -471,17 +489,24 @@ export default function TextMode() {
     })
   }
 
-  const showIndependentInputMenu = (x, y) => {
+  const showIndependentInputMenu = (x, y, target = 'independentInput') => {
     setInputContextMenu({
       x: Math.max(6, Math.min(x, window.innerWidth - 174)),
-      y: Math.max(6, Math.min(y, window.innerHeight - 150)),
+      y: Math.max(6, Math.min(y, window.innerHeight - 182)),
+      target,
     })
+  }
+
+  const openKeywordPickerForInput = (target) => {
+    if (!keywordInsertion.openPicker(target)) return
+    setInputContextMenu(null)
   }
 
   const handleIndependentInputContextMenu = (event) => {
     event.preventDefault()
     event.stopPropagation()
-    showIndependentInputMenu(event.clientX, event.clientY)
+    keywordInsertion.rememberTarget('independentInput')
+    showIndependentInputMenu(event.clientX, event.clientY, 'independentInput')
   }
 
   const handleIndependentInputKeyDown = (event) => {
@@ -495,7 +520,24 @@ export default function TextMode() {
     event.preventDefault()
     event.stopPropagation()
     const rect = independentInputRef.current?.getBoundingClientRect()
-    showIndependentInputMenu((rect?.left || 0) + 16, (rect?.top || 0) + 16)
+    keywordInsertion.rememberTarget('independentInput')
+    showIndependentInputMenu((rect?.left || 0) + 16, (rect?.top || 0) + 16, 'independentInput')
+  }
+
+  const handleLineDraftContextMenu = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    keywordInsertion.rememberTarget('lineDraft')
+    showIndependentInputMenu(event.clientX, event.clientY, 'lineDraft')
+  }
+
+  const handleLineDraftKeyDown = (event) => {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = lineDraftInputRef.current?.getBoundingClientRect()
+    keywordInsertion.rememberTarget('lineDraft')
+    showIndependentInputMenu((rect?.left || 0) + 16, (rect?.top || 0) + 16, 'lineDraft')
   }
 
   const wrapIndependentSelectionWithParentheses = () => {
@@ -2009,10 +2051,12 @@ export default function TextMode() {
               <textarea
                 className="text-annotation-input"
                 disabled={!selectedRecord}
+                onContextMenu={handleLineDraftContextMenu}
                 onChange={(event) => {
                   lineDraftRef.current = event.target.value
                   setLineDraft(event.target.value)
                 }}
+                onKeyDown={handleLineDraftKeyDown}
                 placeholder="full line"
                 ref={lineDraftInputRef}
                 value={lineDraft}
@@ -2109,27 +2153,23 @@ export default function TextMode() {
       )}
 
       {inputContextMenu ? (
-        <div
+        <SimpleContextMenu
           className="text-input-context-menu"
-          onMouseDown={(event) => event.stopPropagation()}
-          style={{
-            left: inputContextMenu.x,
-            top: inputContextMenu.y,
-          }}
-        >
-          <button onClick={wrapIndependentSelectionWithParentheses} type="button">
-            Wrap ()
-          </button>
-          <button onClick={removeIndependentInputLineBreaks} type="button">
-            One Line
-          </button>
-          <button onClick={formatIndependentInputNote} type="button">
-            Format Note
-          </button>
-          <button onClick={formatIndependentInputPattern} type="button">
-            Format Pattern
-          </button>
-        </div>
+          items={[
+            ...(inputContextMenu.target === 'independentInput' ? [
+              { label: 'Wrap ()', action: wrapIndependentSelectionWithParentheses },
+              { label: 'One Line', action: removeIndependentInputLineBreaks },
+              { label: 'Format Note', action: formatIndependentInputNote },
+              { label: 'Format Pattern', action: formatIndependentInputPattern },
+            ] : []),
+            {
+              label: 'Keywords...',
+              action: () => openKeywordPickerForInput(inputContextMenu.target || 'independentInput'),
+            },
+          ]}
+          onClose={() => setInputContextMenu(null)}
+          position={inputContextMenu}
+        />
       ) : null}
 
       {dialog ? (

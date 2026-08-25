@@ -25,7 +25,6 @@ const modeIconClasses = {
 }
 
 const guardOrder = [APP_MODES.VIDEO, APP_MODES.IMAGE, APP_MODES.TEXT, APP_MODES.SEARCH]
-const modeOrder = [APP_MODES.VIDEO, APP_MODES.IMAGE, APP_MODES.TEXT, APP_MODES.SEARCH]
 
 export default function AppShell() {
   const mode = useAppStore((state) => state.mode)
@@ -37,6 +36,7 @@ export default function AppShell() {
   const initializeRecentState = useAppStore((state) => state.initializeRecentState)
   const initializeSettings = useSettingsStore((state) => state.initializeSettings)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [pendingChord, setPendingChord] = useState(null)
   const leaveGuardsRef = useRef(leaveGuards)
   const sessionProvidersRef = useRef(sessionProviders)
   const modeRef = useRef(mode)
@@ -93,6 +93,15 @@ export default function AppShell() {
     }
 
     return window.appApi.onShowSettings(() => setSettingsOpen(true))
+  }, [])
+
+  useEffect(() => {
+    const handleChordChange = (event) => {
+      setPendingChord(event.detail?.shortcut || null)
+    }
+
+    window.addEventListener('shortcut-chord-change', handleChordChange)
+    return () => window.removeEventListener('shortcut-chord-change', handleChordChange)
   }, [])
 
   useEffect(() => {
@@ -177,20 +186,32 @@ export default function AppShell() {
     setMode(nextMode)
   }, [mode, setMode, textAutoPlayRunning])
 
-  const cycleMode = useCallback(() => {
-    const currentIndex = modeOrder.indexOf(modeRef.current)
-    const nextMode = modeOrder[(currentIndex + 1) % modeOrder.length] || APP_MODES.VIDEO
-    switchMode(nextMode)
-  }, [switchMode])
-
   useEffect(() => registerActions([
     {
-      id: 'global.cycleMode',
-      label: 'Cycle Mode',
+      id: 'global.switchToVideo',
+      label: 'Switch To Video',
       scope: 'global',
-      handler: cycleMode,
+      handler: () => switchMode(APP_MODES.VIDEO),
     },
-  ]), [cycleMode])
+    {
+      id: 'global.switchToPicture',
+      label: 'Switch To Picture',
+      scope: 'global',
+      handler: () => switchMode(APP_MODES.IMAGE),
+    },
+    {
+      id: 'global.switchToText',
+      label: 'Switch To Text',
+      scope: 'global',
+      handler: () => switchMode(APP_MODES.TEXT),
+    },
+    {
+      id: 'global.switchToManagement',
+      label: 'Switch To Management',
+      scope: 'global',
+      handler: () => switchMode(APP_MODES.SEARCH),
+    },
+  ]), [switchMode])
 
   return (
     <div className="app-shell">
@@ -234,6 +255,11 @@ export default function AppShell() {
       ) : null}
 
       <AppTooltip />
+      {pendingChord ? (
+        <div className="shortcut-chord-hint">
+          Shortcut: {pendingChord} ...
+        </div>
+      ) : null}
     </div>
   )
 }

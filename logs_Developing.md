@@ -1,10 +1,18 @@
 
-（41420 √  ，41409 ×） 
+（41420 √  ，41409 ×）  
 $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 $env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
 npm run package
 
-## 需求
+## 需求 prj_annotation_lab
+
+- [ ] 如何手动写了一段讲义稿，写了一道数学题的方法2，或者写了一道完整的题目（题干和答案），拍照后，保存为图片文件。如果要把这个文件加入到“体系”中，生成B Entity时， Label属性 如何设置呢？如果是以前的一道题的方法2， 如何在“体系”中查询到以前那道题，并让题干与方法2关联起来呢？
+- [ ] 当前在 new 项目的笔记文件（图片，视频）JSON文件的名字和格式 需要重新规划统一。
+- [ ] 数学题目的分类查找，英语笔记的分类查找：通过关键字 还是 通过AI依据关键字筛选 题目。
+- [ ] 标注Entity（B层数据）的 和 查询B层数据的 是相互关联的两个部分，是一套的。不同主题，关键词不同。
+- [ ] 现有 prj_videoPlayer_new在视频是建立记录，都是记录的时间位置。这个工作流需要修改适配 prj_annotation_lab 数据模型。现在我想了一下，从用户的角度想：数据模型的起点应该是一个B Entity（在用户心中产生，这是用户记笔记的思维起点），至于这个B Entity 与视频，图片，文字 怎么产生关联，关联的过程就伴随着A数据的参数。从交互过程的先后关系看：通常是现在参数很多A数据，然后把A数据框选或组合成为B Entity；不同类型的 B Entity，内部组成部分是不同的。 不同的主题含有不同的 Entity类型。
+
+## 需求 prj_videoPlayer_new
 
 - [ ] 是否这个APP需要同时运行几个实例，如果需要，如果保存状态。
 - [ ] 特殊文件的名字后缀应包含 计算机名称 文件创建时间。（41420 √  ，41409 ×）
@@ -47,6 +55,10 @@ npm run package
 
 
 ## 问题
+
+
+### //mr:: 2026_08_15 18_33_06
+这个报错原因很明确：sharp 是 native/CJS 模块，内部会用 require('child_process')。现在 Electron main 进程代码被 Vite/Rolldown 打包进 .vite/build/main.js 时，sharp 被错误地卷进 bundle 里了，运行时环境又没有暴露 require，所以导出时报错。
 
 ### //mr:: 2026_08_04 14_17_39
 

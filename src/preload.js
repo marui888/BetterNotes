@@ -71,6 +71,23 @@ contextBridge.exposeInMainWorld('appApi', {
   restoreWindowAfterTextMode: () => ipcRenderer.invoke('app:restoreWindowAfterTextMode'),
 })
 
+contextBridge.exposeInMainWorld('keywordApi', {
+  openPicker: () => ipcRenderer.invoke('keyword:openPicker'),
+  listKeywords: (options) => ipcRenderer.invoke('keyword:list', options),
+  insertKeywords: (payload) => ipcRenderer.invoke('keyword:insert', payload),
+  hidePicker: () => ipcRenderer.invoke('keyword:hidePicker'),
+  onOpen: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on('keyword:opened', listener)
+    return () => ipcRenderer.removeListener('keyword:opened', listener)
+  },
+  onInsert: (handler) => {
+    const listener = (_event, payload) => handler(payload)
+    ipcRenderer.on('keyword:insert', listener)
+    return () => ipcRenderer.removeListener('keyword:insert', listener)
+  },
+})
+
 contextBridge.exposeInMainWorld('debugApi', {
   log: (message) => ipcRenderer.send('debug:log', message),
   show: () => ipcRenderer.invoke('debug:show'),

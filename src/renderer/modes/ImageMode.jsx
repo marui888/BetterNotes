@@ -3,6 +3,8 @@ import { APP_MODES, useAppStore } from '../../stores/appStore'
 import { IMAGE_SUFFIX_OPTIONS, useImageStore } from '../../stores/imageStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { registerActions, runAction } from '../actions/actionRegistry'
+import SimpleContextMenu from '../components/SimpleContextMenu'
+import useKeywordInsertion from '../hooks/useKeywordInsertion'
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return '--'
@@ -92,6 +94,7 @@ export default function ImageMode() {
   const selectedRecentPathRef = useRef(null)
   const [leftTab, setLeftTab] = useState('current')
   const [contextMenu, setContextMenu] = useState(null)
+  const [keywordMenu, setKeywordMenu] = useState(null)
   const [dialog, setDialog] = useState(null)
   const [pendingFileName, setPendingFileName] = useState('')
   const [pendingFolderPath, setPendingFolderPath] = useState('')
@@ -102,6 +105,7 @@ export default function ImageMode() {
   const [currentSortDirection, setCurrentSortDirection] = useState('asc')
 
   const dirty = useAppStore((state) => state.dirtyByMode.image)
+  const mode = useAppStore((state) => state.mode)
   const imageAutoLoadDelayMs = useSettingsStore((state) => state.settings.general.imageAutoLoadDelayMs)
   const locallyMoveFolder = useSettingsStore((state) => state.settings.general.locallyMoveFolder)
   const picModeWideMoveFolder = useSettingsStore((state) => state.settings.general.picModeWideMoveFolder)
@@ -139,6 +143,18 @@ export default function ImageMode() {
   imageFilesRef.current = sortedImageFiles
   selectedImagePathRef.current = selectedImagePath
   selectedRecentPathRef.current = selectedRecentPath
+  const keywordInsertion = useKeywordInsertion({
+    isActive: mode === APP_MODES.IMAGE,
+    targets: {
+      noteEditor: {
+        ref: noteEditorRef,
+        setValue: (value) => {
+          setNoteDraft(value)
+          setDirty(APP_MODES.IMAGE, true)
+        },
+      },
+    },
+  })
 
   const scrollSelectedRowIntoView = (listRef) => {
     window.requestAnimationFrame(() => {
@@ -461,6 +477,15 @@ export default function ImageMode() {
     return () => window.removeEventListener('click', closeMenu, true)
   }, [contextMenu])
 
+  useEffect(() => {
+    if (!keywordMenu) return undefined
+    const closeMenu = () => setKeywordMenu(null)
+    window.addEventListener('click', closeMenu)
+    return () => {
+      window.removeEventListener('click', closeMenu)
+    }
+  }, [keywordMenu])
+
   const getSuffix = () => (suffixOption === '其它' ? customSuffix : suffixOption)
 
   const buildSuggestedFileName = (operation, fileName) => {
@@ -567,6 +592,28 @@ export default function ImageMode() {
   const changeNoteDraft = (value) => {
     setNoteDraft(value)
     setDirty(APP_MODES.IMAGE, true)
+  }
+
+  const handleNoteEditorContextMenu = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    keywordInsertion.rememberTarget('noteEditor')
+    setKeywordMenu({
+      x: Math.max(8, Math.min(event.clientX + 8, window.innerWidth - 218)),
+      y: Math.max(8, Math.min(event.clientY + 8, window.innerHeight - 44)),
+    })
+  }
+
+  const handleNoteEditorKeyDown = (event) => {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = noteEditorRef.current?.getBoundingClientRect()
+    keywordInsertion.rememberTarget('noteEditor')
+    setKeywordMenu({
+      x: Math.max(8, Math.min((rect?.left || 0) + 16, window.innerWidth - 218)),
+      y: Math.max(8, Math.min((rect?.top || 0) + 16, window.innerHeight - 44)),
+    })
   }
 
   const toggleTxtNote = (checked) => {
@@ -793,7 +840,9 @@ export default function ImageMode() {
         <div className="image-bottom-panel">
           <textarea
             className="note-editor"
+            onContextMenu={handleNoteEditorContextMenu}
             onChange={(event) => changeNoteDraft(event.target.value)}
+            onKeyDown={handleNoteEditorKeyDown}
             placeholder="Picture note content"
             ref={noteEditorRef}
             value={noteDraft}
@@ -885,6 +934,16 @@ export default function ImageMode() {
             改名并移动
           </button>
         </div>
+      ) : null}
+
+      {keywordMenu ? (
+        <SimpleContextMenu
+          items={[
+            { label: 'Keywords...', action: () => keywordInsertion.openPicker('noteEditor') },
+          ]}
+          onClose={() => setKeywordMenu(null)}
+          position={keywordMenu}
+        />
       ) : null}
 
       {dialog && !dialog.autoClose ? (

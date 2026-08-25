@@ -1,7 +1,10 @@
 const actions = new Map()
 const listeners = new Set()
 const actionCatalog = new Map([
-  ['global.cycleMode', { id: 'global.cycleMode', label: 'Cycle Mode', scope: 'global', description: 'Cycle through application modes.' }],
+  ['global.switchToVideo', { id: 'global.switchToVideo', label: 'Switch To Video', scope: 'global', description: 'Switch to video mode.' }],
+  ['global.switchToPicture', { id: 'global.switchToPicture', label: 'Switch To Picture', scope: 'global', description: 'Switch to picture mode.' }],
+  ['global.switchToText', { id: 'global.switchToText', label: 'Switch To Text', scope: 'global', description: 'Switch to text mode.' }],
+  ['global.switchToManagement', { id: 'global.switchToManagement', label: 'Switch To Management', scope: 'global', description: 'Switch to management mode.' }],
   ['video.seekStart', { id: 'video.seekStart', label: 'Seek Start', scope: 'video', description: 'Seek to current start time.' }],
   ['video.jumpBack', { id: 'video.jumpBack', label: 'Jump Back', scope: 'video', description: 'Jump backward by playback-rate scaled distance.' }],
   ['video.setStart', { id: 'video.setStart', label: 'Set Start', scope: 'video', description: 'Set current start time from playback position.' }],
@@ -26,7 +29,7 @@ const actionCatalog = new Map([
   ['video.toggleView', { id: 'video.toggleView', label: 'Toggle View', scope: 'video', description: 'Cycle video view layout.' }],
   ['video.toggleLeftTab', { id: 'video.toggleLeftTab', label: 'Toggle Left Tab', scope: 'video', description: 'Toggle Notes and MP4 Files tabs.' }],
   ['video.updateContent', { id: 'video.updateContent', label: 'Update Content', scope: 'video', description: 'Update selected note content.' }],
-  ['video.updateRange', { id: 'video.updateRange', label: 'Update Range', scope: 'video', description: 'Update selected note range from current playback position.' }],
+  ['video.quickUpdateRange', { id: 'video.quickUpdateRange', label: 'Quick Update Range', scope: 'video', description: 'Quickly update selected note range from current playback position.' }],
   ['video.writeCurrentRange', { id: 'video.writeCurrentRange', label: 'Write Current Range', scope: 'video', description: 'Write curStart and curEnd to selected note.' }],
   ['image.intoEditingFocus', { id: 'image.intoEditingFocus', label: 'Into Editing Focus', scope: 'image', description: 'Toggle focus between current image list and picture note content.' }],
   ['image.previousImage', { id: 'image.previousImage', label: 'Previous Image', scope: 'image', description: 'Select and load the previous image after the configured delay.' }],

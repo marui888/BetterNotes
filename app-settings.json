@@ -4,6 +4,8 @@
     "globalActivationShortcut": "Ctrl+Alt+F",
     "monthlyNotesFolder": "D:\\",
     "specialTextFolder": "D:\\temp\\WordListExamples\\特殊文件",
+    "keywordFolder": "D:\\prj_PDFReader\\metaData",
+    "defaultKeywordFile": "__数学笔记 关键词.txt",
     "playAllSubtitleSuffix": ".en.vtt",
     "subtitleConvertPromptTimeoutSec": 5,
     "imageAutoLoadDelayMs": 250,
@@ -26,7 +28,7 @@
       "video.setEnd": "F3",
       "video.jumpForward": "F4",
       "video.intoEditingFocus": "Alt+E",
-      "video.appendMark": "",
+      "video.appendMark": "Ctrl+E",
       "video.appendQuickMark": "Ctrl+S",
       "video.toggleControlMode": "Alt+V",
       "video.togglePlay": "F6",
@@ -44,7 +46,7 @@
       "video.toggleView": "Ctrl+F",
       "video.toggleLeftTab": "Alt+F",
       "video.updateContent": "Ctrl+Q",
-      "video.updateRange": "Ctrl+G",
+      "video.quickUpdateRange": "Ctrl+G",
       "video.writeCurrentRange": "Ctrl+W"
     },
     "image": {
@@ -75,7 +77,10 @@
     },
     "search": {},
     "global": {
-      "global.cycleMode": "Ctrl+N"
+      "global.switchToVideo": "Ctrl+K V",
+      "global.switchToPicture": "Ctrl+K P",
+      "global.switchToText": "Ctrl+K T",
+      "global.switchToManagement": "Ctrl+K M"
     }
   }
 }

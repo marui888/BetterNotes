@@ -3,6 +3,8 @@ import { APP_MODES, useAppStore } from '../../stores/appStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useVideoStore } from '../../stores/videoStore'
 import { registerActions, runAction } from '../actions/actionRegistry'
+import SimpleContextMenu from '../components/SimpleContextMenu'
+import useKeywordInsertion from '../hooks/useKeywordInsertion'
 import VideoPlayer from '../video/VideoPlayer'
 
 const PLAYBACK_RATES = [0.1, 0.3, 0.5, 0.8, 0.9, 1, 1.2, 1.4, 1.6, 1.8, 2.0]
@@ -105,6 +107,7 @@ export default function VideoMode() {
   const [leftTab, setLeftTab] = useState('notes')
   const [dialog, setDialog] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
+  const [keywordMenu, setKeywordMenu] = useState(null)
   const [fullscreenCycleState, setFullscreenCycleState] = useState(0)
   const [panelsHidden, setPanelsHidden] = useState(false)
   const [selectedDirectoryMp4Name, setSelectedDirectoryMp4Name] = useState('')
@@ -164,6 +167,15 @@ export default function VideoMode() {
   }, [])
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) || null
+  const keywordInsertion = useKeywordInsertion({
+    isActive: mode === APP_MODES.VIDEO,
+    targets: {
+      noteEditor: {
+        ref: noteEditorRef,
+        setValue: setNoteDraft,
+      },
+    },
+  })
 
   const scrollSelectedNoteIntoView = () => {
     window.requestAnimationFrame(() => {
@@ -285,6 +297,16 @@ export default function VideoMode() {
       window.removeEventListener('contextmenu', closeMenu, true)
     }
   }, [contextMenu])
+
+  useEffect(() => {
+    if (!keywordMenu) return undefined
+
+    const closeMenu = () => setKeywordMenu(null)
+    window.addEventListener('click', closeMenu)
+    return () => {
+      window.removeEventListener('click', closeMenu)
+    }
+  }, [keywordMenu])
 
   const getPlayerTime = () => playerRef.current?.currentTime() ?? 0
 
@@ -973,7 +995,7 @@ export default function VideoMode() {
     setCurEnd('')
     setDirty(APP_MODES.VIDEO, true)
   }
-  const updateSelectedRange = async () => {
+  const quickUpdateSelectedRange = async () => {
     if (!selectedNoteId) {
       showAutoMessage('没有选中的视频笔记。', '提示', 900)
       return
@@ -985,6 +1007,8 @@ export default function VideoMode() {
     updateNote(selectedNoteId, range)
     setSelectedStart(range.start)
     setSelectedEnd(range.end)
+    setCurStart(range.start)
+    setCurEnd(range.end)
     setDirty(APP_MODES.VIDEO, true)
     showAutoMessage('已更新时间段。', '操作完成', 900)
   }
@@ -1014,6 +1038,25 @@ export default function VideoMode() {
 
   const updateSelectedContent = (content) => {
     setNoteDraft(content)
+  }
+
+  const handleNoteEditorContextMenu = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    keywordInsertion.rememberTarget('noteEditor')
+    setKeywordMenu(getContextMenuPosition(event, 1))
+  }
+
+  const handleNoteEditorKeyDown = (event) => {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = noteEditorRef.current?.getBoundingClientRect()
+    keywordInsertion.rememberTarget('noteEditor')
+    setKeywordMenu({
+      x: Math.max(8, Math.min((rect?.left || 0) + 16, window.innerWidth - CONTEXT_MENU_WIDTH - 8)),
+      y: Math.max(8, Math.min((rect?.top || 0) + 16, window.innerHeight - CONTEXT_MENU_ITEM_HEIGHT - 8)),
+    })
   }
 
   const confirmUpdateSelectedContent = async () => {
@@ -1180,7 +1223,7 @@ export default function VideoMode() {
       { label: '追加标记', action: () => runAction('video.appendMark') },
       { label: '前插入快捷标记', action: () => insertQuickNoteNearSelected('before') },
       { label: '后插入快捷标记', action: () => insertQuickNoteNearSelected('after') },
-      { label: '更新当前标记', action: updateSelectedRange, separator: true },
+      { label: 'Quick Update Range', action: quickUpdateSelectedRange, separator: true },
       { label: '向上移动', action: () => moveSelectedNote('up') },
       { label: '向下移动', action: () => moveSelectedNote('down') },
       { label: '删除当前选中', action: deleteSelectedNote, separator: true },
@@ -1348,10 +1391,10 @@ export default function VideoMode() {
       handler: addQuickNote,
     },
     {
-      id: 'video.updateRange',
-      label: 'Update Range',
+      id: 'video.quickUpdateRange',
+      label: 'Quick Update Range',
       scope: APP_MODES.VIDEO,
-      handler: updateSelectedRange,
+      handler: quickUpdateSelectedRange,
     },
     {
       id: 'video.writeCurrentRange',
@@ -1372,7 +1415,7 @@ export default function VideoMode() {
     speedByStep,
     togglePlayPause,
     toggleFocusBetweenNotesListAndTextInput,
-    updateSelectedRange,
+    quickUpdateSelectedRange,
     volumeByStep,
     writeCurrentRangeToSelected,
   ])
@@ -1529,7 +1572,9 @@ export default function VideoMode() {
         <div className="video-bottom-panel">
           <textarea
             className="note-editor"
+            onContextMenu={handleNoteEditorContextMenu}
             onChange={(event) => updateSelectedContent(event.target.value)}
+            onKeyDown={handleNoteEditorKeyDown}
             placeholder="Note content"
             ref={noteEditorRef}
             value={noteDraft}
@@ -1567,6 +1612,10 @@ export default function VideoMode() {
               <div>
                 <span>speed</span>
                 <strong>{playbackRate}x</strong>
+              </div>
+              <div>
+                <span>Vol</span>
+                <strong>{Math.round(volume * 100)}%</strong>
               </div>
               <div className="info-file">
                 <span>file</span>
@@ -1611,7 +1660,7 @@ export default function VideoMode() {
         <button type="button" onClick={saveVideoNotes}>Save</button>
         <button type="button" onClick={addQuickNote}>QuickNote</button>
         <button type="button" onClick={() => setRepeat(!repeat)}>Repeat</button>
-        <button type="button" onClick={updateSelectedRange}>Update</button>
+        <button type="button" onClick={() => runAction('video.quickUpdateRange')}>QuickUpdate</button>
         <button type="button" onClick={openFromClipboard}>GetClip</button>
         <label className={videoControlMode ? 'toolbar-check video-toolbar-check control-on-check' : 'toolbar-check video-toolbar-check'}>
           <input
@@ -1644,9 +1693,6 @@ export default function VideoMode() {
         <span>Status: <strong className={dirty ? 'status-unsaved' : ''}>{dirty ? 'Unsaved' : 'Saved'}</strong></span>
         <span>Control: <strong className={videoControlMode ? 'control-on' : ''}>{videoControlMode ? 'ON' : 'OFF'}</strong></span>
         <span>File: <strong title={videoFile?.fileName || ''}>{videoFile?.fileName || '--'}</strong></span>
-        <span>Playing: <strong className="playing-time">{playingTime}</strong></span>
-        <span>Speed: <strong>{playbackRate}x</strong></span>
-        <span>Vol: <strong>{Math.round(volume * 100)}%</strong></span>
       </footer>
 
       {dialog && !dialog.autoClose ? (
@@ -1721,6 +1767,19 @@ export default function VideoMode() {
             </button>
           ))}
         </div>
+      ) : null}
+
+      {keywordMenu ? (
+        <SimpleContextMenu
+          items={[
+            { label: 'Keywords...', action: () => keywordInsertion.openPicker('noteEditor') },
+            { label: 'Quick Update Range', action: () => runAction('video.quickUpdateRange') },
+            { label: 'Update Content', action: () => runAction('video.updateContent') },
+            { label: 'Write Current Range', action: () => runAction('video.writeCurrentRange') },
+          ]}
+          onClose={() => setKeywordMenu(null)}
+          position={keywordMenu}
+        />
       ) : null}
     </section>
   )

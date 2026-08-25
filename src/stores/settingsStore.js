@@ -15,6 +15,8 @@ export const DEFAULT_APP_SETTINGS = {
     globalActivationShortcut: 'Ctrl+Alt+F',
     monthlyNotesFolder: '',
     specialTextFolder: '',
+    keywordFolder: '',
+    defaultKeywordFile: '',
     playAllSubtitleSuffix: '.en.vtt',
     subtitleConvertPromptTimeoutSec: 5,
     imageAutoLoadDelayMs: 500,
@@ -55,7 +57,7 @@ export const DEFAULT_APP_SETTINGS = {
       'video.toggleView': 'Ctrl+F',
       'video.toggleLeftTab': 'Alt+F',
       'video.updateContent': 'Ctrl+Q',
-      'video.updateRange': 'Ctrl+G',
+      'video.quickUpdateRange': 'Ctrl+G',
       'video.writeCurrentRange': 'Ctrl+W',
     },
     [APP_MODES.IMAGE]: {
@@ -80,7 +82,10 @@ export const DEFAULT_APP_SETTINGS = {
     },
     [APP_MODES.SEARCH]: {},
     global: {
-      'global.cycleMode': '',
+      'global.switchToVideo': 'Ctrl+K V',
+      'global.switchToPicture': 'Ctrl+K P',
+      'global.switchToText': 'Ctrl+K T',
+      'global.switchToManagement': 'Ctrl+K M',
     },
   },
 }
@@ -93,11 +98,16 @@ function mergeShortcutBucket(scope, value) {
   if (scope === APP_MODES.VIDEO && !merged['video.intoEditingFocus'] && value?.['video.toggleFocus']) {
     merged['video.intoEditingFocus'] = value['video.toggleFocus']
   }
+  if (scope === APP_MODES.VIDEO && !merged['video.quickUpdateRange'] && value?.['video.updateRange']) {
+    merged['video.quickUpdateRange'] = value['video.updateRange']
+  }
   if (scope === APP_MODES.TEXT && !merged['text.saveToSpecificFile'] && value?.['text.saveTo']) {
     merged['text.saveToSpecificFile'] = value['text.saveTo']
   }
   delete merged['video.toggleFocus']
+  delete merged['video.updateRange']
   delete merged['text.saveTo']
+  delete merged['global.cycleMode']
   return merged
 }
 
@@ -124,6 +134,12 @@ export function normalizeAppSettings(value) {
   const specialTextFolder = typeof value?.general?.specialTextFolder === 'string'
     ? value.general.specialTextFolder
     : DEFAULT_APP_SETTINGS.general.specialTextFolder
+  const keywordFolder = typeof value?.general?.keywordFolder === 'string'
+    ? value.general.keywordFolder
+    : DEFAULT_APP_SETTINGS.general.keywordFolder
+  const defaultKeywordFile = typeof value?.general?.defaultKeywordFile === 'string'
+    ? value.general.defaultKeywordFile
+    : DEFAULT_APP_SETTINGS.general.defaultKeywordFile
   const playAllSubtitleSuffix = typeof value?.general?.playAllSubtitleSuffix === 'string'
     ? value.general.playAllSubtitleSuffix
     : DEFAULT_APP_SETTINGS.general.playAllSubtitleSuffix
@@ -162,6 +178,8 @@ export function normalizeAppSettings(value) {
       globalActivationShortcut,
       monthlyNotesFolder,
       specialTextFolder,
+      keywordFolder,
+      defaultKeywordFile,
       playAllSubtitleSuffix,
       subtitleConvertPromptTimeoutSec,
       imageAutoLoadDelayMs,

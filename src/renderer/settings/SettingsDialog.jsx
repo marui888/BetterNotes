@@ -82,12 +82,38 @@ export default function SettingsDialog({ onClose }) {
   const [message, setMessage] = useState('')
   const [alertDialog, setAlertDialog] = useState(null)
   const [registeredActions, setRegisteredActions] = useState([])
+  const [pendingShortcutCapture, setPendingShortcutCapture] = useState(null)
+  const [keywordFileOptions, setKeywordFileOptions] = useState([])
 
   useEffect(() => {
     setDraft(normalizeAppSettings(settings))
   }, [settings])
 
   useEffect(() => subscribeActions(setRegisteredActions), [])
+
+  useEffect(() => {
+    let canceled = false
+    const keywordFolder = String(draft.general.keywordFolder || '').trim()
+
+    if (!keywordFolder || !window.keywordApi?.listKeywords) {
+      setKeywordFileOptions([])
+      return () => {
+        canceled = true
+      }
+    }
+
+    window.keywordApi.listKeywords({ keywordFolder, force: true }).then((result) => {
+      if (canceled) return
+      const groups = Array.isArray(result?.groups) ? result.groups : []
+      setKeywordFileOptions(groups.map((group) => group.fileName).filter(Boolean))
+    }).catch(() => {
+      if (!canceled) setKeywordFileOptions([])
+    })
+
+    return () => {
+      canceled = true
+    }
+  }, [draft.general.keywordFolder])
 
   const shortcutConflicts = useMemo(
     () => getShortcutConflicts(draft.shortcuts),
@@ -104,8 +130,54 @@ export default function SettingsDialog({ onClose }) {
       }))
   }, [draft.shortcuts, registeredActions, shortcutTab])
 
+  const shortcutGroups = useMemo(() => {
+    if (shortcutTab !== SHORTCUT_SCOPES.GLOBAL) {
+      return [{ title: '', rows: shortcutRows }]
+    }
+
+    return [
+      {
+        title: '普通快捷键',
+        rows: shortcutRows.filter((action) => !String(action.shortcut || '').includes(' ')),
+      },
+      {
+        title: '分段快捷键',
+        rows: shortcutRows.filter((action) => String(action.shortcut || '').includes(' ')),
+      },
+    ]
+  }, [shortcutRows, shortcutTab])
+
   const setShortcut = (scope, actionId, shortcut) => {
     setMessage('')
+    setPendingShortcutCapture(null)
+    setDraft((current) => ({
+      ...current,
+      shortcuts: {
+        ...current.shortcuts,
+        [scope]: {
+          ...(current.shortcuts?.[scope] || {}),
+          [actionId]: shortcut,
+        },
+      },
+    }))
+  }
+
+  const captureShortcut = (scope, actionId, shortcut) => {
+    if (scope !== SHORTCUT_SCOPES.GLOBAL) {
+      setShortcut(scope, actionId, shortcut)
+      return
+    }
+
+    if (
+      pendingShortcutCapture?.scope === scope
+      && pendingShortcutCapture?.actionId === actionId
+    ) {
+      setShortcut(scope, actionId, `${pendingShortcutCapture.shortcut} ${shortcut}`)
+      return
+    }
+
+    setMessage('Press second key for chord shortcut')
+    setPendingShortcutCapture({ scope, actionId, shortcut })
     setDraft((current) => ({
       ...current,
       shortcuts: {
@@ -152,6 +224,26 @@ export default function SettingsDialog({ onClose }) {
       general: {
         ...current.general,
         specialTextFolder: result.folderPath || '',
+      },
+    }))
+  }
+
+  const chooseKeywordFolder = async () => {
+    if (!window.appApi?.selectFolder) {
+      setMessage('Folder API unavailable')
+      return
+    }
+
+    const result = await window.appApi.selectFolder()
+    if (!result?.ok || result.canceled) return
+
+    setMessage('')
+    setDraft((current) => ({
+      ...current,
+      general: {
+        ...current.general,
+        keywordFolder: result.folderPath || '',
+        defaultKeywordFile: '',
       },
     }))
   }
@@ -218,6 +310,45 @@ export default function SettingsDialog({ onClose }) {
     if (savedSettings) onClose()
   }
 
+  const renderShortcutRow = (action) => (
+    <div
+      className={shortcutConflicts[shortcutTab]?.has(action.id)
+        ? 'settings-shortcut-row conflict'
+        : 'settings-shortcut-row'}
+      key={action.id}
+    >
+      <span>{action.label || action.id}</span>
+      <div className="settings-shortcut-input-wrap">
+        <input
+          value={action.shortcut || ''}
+          placeholder="Click and press keys"
+          onKeyDown={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            if (event.key === 'Backspace' || event.key === 'Delete') {
+              setShortcut(shortcutTab, action.id, '')
+              return
+            }
+            if (event.key === 'Escape') {
+              setPendingShortcutCapture(null)
+              setMessage('')
+              return
+            }
+            const shortcut = formatShortcutEvent(event)
+            if (shortcut) captureShortcut(shortcutTab, action.id, shortcut)
+          }}
+          onChange={() => {}}
+        />
+        <button
+          type="button"
+          onClick={() => setShortcut(shortcutTab, action.id, '')}
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  )
+
   return (
     <div className="settings-dialog-layer" role="presentation">
       <section className="settings-dialog" aria-label="Global settings">
@@ -264,6 +395,54 @@ export default function SettingsDialog({ onClose }) {
                       }}
                       onChange={() => {}}
                     />
+                    <label htmlFor="settings-keyword-folder">Keyword Folder</label>
+                    <div className="settings-folder-row">
+                      <input
+                        id="settings-keyword-folder"
+                        value={draft.general.keywordFolder}
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              keywordFolder: event.target.value,
+                              defaultKeywordFile: '',
+                            },
+                          }))
+                        }}
+                      />
+                      <button
+                        data-tooltip="Choose folder"
+                        onClick={chooseKeywordFolder}
+                        type="button"
+                      >
+                        <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                      </button>
+                    </div>
+                    <label htmlFor="settings-default-keyword-file">Default Keyword File</label>
+                    <select
+                      id="settings-default-keyword-file"
+                      value={draft.general.defaultKeywordFile}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            defaultKeywordFile: event.target.value,
+                          },
+                        }))
+                      }}
+                    >
+                      <option value="">None</option>
+                      {draft.general.defaultKeywordFile && !keywordFileOptions.includes(draft.general.defaultKeywordFile) ? (
+                        <option value={draft.general.defaultKeywordFile}>{draft.general.defaultKeywordFile}</option>
+                      ) : null}
+                      {keywordFileOptions.map((fileName) => (
+                        <option key={fileName} value={fileName}>{fileName}</option>
+                      ))}
+                    </select>
                   </div>
                 </section>
 
@@ -561,34 +740,17 @@ export default function SettingsDialog({ onClose }) {
                   {shortcutRows.length === 0 ? (
                     <div className="settings-empty">No shortcut items configured yet.</div>
                   ) : (
-                    shortcutRows.map((action) => (
-                      <div
-                        className={shortcutConflicts[shortcutTab]?.has(action.id)
-                          ? 'settings-shortcut-row conflict'
-                          : 'settings-shortcut-row'}
-                        key={action.id}
-                      >
-                        <span>{action.label || action.id}</span>
-                        <div className="settings-shortcut-input-wrap">
-                          <input
-                            value={action.shortcut || ''}
-                            placeholder="Click and press keys"
-                            onKeyDown={(event) => {
-                              event.preventDefault()
-                              event.stopPropagation()
-                              const shortcut = formatShortcutEvent(event)
-                              if (shortcut) setShortcut(shortcutTab, action.id, shortcut)
-                            }}
-                            onChange={() => {}}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShortcut(shortcutTab, action.id, '')}
-                          >
-                            Clear
-                          </button>
-                        </div>
-                      </div>
+                    shortcutGroups.map((group) => (
+                      <section className="settings-shortcut-group" key={group.title || 'default'}>
+                        {group.title ? (
+                          <div className="settings-shortcut-group-title">
+                            <span>{group.title}</span>
+                          </div>
+                        ) : null}
+                        {group.rows.length === 0 ? (
+                          <div className="settings-empty compact">No shortcut items.</div>
+                        ) : group.rows.map(renderShortcutRow)}
+                      </section>
                     ))
                   )}
                 </div>

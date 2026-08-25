@@ -66,11 +66,28 @@ button:hover {
 }
 
 .app-shell {
+  position: relative;
   display: flex;
   width: 100%;
   height: 100%;
   min-width: 0;
   background: #191919;
+}
+
+.shortcut-chord-hint {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  z-index: 9000;
+  padding: 7px 10px;
+  color: #111;
+  background: rgba(255, 179, 71, 0.96);
+  border: 1px solid rgba(255, 218, 143, 0.92);
+  border-radius: 4px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
 }
 
 .app-dock {
@@ -338,6 +355,33 @@ button:hover {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-top: 0;
   border-radius: 0 0 4px 4px;
+}
+
+.settings-shortcut-group + .settings-shortcut-group {
+  margin-top: 14px;
+}
+
+.settings-shortcut-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 8px;
+  color: #ffcf86;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-shortcut-group-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 179, 71, 0.32);
+}
+
+.settings-empty.compact {
+  min-height: 24px;
+  padding: 4px 0 6px;
+  font-size: 12px;
 }
 
 .settings-shortcut-row {
@@ -1007,6 +1051,163 @@ button:hover {
 .debug-empty {
   color: rgba(245, 222, 179, 0.52);
   font-size: 12px;
+}
+
+.keyword-window {
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr) auto;
+  width: 100vw;
+  height: 100vh;
+  min-width: 0;
+  min-height: 0;
+  color: #f5deb3;
+  background: #181818;
+}
+
+.keyword-tabs {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  padding: 6px 8px 5px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: #202020;
+}
+
+.keyword-tab,
+.keyword-empty-tab {
+  flex: 0 0 auto;
+  max-width: 150px;
+  height: 26px;
+  overflow: hidden;
+  padding: 0 9px;
+  border-radius: 4px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keyword-tab.active {
+  color: #111;
+  background: #ffb347;
+  border-color: #ffb347;
+}
+
+.keyword-refresh-button {
+  flex: 0 0 auto;
+  height: 26px;
+  margin-left: auto;
+  padding: 0 9px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.keyword-empty-tab {
+  display: flex;
+  align-items: center;
+  color: rgba(245, 222, 179, 0.56);
+}
+
+.keyword-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+}
+
+.keyword-grid {
+  column-gap: 6px;
+  column-width: 128px;
+}
+
+.keyword-item {
+  display: block;
+  min-height: 28px;
+  width: 100%;
+  overflow: hidden;
+  margin: 0 0 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: rgba(245, 222, 179, 0.88);
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.11);
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  break-inside: avoid;
+}
+
+.keyword-item.selected {
+  color: #111;
+  background: #ffb347;
+  border-color: #ffb347;
+}
+
+.keyword-empty {
+  color: rgba(245, 222, 179, 0.62);
+  font-size: 12px;
+}
+
+.keyword-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background: #202020;
+}
+
+.keyword-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.keyword-options fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 5px;
+}
+
+.keyword-options legend {
+  padding: 0 4px;
+  color: rgba(255, 207, 134, 0.86);
+  font-size: 12px;
+}
+
+.keyword-options label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.keyword-actions {
+  display: flex;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.keyword-actions button {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.keyword-actions button.primary {
+  color: #111;
+  background: #ffb347;
+  border-color: #ffb347;
 }
 
 .video-mode {

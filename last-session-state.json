@@ -1,49 +1,49 @@
 {
   "version": 1,
-  "savedAt": "2026-08-11T04:44:15.808Z",
+  "savedAt": "2026-08-21T17:55:33.879Z",
   "window": {
-    "displayId": 957057285,
+    "displayId": 1310481731,
     "displayBounds": {
-      "x": -1920,
+      "x": 0,
       "y": 0,
       "width": 1920,
       "height": 1080
     },
     "bounds": {
-      "x": -1928,
+      "x": -8,
       "y": -8,
-      "width": 1936,
-      "height": 1048
+      "width": 1920,
+      "height": 1032
     },
     "isMaximized": true
   },
   "activeMode": "video",
   "mode": "video",
   "modes": {
+    "image": {
+      "currentFilePath": "",
+      "folderPath": "",
+      "leftTab": "current",
+      "selectedRecentPath": null
+    },
     "text": {
-      "activeTab": "words",
+      "activeTab": "files",
       "wordsTabViewMode": "input",
-      "currentTxtFilePath": "D:\\temp\\WordListExamples\\王玉梅TOEFL\\list032-1-1.txt",
-      "currentFolderPath": "D:\\temp\\WordListExamples\\王玉梅TOEFL",
-      "selectedRecordIndex": 116,
+      "currentTxtFilePath": "",
+      "currentFolderPath": "",
+      "selectedRecordIndex": -1,
       "specialTextFilePath": "D:\\temp\\WordListExamples\\特殊文件\\_不规则动词EE.txt",
       "specialFolderPath": "D:\\temp\\WordListExamples\\特殊文件"
     },
     "video": {
-      "currentFilePath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中 高考\\一数 高考数学 最后十课2025\\高考最后十课-2025-数列.mp4",
-      "folderPath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中 高考\\一数 高考数学 最后十课2025",
+      "currentFilePath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中数学  高考数学\\一数 高考数学 最后十课2025\\高考最后十课-2025-数列.mp4",
+      "folderPath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中数学  高考数学\\一数 高考数学 最后十课2025",
       "leftTab": "notes",
-      "selectedNoteIndex": 38,
-      "playbackTime": 6306.51726,
+      "selectedNoteIndex": 55,
+      "playbackTime": 8765.680054,
       "playbackRate": 1,
       "fullscreenCycleState": 0,
       "panelsHidden": false
-    },
-    "image": {
-      "currentFilePath": "D:\\temp\\tempVideo\\PicExample20180303\\Screenshot_2017-04-30-17-50-46-84.png",
-      "folderPath": "D:\\temp\\tempVideo\\PicExample20180303",
-      "leftTab": "current",
-      "selectedRecentPath": "D:\\temp\\tempVideo\\PicExample20180303\\Screenshot_2017-04-30-17-50-46-84.png"
     }
   }
 }

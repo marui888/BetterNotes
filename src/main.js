@@ -22,12 +22,22 @@ if (started) {
 
 let mainWindow
 let debugWindow
+let keywordWindow
+let keywordCache = null
 const pendingDebugMessages = []
 let allowClose = false
 let closeRequestPending = false
+let appQuitting = false
 let windowLayoutBeforeTextMode = null
 let websterBlueDetectorPromise = null
 let registeredGlobalActivationShortcut = ''
+
+function notifyKeywordWindowOpened() {
+  if (keywordWindow && !keywordWindow.isDestroyed()) {
+    keywordWindow.webContents.send('keyword:opened')
+  }
+}
+
 const DEFAULT_RECENT_STATE = {
   recentFiles: {
     video: [],
@@ -48,6 +58,8 @@ const DEFAULT_APP_SETTINGS = {
     globalActivationShortcut: 'Ctrl+Alt+F',
     monthlyNotesFolder: '',
     specialTextFolder: '',
+    keywordFolder: '',
+    defaultKeywordFile: '',
     playAllSubtitleSuffix: '.en.vtt',
     subtitleConvertPromptTimeoutSec: 5,
     imageAutoLoadDelayMs: 500,
@@ -88,7 +100,7 @@ const DEFAULT_APP_SETTINGS = {
       'video.toggleView': 'Ctrl+F',
       'video.toggleLeftTab': 'Alt+F',
       'video.updateContent': 'Ctrl+Q',
-      'video.updateRange': 'Ctrl+G',
+      'video.quickUpdateRange': 'Ctrl+G',
       'video.writeCurrentRange': 'Ctrl+W',
     },
     image: {
@@ -113,7 +125,10 @@ const DEFAULT_APP_SETTINGS = {
     },
     search: {},
     global: {
-      'global.cycleMode': '',
+      'global.switchToVideo': 'Ctrl+K V',
+      'global.switchToPicture': 'Ctrl+K P',
+      'global.switchToText': 'Ctrl+K T',
+      'global.switchToManagement': 'Ctrl+K M',
     },
   },
 }
@@ -149,11 +164,16 @@ function mergeShortcutBucket(scope, value) {
   if (scope === 'video' && !merged['video.intoEditingFocus'] && value?.['video.toggleFocus']) {
     merged['video.intoEditingFocus'] = value['video.toggleFocus']
   }
+  if (scope === 'video' && !merged['video.quickUpdateRange'] && value?.['video.updateRange']) {
+    merged['video.quickUpdateRange'] = value['video.updateRange']
+  }
   if (scope === 'text' && !merged['text.saveToSpecificFile'] && value?.['text.saveTo']) {
     merged['text.saveToSpecificFile'] = value['text.saveTo']
   }
   delete merged['video.toggleFocus']
+  delete merged['video.updateRange']
   delete merged['text.saveTo']
+  delete merged['global.cycleMode']
   return merged
 }
 
@@ -180,6 +200,12 @@ function normalizeAppSettings(value) {
   const specialTextFolder = typeof value?.general?.specialTextFolder === 'string'
     ? normalizeFilePath(value.general.specialTextFolder)
     : DEFAULT_APP_SETTINGS.general.specialTextFolder
+  const keywordFolder = typeof value?.general?.keywordFolder === 'string'
+    ? normalizeFilePath(value.general.keywordFolder)
+    : DEFAULT_APP_SETTINGS.general.keywordFolder
+  const defaultKeywordFile = typeof value?.general?.defaultKeywordFile === 'string'
+    ? path.basename(value.general.defaultKeywordFile)
+    : DEFAULT_APP_SETTINGS.general.defaultKeywordFile
   const playAllSubtitleSuffix = typeof value?.general?.playAllSubtitleSuffix === 'string'
     ? value.general.playAllSubtitleSuffix
     : DEFAULT_APP_SETTINGS.general.playAllSubtitleSuffix
@@ -218,6 +244,8 @@ function normalizeAppSettings(value) {
       globalActivationShortcut,
       monthlyNotesFolder,
       specialTextFolder,
+      keywordFolder,
+      defaultKeywordFile,
       playAllSubtitleSuffix,
       subtitleConvertPromptTimeoutSec,
       imageAutoLoadDelayMs,
@@ -555,6 +583,84 @@ function createDebugWindow() {
   return debugWindow
 }
 
+function createKeywordWindow(options = {}) {
+  const shouldShow = options.show !== false
+  if (keywordWindow && !keywordWindow.isDestroyed()) {
+    if (shouldShow) {
+      keywordWindow.show()
+      keywordWindow.focus()
+      notifyKeywordWindowOpened()
+    }
+    return keywordWindow
+  }
+
+  const parentBounds = mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow.getBounds()
+    : { x: 80, y: 80, width: 900, height: 700 }
+  const workArea = screen.getDisplayMatching(parentBounds).workArea
+  const keywordWidth = 760
+  const keywordHeight = 520
+  const keywordX = Math.max(
+    workArea.x,
+    Math.min(parentBounds.x + 48, workArea.x + workArea.width - keywordWidth)
+  )
+  const keywordY = Math.max(
+    workArea.y,
+    Math.min(parentBounds.y + 48, workArea.y + workArea.height - keywordHeight)
+  )
+
+  keywordWindow = new BrowserWindow({
+    width: keywordWidth,
+    height: keywordHeight,
+    x: keywordX,
+    y: keywordY,
+    minWidth: 520,
+    minHeight: 360,
+    parent: mainWindow || undefined,
+    modal: false,
+    alwaysOnTop: true,
+    resizable: true,
+    show: shouldShow,
+    title: 'Keyword Input',
+    icon: path.join(process.cwd(), 'assets', 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      webSecurity: false,
+    },
+  })
+
+  keywordWindow.on('close', (event) => {
+    if (appQuitting) return
+    event.preventDefault()
+    keywordWindow?.hide()
+  })
+
+  keywordWindow.on('closed', () => {
+    keywordWindow = null
+  })
+
+  const keywordUrl = `${MAIN_WINDOW_VITE_DEV_SERVER_URL}#keyword`
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    keywordWindow.loadURL(keywordUrl)
+  } else {
+    keywordWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`), {
+      hash: 'keyword',
+    })
+  }
+
+  if (shouldShow) {
+    keywordWindow.once('ready-to-show', () => {
+      if (!keywordWindow?.isDestroyed()) {
+        keywordWindow.show()
+        keywordWindow.focus()
+        notifyKeywordWindowOpened()
+      }
+    })
+  }
+
+  return keywordWindow
+}
+
 function buildAppMenu() {
   const template = [
     {
@@ -744,6 +850,70 @@ async function listImageFilesInFolder(folderPath) {
   } catch (error) {
     console.error('list image files failed:', error)
     return []
+  }
+}
+
+function parseKeywordFileContent(text) {
+  const normalizedText = String(text || '').replace(/^\uFEFF/, '')
+  const startToken = '```KEYWORD-START'
+  const endToken = '```KEYWORD-END'
+  const startIndex = normalizedText.indexOf(startToken)
+  if (startIndex < 0) return []
+
+  const contentStart = normalizedText.indexOf('\n', startIndex)
+  if (contentStart < 0) return []
+
+  const endIndex = normalizedText.indexOf(endToken, contentStart)
+  const body = normalizedText.slice(contentStart + 1, endIndex >= 0 ? endIndex : normalizedText.length)
+  return body
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^[A-Za-z\u3400-\u9fff]/.test(line))
+}
+
+async function listKeywordFiles(options = {}) {
+  const settings = await readAppSettings()
+  const keywordFolder = typeof options.keywordFolder === 'string' && options.keywordFolder.trim()
+    ? normalizeFilePath(options.keywordFolder)
+    : settings.general.keywordFolder
+  const defaultKeywordFile = settings.general.defaultKeywordFile || ''
+  if (!keywordFolder) {
+    keywordCache = null
+    return { ok: false, reason: 'keyword-folder-empty', groups: [] }
+  }
+
+  if (!options.force && keywordCache?.keywordFolder === keywordFolder) {
+    return {
+      ...keywordCache.result,
+      defaultKeywordFile,
+      cached: true,
+    }
+  }
+
+  try {
+    const entries = await fs.readdir(keywordFolder, { withFileTypes: true })
+    const txtEntries = entries
+      .filter((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.txt')
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    const groups = await Promise.all(txtEntries.map(async (entry) => {
+      const filePath = path.join(keywordFolder, entry.name)
+      const text = await fs.readFile(filePath, 'utf8')
+      return {
+        type: path.basename(entry.name, path.extname(entry.name)),
+        fileName: entry.name,
+        filePath,
+        keywords: parseKeywordFileContent(text),
+      }
+    }))
+
+    const result = { ok: true, keywordFolder, defaultKeywordFile, groups, cached: false, loadedAt: new Date().toISOString() }
+    keywordCache = { keywordFolder, result }
+    return result
+  } catch (error) {
+    console.error('list keyword files failed:', error)
+    keywordCache = null
+    return { ok: false, reason: error.code || 'list-keyword-files-failed', groups: [] }
   }
 }
 
@@ -1364,6 +1534,33 @@ function registerIpcHandlers() {
   ipcMain.handle('app:dockTextModeWindow', async (_event, options) => dockWindowForTextMode(options))
   ipcMain.handle('app:restoreWindowAfterTextMode', async () => restoreWindowAfterTextMode())
 
+  ipcMain.handle('keyword:openPicker', async () => {
+    createKeywordWindow()
+    return { ok: true }
+  })
+
+  ipcMain.handle('keyword:list', async (_event, options) => listKeywordFiles(options))
+
+  ipcMain.handle('keyword:insert', async (_event, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('keyword:insert', payload)
+      mainWindow.show()
+      mainWindow.focus()
+      mainWindow.webContents.focus()
+    }
+    if (payload?.hideAfter && keywordWindow && !keywordWindow.isDestroyed()) {
+      keywordWindow.hide()
+    }
+    return { ok: true }
+  })
+
+  ipcMain.handle('keyword:hidePicker', async () => {
+    if (keywordWindow && !keywordWindow.isDestroyed()) {
+      keywordWindow.hide()
+    }
+    return { ok: true }
+  })
+
   ipcMain.handle('app:closeResponse', async (_event, canClose) => {
     closeRequestPending = false
     if (canClose && mainWindow && !mainWindow.isDestroyed()) {
@@ -1395,6 +1592,11 @@ const createWindow = (lastSessionState = null) => {
 
   mainWindow.webContents.once('did-finish-load', () => {
     logStartup('mainWindow did-finish-load')
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        createKeywordWindow({ show: false })
+      }
+    }, 600)
   })
 
   mainWindow.once('ready-to-show', () => {
@@ -1419,7 +1621,12 @@ const createWindow = (lastSessionState = null) => {
     if (debugWindow && !debugWindow.isDestroyed()) {
       debugWindow.destroy()
     }
+    if (keywordWindow && !keywordWindow.isDestroyed()) {
+      appQuitting = true
+      keywordWindow.destroy()
+    }
     debugWindow = null
+    keywordWindow = null
     mainWindow = null
   })
 
@@ -1493,6 +1700,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('will-quit', () => {
+  appQuitting = true
   globalShortcut.unregisterAll()
 })
 
