@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "savedAt": "2026-08-21T17:55:33.879Z",
+  "savedAt": "2026-08-27T09:55:28.452Z",
   "window": {
-    "displayId": 1310481731,
+    "displayId": 3369068811,
     "displayBounds": {
       "x": 0,
       "y": 0,
@@ -10,15 +10,15 @@
       "height": 1080
     },
     "bounds": {
-      "x": -8,
-      "y": -8,
-      "width": 1920,
+      "x": 1440,
+      "y": 0,
+      "width": 480,
       "height": 1032
     },
-    "isMaximized": true
+    "isMaximized": false
   },
-  "activeMode": "video",
-  "mode": "video",
+  "activeMode": "text",
+  "mode": "text",
   "modes": {
     "image": {
       "currentFilePath": "",
@@ -27,20 +27,20 @@
       "selectedRecentPath": null
     },
     "text": {
-      "activeTab": "files",
+      "activeTab": "words",
       "wordsTabViewMode": "input",
-      "currentTxtFilePath": "",
-      "currentFolderPath": "",
-      "selectedRecordIndex": -1,
+      "currentTxtFilePath": "D:\\temp\\WordListExamples\\王玉梅TOEFL\\list011-1-2.txt",
+      "currentFolderPath": "D:\\temp\\WordListExamples\\王玉梅TOEFL",
+      "selectedRecordIndex": 170,
       "specialTextFilePath": "D:\\temp\\WordListExamples\\特殊文件\\_不规则动词EE.txt",
       "specialFolderPath": "D:\\temp\\WordListExamples\\特殊文件"
     },
     "video": {
-      "currentFilePath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中数学  高考数学\\一数 高考数学 最后十课2025\\高考最后十课-2025-数列.mp4",
-      "folderPath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中数学  高考数学\\一数 高考数学 最后十课2025",
-      "leftTab": "notes",
-      "selectedNoteIndex": 55,
-      "playbackTime": 8765.680054,
+      "currentFilePath": "D:\\youtubeDL\\一口氣看懂稀土：中國不必開火，只需不賣！｜F-35、戰斧、潛艇全靠釤鈷磁鐵，美軍死線剩137日【港人講事 EP6】 [KO0F1ZksM5Q].mp4",
+      "folderPath": "D:\\youtubeDL",
+      "leftTab": "files",
+      "selectedNoteIndex": -1,
+      "playbackTime": 47.684121,
       "playbackRate": 1,
       "fullscreenCycleState": 0,
       "panelsHidden": false

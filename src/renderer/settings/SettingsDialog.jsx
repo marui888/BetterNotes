@@ -267,6 +267,25 @@ export default function SettingsDialog({ onClose }) {
     }))
   }
 
+  const chooseExtraSubtitleFolder = async () => {
+    if (!window.appApi?.selectFolder) {
+      setMessage('Folder API unavailable')
+      return
+    }
+
+    const result = await window.appApi.selectFolder()
+    if (!result?.ok || result.canceled) return
+
+    setMessage('')
+    setDraft((current) => ({
+      ...current,
+      general: {
+        ...current.general,
+        extraSubtitleFolder: result.folderPath || '',
+      },
+    }))
+  }
+
   const saveDraft = async () => {
     const hasConflicts = Object.values(shortcutConflicts).some((items) => items.size > 0)
     if (hasConflicts) {
@@ -449,6 +468,31 @@ export default function SettingsDialog({ onClose }) {
                 <section className="settings-section">
                   <div className="settings-section-title">Video</div>
                   <div className="settings-form-grid">
+                    <label htmlFor="settings-extra-subtitle-folder">Extra Subtitle Folder</label>
+                    <div className="settings-folder-row">
+                      <input
+                        id="settings-extra-subtitle-folder"
+                        placeholder="Absolute path, or relative to current folder"
+                        value={draft.general.extraSubtitleFolder}
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              extraSubtitleFolder: event.target.value,
+                            },
+                          }))
+                        }}
+                      />
+                      <button
+                        data-tooltip="Choose folder"
+                        onClick={chooseExtraSubtitleFolder}
+                        type="button"
+                      >
+                        <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                      </button>
+                    </div>
                     <label htmlFor="settings-play-all-subtitle-suffix">PlayAll Subtitle Suffix</label>
                     <input
                       id="settings-play-all-subtitle-suffix"

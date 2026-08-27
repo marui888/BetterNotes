@@ -17,6 +17,7 @@ export const DEFAULT_APP_SETTINGS = {
     specialTextFolder: '',
     keywordFolder: '',
     defaultKeywordFile: '',
+    extraSubtitleFolder: '',
     playAllSubtitleSuffix: '.en.vtt',
     subtitleConvertPromptTimeoutSec: 5,
     imageAutoLoadDelayMs: 500,
@@ -140,6 +141,9 @@ export function normalizeAppSettings(value) {
   const defaultKeywordFile = typeof value?.general?.defaultKeywordFile === 'string'
     ? value.general.defaultKeywordFile
     : DEFAULT_APP_SETTINGS.general.defaultKeywordFile
+  const extraSubtitleFolder = typeof value?.general?.extraSubtitleFolder === 'string'
+    ? value.general.extraSubtitleFolder.trim()
+    : DEFAULT_APP_SETTINGS.general.extraSubtitleFolder
   const playAllSubtitleSuffix = typeof value?.general?.playAllSubtitleSuffix === 'string'
     ? value.general.playAllSubtitleSuffix
     : DEFAULT_APP_SETTINGS.general.playAllSubtitleSuffix
@@ -180,6 +184,7 @@ export function normalizeAppSettings(value) {
       specialTextFolder,
       keywordFolder,
       defaultKeywordFile,
+      extraSubtitleFolder,
       playAllSubtitleSuffix,
       subtitleConvertPromptTimeoutSec,
       imageAutoLoadDelayMs,

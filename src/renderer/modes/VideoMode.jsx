@@ -80,6 +80,39 @@ function matchesSubtitleSuffix(subtitle, suffix) {
   return suffixes.some((candidate) => subtitleName.endsWith(candidate))
 }
 
+function normalizeSubtitleLanguages(info) {
+  if (Array.isArray(info?.subtitleLanguages) && info.subtitleLanguages.length > 0) {
+    return info.subtitleLanguages.map((entry) => ({
+      language: entry.language || '',
+      label: entry.label || entry.language || 'Default',
+      subtitle: entry.subtitle || null,
+      srtSubtitle: entry.srtSubtitle || null,
+    }))
+  }
+
+  const languageMap = new Map()
+  const addSubtitle = (subtitle, keyName) => {
+    if (!subtitle?.filePath) return
+    const language = subtitle.language || ''
+    const current = languageMap.get(language) || {
+      language,
+      label: subtitle.label || language || 'Default',
+      subtitle: null,
+      srtSubtitle: null,
+    }
+    current[keyName] = subtitle
+    languageMap.set(language, current)
+  }
+
+  ;(info?.subtitleCandidates || []).forEach((subtitle) => addSubtitle(subtitle, 'subtitle'))
+  ;(info?.srtSubtitleCandidates || []).forEach((subtitle) => addSubtitle(subtitle, 'srtSubtitle'))
+  return [...languageMap.values()]
+}
+
+function getSubtitleLanguageKey(language) {
+  return language || '__default__'
+}
+
 function getContextMenuPosition(event, itemCount) {
   const estimatedHeight = Math.max(1, itemCount) * CONTEXT_MENU_ITEM_HEIGHT
   const maxLeft = Math.max(CONTEXT_MENU_PADDING, window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_PADDING)
@@ -113,10 +146,13 @@ export default function VideoMode() {
   const [selectedDirectoryMp4Name, setSelectedDirectoryMp4Name] = useState('')
   const [playAll, setPlayAll] = useState(true)
   const [titleOn, setTitleOn] = useState(true)
+  const [subtitleLanguages, setSubtitleLanguages] = useState([])
+  const [selectedSubtitleLanguageKey, setSelectedSubtitleLanguageKey] = useState('')
   const [selectedSubtitle, setSelectedSubtitle] = useState(null)
   const [videoControlMode, setVideoControlMode] = useState(false)
   const [volume, setVolume] = useState(1)
 
+  const extraSubtitleFolder = useSettingsStore((state) => state.settings.general.extraSubtitleFolder)
   const playAllSubtitleSuffix = useSettingsStore((state) => state.settings.general.playAllSubtitleSuffix)
   const subtitleConvertPromptTimeoutSec = useSettingsStore((state) => state.settings.general.subtitleConvertPromptTimeoutSec)
   const mode = useAppStore((state) => state.mode)
@@ -591,54 +627,42 @@ export default function VideoMode() {
     }
   }, [restoreSessionState])
 
-  const chooseSubtitle = async (subtitleCandidates = [], options = {}) => {
-    if (subtitleCandidates.length === 0) {
+  const chooseSubtitleLanguage = async (languageOptions = [], options = {}) => {
+    if (languageOptions.length === 0) {
       return null
     }
 
-    if (subtitleCandidates.length === 1) {
-      return subtitleCandidates[0]
+    if (languageOptions.length === 1) {
+      return languageOptions[0]
     }
 
     if (options.playAllAuto) {
-      return subtitleCandidates.find((subtitle) => matchesSubtitleSuffix(subtitle, playAllSubtitleSuffix)) || null
+      return languageOptions.find((entry) => (
+        matchesSubtitleSuffix(entry.subtitle, playAllSubtitleSuffix)
+        || matchesSubtitleSuffix(entry.srtSubtitle, playAllSubtitleSuffix)
+      )) || null
     }
 
-    const selectedPath = await showSubtitleChoiceDialog(subtitleCandidates)
-    if (!selectedPath || selectedPath === 'none') {
+    const selectedLanguage = await showSubtitleChoiceDialog(languageOptions.map((entry) => ({
+      ...entry,
+      filePath: getSubtitleLanguageKey(entry.language),
+      fileName: entry.subtitle?.fileName || entry.srtSubtitle?.fileName || '',
+    })))
+    if (!selectedLanguage || selectedLanguage === 'none') {
       return null
     }
 
-    return subtitleCandidates.find((subtitle) => subtitle.filePath === selectedPath) || null
+    return languageOptions.find((entry) => getSubtitleLanguageKey(entry.language) === selectedLanguage) || null
   }
 
-  const chooseSrtSubtitleForConversion = async (srtSubtitleCandidates = [], options = {}) => {
-    if (srtSubtitleCandidates.length === 0) {
-      return null
-    }
-
-    let selectedSrt = srtSubtitleCandidates[0]
-
-    if (srtSubtitleCandidates.length > 1) {
-      if (options.playAllAuto) {
-        return srtSubtitleCandidates.find((subtitle) => matchesSubtitleSuffix(subtitle, playAllSubtitleSuffix)) || null
-      }
-
-      const selectedPath = await showSubtitleChoiceDialog(
-        srtSubtitleCandidates,
-        { title: '选择SRT字幕文件', noneLabel: '不转换字幕' },
-      )
-
-      selectedSrt = srtSubtitleCandidates.find((subtitle) => subtitle.filePath === selectedPath) || null
-    }
-
-    if (!selectedSrt) {
+  const chooseSrtSubtitleForConversion = async (srtSubtitle, options = {}) => {
+    if (!srtSubtitle) {
       return null
     }
 
     const decision = await showActionDialog({
       title: '转换SRT字幕',
-      message: `未找到VTT字幕，发现SRT字幕：${selectedSrt.fileName}。是否转换为VTT？`,
+      message: `未找到VTT字幕，发现SRT字幕：${srtSubtitle.fileName}。是否转换为VTT？`,
       defaultValue: 'convert',
       cancelValue: 'cancel',
       timeoutMs: subtitleConvertPromptTimeoutSec * 1000,
@@ -649,7 +673,7 @@ export default function VideoMode() {
       ],
     })
 
-    return decision === 'convert' ? selectedSrt : null
+    return decision === 'convert' ? srtSubtitle : null
   }
 
   const convertSrtSubtitleInBackground = async (videoInfo, srtSubtitle) => {
@@ -665,6 +689,12 @@ export default function VideoMode() {
 
       if (result?.ok && result.subtitle) {
         setSelectedSubtitle(result.subtitle)
+        setSelectedSubtitleLanguageKey(getSubtitleLanguageKey(result.subtitle.language))
+        setSubtitleLanguages((current) => current.map((entry) => (
+          (entry.language || '') === (result.subtitle.language || '')
+            ? { ...entry, subtitle: result.subtitle }
+            : entry
+        )))
         showAutoMessage('字幕转换完成。', '字幕', 900)
         return
       }
@@ -675,16 +705,60 @@ export default function VideoMode() {
     }
   }
 
+  const applySubtitleLanguage = async (languageKey, languageOptions = subtitleLanguages, options = {}) => {
+    if (!languageKey) {
+      setSelectedSubtitle(null)
+      return
+    }
+
+    const entry = languageOptions.find((item) => getSubtitleLanguageKey(item.language) === languageKey)
+    if (!entry) {
+      setSelectedSubtitle(null)
+      return
+    }
+
+    if (entry.subtitle) {
+      setSelectedSubtitle(entry.subtitle)
+      return
+    }
+
+    const srtSubtitle = await chooseSrtSubtitleForConversion(entry.srtSubtitle, options)
+    if (srtSubtitle && videoFile) {
+      convertSrtSubtitleInBackground(videoFile, srtSubtitle)
+    }
+  }
+
+  const handleSubtitleLanguageChange = (event) => {
+    const nextLanguageKey = event.target.value
+    setSelectedSubtitleLanguageKey(nextLanguageKey)
+    if (titleOn) {
+      applySubtitleLanguage(nextLanguageKey)
+    }
+  }
+
+  const handleSubtitleToggle = (event) => {
+    const enabled = event.target.checked
+    setTitleOn(enabled)
+    if (enabled) {
+      applySubtitleLanguage(selectedSubtitleLanguageKey)
+    }
+  }
+
   const loadVideoInfo = async (info, options = {}) => {
     if (!info?.ok) {
       showAutoMessage('没有合法的MP4文件。')
       return
     }
 
-    const subtitle = await chooseSubtitle(info.subtitleCandidates || [], options)
-    const srtSubtitle = subtitle ? null : await chooseSrtSubtitleForConversion(info.srtSubtitleCandidates || [], options)
+    const nextSubtitleLanguages = normalizeSubtitleLanguages(info)
+    const subtitleLanguage = await chooseSubtitleLanguage(nextSubtitleLanguages, options)
+    const selectedLanguageKey = subtitleLanguage ? getSubtitleLanguageKey(subtitleLanguage.language) : ''
+    const subtitle = subtitleLanguage?.subtitle || null
+    const srtSubtitle = subtitle ? null : await chooseSrtSubtitleForConversion(subtitleLanguage?.srtSubtitle, options)
 
     setVideoFile(info)
+    setSubtitleLanguages(nextSubtitleLanguages)
+    setSelectedSubtitleLanguageKey(selectedLanguageKey)
     setSelectedSubtitle(subtitle)
     setCurrentFile(info.filePath)
     addRecentFile(APP_MODES.VIDEO, info.filePath)
@@ -739,7 +813,7 @@ export default function VideoMode() {
       if (!canSwitch) return
     }
 
-    const info = await window.videoApi.getVideoFileInfo(fullPath)
+    const info = await window.videoApi.getVideoFileInfo(fullPath, { extraSubtitleFolder })
     await loadVideoInfo(info, options)
   }
 
@@ -836,7 +910,7 @@ export default function VideoMode() {
     setSelectedDirectoryMp4Name(mp4Files[0] || '')
 
     if (mp4Files[0] && window.videoApi?.getVideoFileInfo) {
-      const info = await window.videoApi.getVideoFileInfo(joinPath(folderPath, mp4Files[0]))
+      const info = await window.videoApi.getVideoFileInfo(joinPath(folderPath, mp4Files[0]), { extraSubtitleFolder })
       await loadVideoInfo({
         ...info,
         mp4Files,
@@ -853,7 +927,7 @@ export default function VideoMode() {
     const canSwitch = await confirmBeforeSwitchVideo()
     if (!canSwitch) return
 
-    const info = await window.videoApi.openVideoFile()
+    const info = await window.videoApi.openVideoFile({ extraSubtitleFolder })
     if (info?.canceled) return
     await loadVideoInfo(info, { autoplay: true })
   }
@@ -1681,7 +1755,7 @@ export default function VideoMode() {
         <label className="toolbar-check video-toolbar-check">
           <input
             checked={titleOn}
-            onChange={(event) => setTitleOn(event.target.checked)}
+            onChange={handleSubtitleToggle}
             type="checkbox"
           />
           <span>Subtitle</span>
@@ -1692,7 +1766,24 @@ export default function VideoMode() {
       <footer className="video-statusbar">
         <span>Status: <strong className={dirty ? 'status-unsaved' : ''}>{dirty ? 'Unsaved' : 'Saved'}</strong></span>
         <span>Control: <strong className={videoControlMode ? 'control-on' : ''}>{videoControlMode ? 'ON' : 'OFF'}</strong></span>
-        <span>File: <strong title={videoFile?.fileName || ''}>{videoFile?.fileName || '--'}</strong></span>
+        <label className="video-subtitle-language">
+          <span>Subtitle:</span>
+          <select
+            disabled={subtitleLanguages.length === 0}
+            onChange={handleSubtitleLanguageChange}
+            value={selectedSubtitleLanguageKey}
+          >
+            {subtitleLanguages.length === 0 ? (
+              <option value="">None</option>
+            ) : (
+              subtitleLanguages.map((entry) => (
+                <option key={getSubtitleLanguageKey(entry.language)} value={getSubtitleLanguageKey(entry.language)}>
+                  {entry.label || entry.language || 'Default'}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
       </footer>
 
       {dialog && !dialog.autoClose ? (

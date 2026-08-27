@@ -555,7 +555,7 @@ button:hover {
 }
 
 .text-list-panel {
-  grid-template-rows: 28px minmax(0, 1fr);
+  grid-template-rows: 51px minmax(0, 1fr);
   gap: 7px;
 }
 
@@ -567,6 +567,12 @@ button:hover {
 .text-list-upper,
 .text-edit-upper {
   min-height: 0;
+}
+
+.text-list-upper {
+  display: grid;
+  grid-template-rows: 28px 16px;
+  gap: 5px;
 }
 
 .text-edit-upper {
@@ -597,6 +603,26 @@ button:hover {
   grid-template-columns: minmax(0, 1fr) 28px 28px;
   gap: 5px;
   min-width: 0;
+}
+
+.text-current-folder-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  color: rgba(245, 222, 179, 0.54);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.text-current-folder-row strong {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(245, 222, 179, 0.72);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .text-special-file-row {
@@ -1757,6 +1783,37 @@ button:hover {
 .image-statusbar strong {
   color: #f5deb3;
   font-weight: normal;
+}
+
+.video-subtitle-language {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.video-subtitle-language span {
+  color: rgba(245, 222, 179, 0.72);
+}
+
+.video-subtitle-language select {
+  max-width: 180px;
+  min-width: 86px;
+  height: 19px;
+  color: #f5deb3;
+  background: #1f1f1f;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.video-subtitle-language option {
+  color: #f5deb3;
+  background: #1f1f1f;
+}
+
+.video-subtitle-language select:disabled {
+  color: rgba(245, 222, 179, 0.45);
 }
 
 .video-statusbar .playing-time {

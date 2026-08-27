@@ -220,6 +220,11 @@ export default function TextMode() {
   currentModeRef.current = currentMode
 
   const currentTxtFilePath = textFile?.filePath || ''
+  const currentEncodingLabel = String(textFile?.encoding || '').toLowerCase() === 'utf8'
+    ? 'UTF-8'
+    : textFile?.encoding
+      ? String(textFile.encoding).toUpperCase()
+      : ''
   const keywordInsertion = useKeywordInsertion({
     isActive: currentMode === APP_MODES.TEXT,
     targets: {
@@ -777,6 +782,49 @@ export default function TextMode() {
     applyTextFileInfo(info)
   }
 
+  const convertCurrentFolderTxtToUtf8 = async () => {
+    if (currentModeRef.current !== APP_MODES.TEXT || !currentFolderPath) {
+      showAutoMessage('No current TXT folder.', 'Convert TXT to UTF-8')
+      return
+    }
+    if (!window.textApi?.convertFolderTxtToUtf8) {
+      showAutoMessage('Convert TXT API is not available.', 'Convert TXT to UTF-8')
+      return
+    }
+
+    const decision = await showActionDialog({
+      title: 'Convert TXT to UTF-8',
+      message: `Convert TXT files in:\n${currentFolderPath}\n\nOutput: *.utf8.txt\nOriginal files will not be changed.`,
+      defaultValue: 'convert',
+      cancelValue: 'cancel',
+      actions: [
+        { label: 'Convert', value: 'convert', primary: true },
+        { label: 'Cancel', value: 'cancel' },
+      ],
+    })
+    if (decision !== 'convert') return
+
+    const result = await window.textApi.convertFolderTxtToUtf8(currentFolderPath)
+    if (!result?.ok) {
+      showAutoMessage(`Convert failed: ${result?.reason || 'unknown error'}`, 'Convert TXT to UTF-8', 3600)
+      return
+    }
+
+    const message = [
+      `Converted: ${result.converted || 0}`,
+      `Skipped UTF-8: ${result.skippedUtf8 || 0}`,
+      `Skipped existing: ${result.skippedExisting || 0}`,
+      `Failed: ${result.failed || 0}`,
+    ].join('\n')
+    window.debugApi?.log(`Convert TXT to UTF-8: ${currentFolderPath}\n${message}`)
+    showAutoMessage(message, 'Convert TXT to UTF-8', 5200)
+  }
+
+  useEffect(() => {
+    if (!window.appApi?.onConvertTxtToUtf8) return undefined
+    return window.appApi.onConvertTxtToUtf8(convertCurrentFolderTxtToUtf8)
+  }, [currentFolderPath])
+
   const loadTextFilePathForAutoLookup = async (filePath) => {
     if (!filePath || !window.textApi?.readTextFile) {
       return { ok: false, reason: 'text-read-api-not-available', records: [] }
@@ -897,17 +945,27 @@ export default function TextMode() {
       showAutoMessage('No special TXT file selected.')
       return
     }
-    if (!window.textApi?.appendTextLine) {
+    if (!window.textApi?.appendSpecialTextLine) {
       showAutoMessage('Append TXT API is not available.')
       return
     }
 
-    const result = await window.textApi.appendTextLine(specialTextFile.filePath, line)
+    const result = await window.textApi.appendSpecialTextLine(specialTextFile.filePath, line)
     if (!result?.ok) {
       showAutoMessage(`SaveToSpecificFile failed: ${result?.reason || 'unknown error'}`)
       return
     }
 
+    setSpecialTextFile({
+      filePath: result.filePath,
+      fileName: result.fileName,
+      folderPath: result.folderPath,
+      encoding: result.encoding,
+    })
+    setSpecialFolderPath(result.folderPath || '')
+    if (Array.isArray(result.txtFiles)) {
+      setSpecialTxtFiles(result.txtFiles)
+    }
     setIndependentInput('')
     window.debugApi?.log(`SaveToSpecificFile: ${result.filePath || specialTextFile.filePath}`)
     showAutoMessage('Saved.')
@@ -1762,6 +1820,10 @@ export default function TextMode() {
                   <i className="fa-solid fa-rotate-right" aria-hidden="true" />
                 </button>
               </div>
+              <div className="text-current-folder-row" title={currentFolderPath || 'No folder'}>
+                <span>Folder:</span>
+                <strong>{currentFolderPath || 'No folder'}</strong>
+              </div>
             </div>
 
             <div className="text-list-lower" ref={wordListLowerRef}>
@@ -2077,8 +2139,9 @@ export default function TextMode() {
           </section>
 
           <div className="text-status-bar">
-            <span>Words: {records.length}</span>
-            <span>Current: {selectedRecord ? records.findIndex((record) => record.id === selectedRecord.id) + 1 : 0}</span>
+            <span>{records.length}</span>
+            <span>{selectedRecord ? records.findIndex((record) => record.id === selectedRecord.id) + 1 : 0}</span>
+            {currentEncodingLabel ? <span>{currentEncodingLabel}</span> : null}
             <span>Auto: {autoLookupRunning ? 'Running' : 'Stopped'}</span>
             {autoLookupError ? <span className="text-auto-error">error</span> : null}
             <span className={dirty ? 'text-save-status unsaved' : 'text-save-status saved'}>

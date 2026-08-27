@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import started from 'electron-squirrel-startup';
 import { convertSrtToVtt } from './main/srtToVtt';
 import { captureWebsterOutput, doubleClickWebsterClientPoint } from './main/websterCapture';
-import { appendTextLine, listTxtFilesInFolder, readWordFile, saveWordFile } from './main/wordFileService';
+import { appendTextLine, appendUtf8TextLine, convertFolderTxtToUtf8, listTxtFilesInFolder, readWordFile, saveWordFile } from './main/wordFileService';
 import { cycleMDictDictionary, findDictionaryWindows, getMDictInputText, lookupMDict, lookupMDictRestore, lookupWebster, lookupWebsterAndRead } from './main/dictionaryAhkBridge';
 
 const startupStartMs = Date.now()
@@ -60,6 +60,7 @@ const DEFAULT_APP_SETTINGS = {
     specialTextFolder: '',
     keywordFolder: '',
     defaultKeywordFile: '',
+    extraSubtitleFolder: '',
     playAllSubtitleSuffix: '.en.vtt',
     subtitleConvertPromptTimeoutSec: 5,
     imageAutoLoadDelayMs: 500,
@@ -206,6 +207,9 @@ function normalizeAppSettings(value) {
   const defaultKeywordFile = typeof value?.general?.defaultKeywordFile === 'string'
     ? path.basename(value.general.defaultKeywordFile)
     : DEFAULT_APP_SETTINGS.general.defaultKeywordFile
+  const extraSubtitleFolder = typeof value?.general?.extraSubtitleFolder === 'string'
+    ? normalizeFilePath(value.general.extraSubtitleFolder)
+    : DEFAULT_APP_SETTINGS.general.extraSubtitleFolder
   const playAllSubtitleSuffix = typeof value?.general?.playAllSubtitleSuffix === 'string'
     ? value.general.playAllSubtitleSuffix
     : DEFAULT_APP_SETTINGS.general.playAllSubtitleSuffix
@@ -246,6 +250,7 @@ function normalizeAppSettings(value) {
       specialTextFolder,
       keywordFolder,
       defaultKeywordFile,
+      extraSubtitleFolder,
       playAllSubtitleSuffix,
       subtitleConvertPromptTimeoutSec,
       imageAutoLoadDelayMs,
@@ -667,17 +672,6 @@ function buildAppMenu() {
       label: 'File',
       submenu: [
         {
-          label: 'Settings',
-          click: () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('app:showSettings')
-            }
-          },
-        },
-        {
-          type: 'separator',
-        },
-        {
           role: 'quit',
         },
       ],
@@ -694,12 +688,36 @@ function buildAppMenu() {
         {
           role: 'toggleDevTools',
         },
+      ],
+    },
+    {
+      label: 'Tools',
+      submenu: [
+        {
+          label: 'Settings',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('app:showSettings')
+            }
+          },
+        },
         {
           type: 'separator',
         },
         {
           label: 'Debug Info',
           click: () => createDebugWindow(),
+        },
+        {
+          type: 'separator',
+        },
+        {
+          label: 'Convert TXT to UTF-8...',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('app:convertTxtToUtf8')
+            }
+          },
         },
       ],
     },
@@ -743,7 +761,29 @@ function getMonthlyNoteFilePath(folderPath, kind) {
   const year = now.getFullYear()
   const month = String(now.getMonth() + 1).padStart(2, '0')
   const baseName = kind === 'zh' ? 'NewWordsLog_Zh' : 'NewWordsLog_EN'
-  return path.join(normalizedFolder, `${baseName} ${year}-${month} ${os.hostname()}.txt`)
+  return path.join(normalizedFolder, `${baseName} ${year}-${month} ${os.hostname()}.utf8.txt`)
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function getSpecialUtf8TextFilePath(filePath) {
+  const normalizedPath = normalizeFilePath(filePath)
+  if (!isTxtFile(normalizedPath)) return ''
+
+  const folderPath = path.dirname(normalizedPath)
+  const fileName = path.basename(normalizedPath)
+  const hostName = os.hostname()
+  const specialPattern = new RegExp(`^.+_SP START_\\d{4}-\\d{2} ${escapeRegExp(hostName)}\\.utf8\\.txt$`, 'i')
+  if (specialPattern.test(fileName)) return normalizedPath
+
+  const parsedPath = path.parse(normalizedPath)
+  const baseName = parsedPath.name.replace(/\.utf8$/i, '')
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  return path.join(folderPath, `${baseName}_SP START_${year}-${month} ${hostName}.utf8.txt`)
 }
 
 function getVideoNotePath(filePath) {
@@ -753,7 +793,7 @@ function getVideoNotePath(filePath) {
 
 function getPictureNotePath(filePath) {
   const parsedPath = path.parse(filePath)
-  return path.join(parsedPath.dir, `${parsedPath.name}.picture.note.json`)
+  return path.join(parsedPath.dir, `${parsedPath.name}.json`)
 }
 
 function getPictureTxtNotePath(filePath) {
@@ -800,12 +840,32 @@ function buildSubtitleInfo(folderPath, videoBaseName, subtitleFileName) {
   }
 }
 
-async function listVideoSubtitleCandidates(filePath, subtitleExtension) {
-  const parsedPath = path.parse(filePath)
+function resolveSubtitleSearchFolders(videoFolderPath, extraSubtitleFolder) {
+  const folders = []
+  const addFolder = (folderPath) => {
+    const normalized = normalizeFilePath(folderPath)
+    if (!normalized) return
+    const resolved = path.resolve(normalized)
+    if (!folders.some((folder) => folder.toLowerCase() === resolved.toLowerCase())) {
+      folders.push(resolved)
+    }
+  }
+
+  addFolder(videoFolderPath)
+
+  const extraFolder = normalizeFilePath(extraSubtitleFolder)
+  if (extraFolder) {
+    addFolder(path.isAbsolute(extraFolder) ? extraFolder : path.resolve(process.cwd(), extraFolder))
+  }
+
+  return folders
+}
+
+async function listSubtitleCandidatesInFolder(folderPath, videoBaseName, subtitleExtension) {
   const wantedExt = subtitleExtension.toLowerCase()
 
   try {
-    const entries = await fs.readdir(parsedPath.dir, { withFileTypes: true })
+    const entries = await fs.readdir(folderPath, { withFileTypes: true })
     return entries
       .filter((entry) => {
         if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== wantedExt) {
@@ -813,10 +873,10 @@ async function listVideoSubtitleCandidates(filePath, subtitleExtension) {
         }
 
         const lowerName = entry.name.toLowerCase()
-        const lowerBase = parsedPath.name.toLowerCase()
+        const lowerBase = videoBaseName.toLowerCase()
         return lowerName === `${lowerBase}${wantedExt}` || lowerName.startsWith(`${lowerBase}.`)
       })
-      .map((entry) => buildSubtitleInfo(parsedPath.dir, parsedPath.name, entry.name))
+      .map((entry) => buildSubtitleInfo(folderPath, videoBaseName, entry.name))
       .sort((a, b) => {
         if (!a.language && b.language) return -1
         if (a.language && !b.language) return 1
@@ -825,6 +885,52 @@ async function listVideoSubtitleCandidates(filePath, subtitleExtension) {
   } catch (error) {
     console.error(`list ${wantedExt} subtitles failed:`, error)
     return []
+  }
+}
+
+async function listVideoSubtitleLanguages(filePath, extraSubtitleFolder = '') {
+  const parsedPath = path.parse(filePath)
+  const folders = resolveSubtitleSearchFolders(parsedPath.dir, extraSubtitleFolder)
+  const languageMap = new Map()
+
+  for (const folderPath of folders) {
+    const vttCandidates = await listSubtitleCandidatesInFolder(folderPath, parsedPath.name, '.vtt')
+    const srtCandidates = await listSubtitleCandidatesInFolder(folderPath, parsedPath.name, '.srt')
+
+    for (const subtitle of vttCandidates) {
+      const key = subtitle.language || ''
+      const existing = languageMap.get(key) || { language: key, label: subtitle.label }
+      if (!existing.subtitle) existing.subtitle = subtitle
+      languageMap.set(key, existing)
+    }
+
+    for (const subtitle of srtCandidates) {
+      const key = subtitle.language || ''
+      const existing = languageMap.get(key) || { language: key, label: subtitle.label }
+      if (!existing.srtSubtitle) existing.srtSubtitle = subtitle
+      languageMap.set(key, existing)
+    }
+  }
+
+  const subtitleLanguages = [...languageMap.values()]
+    .map((entry) => ({
+      language: entry.language,
+      label: entry.label || entry.language || 'Default',
+      subtitle: entry.subtitle || null,
+      srtSubtitle: entry.srtSubtitle || null,
+    }))
+    .sort((a, b) => {
+      if (!a.language && b.language) return -1
+      if (a.language && !b.language) return 1
+      return a.label.localeCompare(b.label)
+    })
+
+  return {
+    subtitleLanguages,
+    subtitleCandidates: subtitleLanguages.map((entry) => entry.subtitle).filter(Boolean),
+    srtSubtitleCandidates: subtitleLanguages
+      .filter((entry) => !entry.subtitle && entry.srtSubtitle)
+      .map((entry) => entry.srtSubtitle),
   }
 }
 
@@ -929,7 +1035,7 @@ async function readJsonFile(filePath, fallbackValue) {
   }
 }
 
-async function buildVideoFileInfo(filePath) {
+async function buildVideoFileInfo(filePath, options = {}) {
   filePath = normalizeFilePath(filePath)
 
   if (!isMp4File(filePath) || !(await fileExists(filePath))) {
@@ -941,10 +1047,7 @@ async function buildVideoFileInfo(filePath) {
   const notePath = getVideoNotePath(filePath)
   const notes = await readJsonFile(notePath, [])
   const mp4Files = await listMp4FilesInFolder(folderPath)
-  const subtitleCandidates = await listVideoSubtitleCandidates(filePath, '.vtt')
-  const srtSubtitleCandidates = subtitleCandidates.length === 0
-    ? await listVideoSubtitleCandidates(filePath, '.srt')
-    : []
+  const subtitleInfo = await listVideoSubtitleLanguages(filePath, options.extraSubtitleFolder)
 
   return {
     ok: true,
@@ -955,8 +1058,9 @@ async function buildVideoFileInfo(filePath) {
     notePath,
     notes: Array.isArray(notes) ? notes : [],
     mp4Files,
-    subtitleCandidates,
-    srtSubtitleCandidates,
+    subtitleLanguages: subtitleInfo.subtitleLanguages,
+    subtitleCandidates: subtitleInfo.subtitleCandidates,
+    srtSubtitleCandidates: subtitleInfo.srtSubtitleCandidates,
   }
 }
 
@@ -1262,7 +1366,7 @@ function restoreWindowAfterTextMode() {
 }
 
 function registerIpcHandlers() {
-  ipcMain.handle('video:openFile', async () => {
+  ipcMain.handle('video:openFile', async (_event, options = {}) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
       filters: [{ name: 'Video Files', extensions: ['mp4'] }],
@@ -1272,10 +1376,10 @@ function registerIpcHandlers() {
       return { ok: false, canceled: true }
     }
 
-    return buildVideoFileInfo(result.filePaths[0])
+    return buildVideoFileInfo(result.filePaths[0], options)
   })
 
-  ipcMain.handle('video:getFileInfo', async (_event, filePath) => buildVideoFileInfo(filePath))
+  ipcMain.handle('video:getFileInfo', async (_event, filePath, options = {}) => buildVideoFileInfo(filePath, options))
 
   ipcMain.handle('video:validateMp4Path', async (_event, filePath) => ({
     ok: isMp4File(normalizeFilePath(filePath)) && (await fileExists(normalizeFilePath(filePath))),
@@ -1418,14 +1522,32 @@ function registerIpcHandlers() {
 
   ipcMain.handle('text:saveFile', async (_event, filePath, records) => saveWordFile(filePath, records))
 
+  ipcMain.handle('text:convertFolderTxtToUtf8', async (_event, folderPath) => convertFolderTxtToUtf8(folderPath))
+
   ipcMain.handle('text:appendLine', async (_event, filePath, line) => appendTextLine(filePath, line))
+
+  ipcMain.handle('text:appendSpecialTextLine', async (_event, filePath, line) => {
+    const normalizedPath = normalizeFilePath(filePath)
+    const targetPath = getSpecialUtf8TextFilePath(normalizedPath)
+    if (!targetPath) return { ok: false, reason: 'invalid-special-text-file' }
+
+    const result = await appendUtf8TextLine(targetPath, line)
+    if (!result?.ok) return result
+
+    return {
+      ...result,
+      originalPath: normalizedPath,
+      renamed: targetPath !== normalizedPath,
+      txtFiles: await listTxtFilesInFolder(path.dirname(targetPath)),
+    }
+  })
 
   ipcMain.handle('text:appendMonthlyNoteLine', async (_event, payload) => {
     const kind = payload?.kind === 'zh' ? 'zh' : 'en'
     const targetPath = getMonthlyNoteFilePath(payload?.folderPath, kind)
     if (!targetPath) return { ok: false, reason: 'monthly-notes-folder-not-set' }
 
-    const result = await appendTextLine(targetPath, payload?.line || '')
+    const result = await appendUtf8TextLine(targetPath, payload?.line || '')
     return { ...result, targetPath, kind }
   })
 

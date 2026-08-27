@@ -1,8 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('videoApi', {
-  openVideoFile: () => ipcRenderer.invoke('video:openFile'),
-  getVideoFileInfo: (filePath) => ipcRenderer.invoke('video:getFileInfo', filePath),
+  openVideoFile: (options) => ipcRenderer.invoke('video:openFile', options),
+  getVideoFileInfo: (filePath, options) => ipcRenderer.invoke('video:getFileInfo', filePath, options),
   validateMp4Path: (filePath) => ipcRenderer.invoke('video:validateMp4Path', filePath),
   readNotes: (filePath) => ipcRenderer.invoke('video:readNotes', filePath),
   saveNotes: (filePath, notes) => ipcRenderer.invoke('video:saveNotes', filePath, notes),
@@ -29,7 +29,9 @@ contextBridge.exposeInMainWorld('textApi', {
   readTextFile: (filePath) => ipcRenderer.invoke('text:readFile', filePath),
   listTxtFiles: (folderPath) => ipcRenderer.invoke('text:listTxtFiles', folderPath),
   saveTextFile: (filePath, records) => ipcRenderer.invoke('text:saveFile', filePath, records),
+  convertFolderTxtToUtf8: (folderPath) => ipcRenderer.invoke('text:convertFolderTxtToUtf8', folderPath),
   appendTextLine: (filePath, line) => ipcRenderer.invoke('text:appendLine', filePath, line),
+  appendSpecialTextLine: (filePath, line) => ipcRenderer.invoke('text:appendSpecialTextLine', filePath, line),
   appendMonthlyNoteLine: (payload) => ipcRenderer.invoke('text:appendMonthlyNoteLine', payload),
   selectFolder: () => ipcRenderer.invoke('text:selectFolder'),
   openTextFileExternal: (filePath) => ipcRenderer.invoke('text:openExternal', filePath),
@@ -59,6 +61,11 @@ contextBridge.exposeInMainWorld('appApi', {
     const listener = () => handler()
     ipcRenderer.on('app:showSettings', listener)
     return () => ipcRenderer.removeListener('app:showSettings', listener)
+  },
+  onConvertTxtToUtf8: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on('app:convertTxtToUtf8', listener)
+    return () => ipcRenderer.removeListener('app:convertTxtToUtf8', listener)
   },
   onRequestClose: (handler) => {
     const listener = () => handler()
