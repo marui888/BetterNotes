@@ -5,6 +5,8 @@ import { useVideoStore } from '../../stores/videoStore'
 import { registerActions, runAction } from '../actions/actionRegistry'
 import SimpleContextMenu from '../components/SimpleContextMenu'
 import useKeywordInsertion from '../hooks/useKeywordInsertion'
+import RollingSubtitlePanel from '../video/RollingSubtitlePanel'
+import { parseSubtitleCues } from '../video/subtitleParser'
 import VideoPlayer from '../video/VideoPlayer'
 
 const PLAYBACK_RATES = [0.1, 0.3, 0.5, 0.8, 0.9, 1, 1.2, 1.4, 1.6, 1.8, 2.0]
@@ -12,6 +14,10 @@ const SHORT_JUMP_SECONDS = 2
 const LONG_JUMP_SECONDS = 8
 const QUICK_NOTE_FORWARD_SECONDS = 5
 const QUICK_NOTE_BACKWARD_SECONDS = 2
+const PLAYBACK_RATE_STEP = 0.05
+const MIN_PLAYBACK_RATE = 0.1
+const MAX_PLAYBACK_RATE = 2
+const VOLUME_STEP = 0.05
 const CONTEXT_MENU_WIDTH = 210
 const CONTEXT_MENU_ITEM_HEIGHT = 36
 const CONTEXT_MENU_OFFSET = 8
@@ -131,6 +137,7 @@ function getContextMenuPosition(event, itemCount) {
 
 export default function VideoMode() {
   const playerRef = useRef(null)
+  const videoStageRef = useRef(null)
   const notesListRef = useRef(null)
   const directoryListRef = useRef(null)
   const noteEditorRef = useRef(null)
@@ -149,10 +156,17 @@ export default function VideoMode() {
   const [subtitleLanguages, setSubtitleLanguages] = useState([])
   const [selectedSubtitleLanguageKey, setSelectedSubtitleLanguageKey] = useState('')
   const [selectedSubtitle, setSelectedSubtitle] = useState(null)
+  const [rollingSubtitleCues, setRollingSubtitleCues] = useState([])
+  const [rollingSubtitleError, setRollingSubtitleError] = useState('')
+  const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0)
   const [videoControlMode, setVideoControlMode] = useState(false)
   const [volume, setVolume] = useState(1)
 
-  const extraSubtitleFolder = useSettingsStore((state) => state.settings.general.extraSubtitleFolder)
+  const settings = useSettingsStore((state) => state.settings)
+  const saveSettings = useSettingsStore((state) => state.saveSettings)
+  const extraSubtitleFolder = settings.general.extraSubtitleFolder
+  const subtitleDisplayMode = settings.general.subtitleDisplayMode || 'native'
+  const rollingSubtitleFontSize = settings.general.rollingSubtitleFontSize
   const playAllSubtitleSuffix = useSettingsStore((state) => state.settings.general.playAllSubtitleSuffix)
   const subtitleConvertPromptTimeoutSec = useSettingsStore((state) => state.settings.general.subtitleConvertPromptTimeoutSec)
   const mode = useAppStore((state) => state.mode)
@@ -221,6 +235,33 @@ export default function VideoMode() {
   }
 
   useEffect(() => {
+    let canceled = false
+
+    async function loadRollingSubtitleCues() {
+      setRollingSubtitleCues([])
+      setRollingSubtitleError('')
+      if (!selectedSubtitle?.filePath) return
+
+      const result = await window.videoApi?.readSubtitleText?.(selectedSubtitle.filePath)
+      if (canceled) return
+
+      if (!result?.ok) {
+        const reason = result?.reason || 'read-subtitle-failed'
+        setRollingSubtitleError(reason)
+        window.debugApi?.log(`Rolling subtitle read failed: ${selectedSubtitle.filePath} (${reason})`)
+        return
+      }
+
+      setRollingSubtitleCues(parseSubtitleCues(result.content || ''))
+    }
+
+    loadRollingSubtitleCues()
+    return () => {
+      canceled = true
+    }
+  }, [selectedSubtitle])
+
+  useEffect(() => {
     if (leftTab === 'notes') scrollSelectedNoteIntoView()
   }, [leftTab, selectedNoteId])
 
@@ -275,8 +316,15 @@ export default function VideoMode() {
       subtitleCandidates,
       defaultValue: subtitleCandidates[0]?.filePath || 'none',
       cancelValue: 'none',
+      nonModal: true,
       actions: [{ label: options.noneLabel || '不加载字幕', value: 'none' }],
     })
+
+    if (Number.isFinite(Number(options.timeoutMs)) && Number(options.timeoutMs) > 0) {
+      toastTimerRef.current = setTimeout(() => {
+        closeDialog(options.timeoutValue || subtitleCandidates[0]?.filePath || 'none')
+      }, Number(options.timeoutMs))
+    }
   })
 
   const showAutoMessage = (message, title = '提示', timeout = 1200) => {
@@ -637,17 +685,21 @@ export default function VideoMode() {
     }
 
     if (options.playAllAuto) {
-      return languageOptions.find((entry) => (
+      const matchedLanguage = languageOptions.find((entry) => (
         matchesSubtitleSuffix(entry.subtitle, playAllSubtitleSuffix)
         || matchesSubtitleSuffix(entry.srtSubtitle, playAllSubtitleSuffix)
-      )) || null
+      ))
+      if (matchedLanguage) return matchedLanguage
     }
 
     const selectedLanguage = await showSubtitleChoiceDialog(languageOptions.map((entry) => ({
       ...entry,
       filePath: getSubtitleLanguageKey(entry.language),
       fileName: entry.subtitle?.fileName || entry.srtSubtitle?.fileName || '',
-    })))
+    })), {
+      timeoutMs: subtitleConvertPromptTimeoutSec * 1000,
+      timeoutValue: getSubtitleLanguageKey(languageOptions[0]?.language),
+    })
     if (!selectedLanguage || selectedLanguage === 'none') {
       return null
     }
@@ -658,6 +710,10 @@ export default function VideoMode() {
   const chooseSrtSubtitleForConversion = async (srtSubtitle, options = {}) => {
     if (!srtSubtitle) {
       return null
+    }
+
+    if (options.autoConvertSrt) {
+      return srtSubtitle
     }
 
     const decision = await showActionDialog({
@@ -751,10 +807,17 @@ export default function VideoMode() {
     }
 
     const nextSubtitleLanguages = normalizeSubtitleLanguages(info)
-    const subtitleLanguage = await chooseSubtitleLanguage(nextSubtitleLanguages, options)
+    const subtitleOptions = {
+      ...options,
+      playAllAuto: options.playAllAuto || playAll,
+    }
+    const subtitleLanguage = await chooseSubtitleLanguage(nextSubtitleLanguages, subtitleOptions)
     const selectedLanguageKey = subtitleLanguage ? getSubtitleLanguageKey(subtitleLanguage.language) : ''
     const subtitle = subtitleLanguage?.subtitle || null
-    const srtSubtitle = subtitle ? null : await chooseSrtSubtitleForConversion(subtitleLanguage?.srtSubtitle, options)
+    const srtSubtitle = subtitle ? null : await chooseSrtSubtitleForConversion(subtitleLanguage?.srtSubtitle, {
+      ...subtitleOptions,
+      autoConvertSrt: subtitleOptions.playAllAuto || Boolean(subtitleLanguage),
+    })
 
     setVideoFile(info)
     setSubtitleLanguages(nextSubtitleLanguages)
@@ -1158,13 +1221,10 @@ export default function VideoMode() {
 
   const speedByStep = (step) => {
     const currentRate = getPlaybackRate()
-    const currentIndex = PLAYBACK_RATES.reduce((bestIndex, rate, index) => (
-      Math.abs(rate - currentRate) < Math.abs(PLAYBACK_RATES[bestIndex] - currentRate)
-        ? index
-        : bestIndex
-    ), 0)
-    const nextIndex = Math.min(PLAYBACK_RATES.length - 1, Math.max(0, currentIndex + step))
-    const nextRate = PLAYBACK_RATES[nextIndex]
+    const nextRate = Math.max(
+      MIN_PLAYBACK_RATE,
+      Math.min(MAX_PLAYBACK_RATE, Math.round((currentRate + (step * PLAYBACK_RATE_STEP)) * 100) / 100),
+    )
 
     playerRef.current?.playbackRate?.(nextRate)
     setPlaybackRate(nextRate)
@@ -1432,13 +1492,13 @@ export default function VideoMode() {
       id: 'video.volumeUp',
       label: 'Volume Up',
       scope: APP_MODES.VIDEO,
-      handler: () => volumeByStep(0.1),
+      handler: () => volumeByStep(VOLUME_STEP),
     },
     {
       id: 'video.volumeDown',
       label: 'Volume Down',
       scope: APP_MODES.VIDEO,
-      handler: () => volumeByStep(-0.1),
+      handler: () => volumeByStep(-VOLUME_STEP),
     },
     {
       id: 'video.toggleView',
@@ -1507,12 +1567,35 @@ export default function VideoMode() {
   }
 
   const onTimeUpdate = (currentTime) => {
+    setCurrentPlaybackTime(currentTime)
     setPlayingTime(formatTime(currentTime))
+  }
+
+  const jumpToSubtitleCue = (cue) => {
+    if (!cue || !Number.isFinite(cue.start)) return
+    playerRef.current?.currentTime?.(cue.start)
+  }
+
+  const changeSubtitleDisplayMode = async (event) => {
+    const nextMode = event.target.value === 'rolling' ? 'rolling' : 'native'
+    try {
+      await saveSettings({
+        ...settings,
+        general: {
+          ...settings.general,
+          subtitleDisplayMode: nextMode,
+        },
+      })
+    } catch (error) {
+      showAutoMessage('字幕显示模式保存失败。', '字幕', 1800)
+      window.debugApi?.log(`Subtitle display mode save failed: ${error.message || String(error)}`)
+    }
   }
 
   const fullscreenClass = `fullscreen-state-${fullscreenCycleState}`
   const panelsClass = panelsHidden ? 'panels-hidden' : ''
   const controlModeClass = videoControlMode ? 'video-control-mode' : ''
+  const nativeSubtitle = titleOn && subtitleDisplayMode === 'native' ? selectedSubtitle : null
 
   return (
     <section className={`video-mode ${fullscreenClass} ${panelsClass} ${controlModeClass}`}>
@@ -1632,15 +1715,32 @@ export default function VideoMode() {
         </aside>
 
         <section className="video-center">
-        <div className="video-stage" onContextMenu={(event) => openContextMenu(event, 'video')}>
+        <div
+          className="video-stage"
+          onContextMenu={(event) => openContextMenu(event, 'video')}
+          ref={videoStageRef}
+        >
           <VideoPlayer
             onEnded={playNextDirectoryVideo}
             onReady={onPlayerReady}
             onTimeUpdate={onTimeUpdate}
-            subtitle={selectedSubtitle}
-            subtitleEnabled={titleOn}
+            subtitle={nativeSubtitle}
+            subtitleEnabled={Boolean(nativeSubtitle)}
             src={videoFile?.fileUrl}
           />
+          {titleOn && subtitleDisplayMode === 'rolling' && selectedSubtitle ? (
+            <RollingSubtitlePanel
+              containerRef={videoStageRef}
+              cues={rollingSubtitleCues}
+              currentTime={currentPlaybackTime}
+              defaultFontSize={rollingSubtitleFontSize}
+              getCurrentTime={() => playerRef.current?.currentTime?.()}
+              onCueClick={jumpToSubtitleCue}
+            />
+          ) : null}
+          {titleOn && subtitleDisplayMode === 'rolling' && rollingSubtitleError ? (
+            <div className="rolling-subtitle-error">Rolling subtitle: {rollingSubtitleError}</div>
+          ) : null}
         </div>
 
         <div className="video-bottom-panel">
@@ -1784,10 +1884,20 @@ export default function VideoMode() {
             )}
           </select>
         </label>
+        <label className="video-subtitle-language">
+          <span>View:</span>
+          <select
+            onChange={changeSubtitleDisplayMode}
+            value={subtitleDisplayMode}
+          >
+            <option value="native">Native</option>
+            <option value="rolling">Rolling</option>
+          </select>
+        </label>
       </footer>
 
       {dialog && !dialog.autoClose ? (
-        <div className="inline-dialog-mask">
+        <div className={dialog.nonModal ? 'inline-dialog-layer non-modal' : 'inline-dialog-mask'}>
           <div className="inline-dialog">
             <div className="inline-dialog-title">{dialog.title}</div>
             {dialog.subtitleCandidates ? (

@@ -1,24 +1,24 @@
 {
   "version": 1,
-  "savedAt": "2026-08-27T09:55:28.452Z",
+  "savedAt": "2026-08-31T10:45:04.425Z",
   "window": {
-    "displayId": 3369068811,
+    "displayId": 1406708829,
     "displayBounds": {
-      "x": 0,
+      "x": -1920,
       "y": 0,
       "width": 1920,
       "height": 1080
     },
     "bounds": {
-      "x": 1440,
-      "y": 0,
+      "x": -1111,
+      "y": 99,
       "width": 480,
       "height": 1032
     },
-    "isMaximized": false
+    "isMaximized": true
   },
-  "activeMode": "text",
-  "mode": "text",
+  "activeMode": "video",
+  "mode": "video",
   "modes": {
     "image": {
       "currentFilePath": "",
@@ -31,16 +31,16 @@
       "wordsTabViewMode": "input",
       "currentTxtFilePath": "D:\\temp\\WordListExamples\\王玉梅TOEFL\\list011-1-2.txt",
       "currentFolderPath": "D:\\temp\\WordListExamples\\王玉梅TOEFL",
-      "selectedRecordIndex": 170,
+      "selectedRecordIndex": 23,
       "specialTextFilePath": "D:\\temp\\WordListExamples\\特殊文件\\_不规则动词EE.txt",
       "specialFolderPath": "D:\\temp\\WordListExamples\\特殊文件"
     },
     "video": {
-      "currentFilePath": "D:\\youtubeDL\\一口氣看懂稀土：中國不必開火，只需不賣！｜F-35、戰斧、潛艇全靠釤鈷磁鐵，美軍死線剩137日【港人講事 EP6】 [KO0F1ZksM5Q].mp4",
+      "currentFilePath": "D:\\youtubeDL\\I Thought I’d Be Eating Dinner Alone… Until She Walked In And Said, “Can We Sit Here For A While？” [eCC0IN6puB0].mp4",
       "folderPath": "D:\\youtubeDL",
       "leftTab": "files",
       "selectedNoteIndex": -1,
-      "playbackTime": 47.684121,
+      "playbackTime": 1222.775735,
       "playbackRate": 1,
       "fullscreenCycleState": 0,
       "panelsHidden": false

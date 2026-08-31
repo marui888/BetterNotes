@@ -493,6 +493,43 @@ export default function SettingsDialog({ onClose }) {
                         <i className="fa-solid fa-folder-open" aria-hidden="true" />
                       </button>
                     </div>
+                    <label htmlFor="settings-subtitle-display-mode">Subtitle Display Mode</label>
+                    <select
+                      id="settings-subtitle-display-mode"
+                      value={draft.general.subtitleDisplayMode || 'native'}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            subtitleDisplayMode: event.target.value,
+                          },
+                        }))
+                      }}
+                    >
+                      <option value="native">Native</option>
+                      <option value="rolling">Rolling</option>
+                    </select>
+                    <label htmlFor="settings-rolling-subtitle-font-size">Rolling Subtitle Font Size</label>
+                    <input
+                      id="settings-rolling-subtitle-font-size"
+                      min="10"
+                      max="48"
+                      step="1"
+                      type="number"
+                      value={draft.general.rollingSubtitleFontSize}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            rollingSubtitleFontSize: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
                     <label htmlFor="settings-play-all-subtitle-suffix">PlayAll Subtitle Suffix</label>
                     <input
                       id="settings-play-all-subtitle-suffix"

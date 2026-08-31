@@ -57,6 +57,25 @@ npm run package
 ## 问题
 
 
+### //mr:: 2026_08_30 21_18_24
+
+在prj_videoPlayer_new和prj_annotaton_lab项目中，都有下面的需求：
+点击快捷键输入框后，直接按键捕获
+自动格式化成：- Ctrl+F
+- Alt+ArrowLeft
+- F2
+- Ctrl+K V
+
+Backspace / Delete 清空快捷键
+Escape 取消当前捕获
+Clear 按钮清空
+同一个 scope 内冲突检测
+冲突时阻止保存
+支持 Global 中的组合分段快捷键，也就是 chord shortcut
+Settings -> Shortcuts -> Global 里还把普通快捷键和分段快捷键分组显示
+
+这些需求能不能做成一个”模块“，”组件“，类似的可复用代码。
+
 ### //mr:: 2026_08_15 18_33_06
 这个报错原因很明确：sharp 是 native/CJS 模块，内部会用 require('child_process')。现在 Electron main 进程代码被 Vite/Rolldown 打包进 .vite/build/main.js 时，sharp 被错误地卷进 bundle 里了，运行时环境又没有暴露 require，所以导出时报错。
 

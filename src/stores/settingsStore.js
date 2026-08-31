@@ -18,6 +18,8 @@ export const DEFAULT_APP_SETTINGS = {
     keywordFolder: '',
     defaultKeywordFile: '',
     extraSubtitleFolder: '',
+    subtitleDisplayMode: 'native',
+    rollingSubtitleFontSize: 25,
     playAllSubtitleSuffix: '.en.vtt',
     subtitleConvertPromptTimeoutSec: 5,
     imageAutoLoadDelayMs: 500,
@@ -147,6 +149,13 @@ export function normalizeAppSettings(value) {
   const playAllSubtitleSuffix = typeof value?.general?.playAllSubtitleSuffix === 'string'
     ? value.general.playAllSubtitleSuffix
     : DEFAULT_APP_SETTINGS.general.playAllSubtitleSuffix
+  const subtitleDisplayMode = value?.general?.subtitleDisplayMode === 'rolling'
+    ? 'rolling'
+    : DEFAULT_APP_SETTINGS.general.subtitleDisplayMode
+  const rawRollingSubtitleFontSize = Number(value?.general?.rollingSubtitleFontSize)
+  const rollingSubtitleFontSize = Number.isFinite(rawRollingSubtitleFontSize)
+    ? Math.max(10, Math.min(48, Math.round(rawRollingSubtitleFontSize)))
+    : DEFAULT_APP_SETTINGS.general.rollingSubtitleFontSize
   const rawSubtitleConvertPromptTimeoutSec = Number(value?.general?.subtitleConvertPromptTimeoutSec)
   const subtitleConvertPromptTimeoutSec = Number.isFinite(rawSubtitleConvertPromptTimeoutSec)
     ? Math.max(1, Math.min(60, Math.round(rawSubtitleConvertPromptTimeoutSec)))
@@ -185,6 +194,8 @@ export function normalizeAppSettings(value) {
       keywordFolder,
       defaultKeywordFile,
       extraSubtitleFolder,
+      subtitleDisplayMode,
+      rollingSubtitleFontSize,
       playAllSubtitleSuffix,
       subtitleConvertPromptTimeoutSec,
       imageAutoLoadDelayMs,

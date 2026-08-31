@@ -8,13 +8,14 @@ module.exports = {
   packagerConfig: {
     asar: true,
     icon: './assets/icon',
-    afterCopy: [
+    afterComplete: [
       (buildPath, electronVersion, platform, arch, callback) => {
         try {
           const source = path.join(__dirname, 'tools');
           const target = path.join(buildPath, 'tools');
 
           if (fs.existsSync(source)) {
+            fs.rmSync(target, { recursive: true, force: true });
             fs.cpSync(source, target, { recursive: true, force: true });
           }
 

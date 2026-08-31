@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('videoApi', {
   getVideoFileInfo: (filePath, options) => ipcRenderer.invoke('video:getFileInfo', filePath, options),
   validateMp4Path: (filePath) => ipcRenderer.invoke('video:validateMp4Path', filePath),
   readNotes: (filePath) => ipcRenderer.invoke('video:readNotes', filePath),
+  readSubtitleText: (filePath) => ipcRenderer.invoke('video:readSubtitleText', filePath),
   saveNotes: (filePath, notes) => ipcRenderer.invoke('video:saveNotes', filePath, notes),
   listMp4Files: (folderPath) => ipcRenderer.invoke('video:listMp4Files', folderPath),
   readClipboardText: () => ipcRenderer.invoke('video:readClipboardText'),
