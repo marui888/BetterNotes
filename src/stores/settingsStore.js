@@ -20,6 +20,8 @@ export const DEFAULT_APP_SETTINGS = {
     extraSubtitleFolder: '',
     subtitleDisplayMode: 'native',
     rollingSubtitleFontSize: 25,
+    videoNotesFontSize: 11,
+    videoNotesPoolFontSize: 11,
     playAllSubtitleSuffix: '.en.vtt',
     subtitleConvertPromptTimeoutSec: 5,
     imageAutoLoadDelayMs: 500,
@@ -156,6 +158,19 @@ export function normalizeAppSettings(value) {
   const rollingSubtitleFontSize = Number.isFinite(rawRollingSubtitleFontSize)
     ? Math.max(10, Math.min(48, Math.round(rawRollingSubtitleFontSize)))
     : DEFAULT_APP_SETTINGS.general.rollingSubtitleFontSize
+  const legacyNoteItemFontSize = Number(value?.general?.noteItemFontSize)
+  const rawVideoNotesFontSize = Number.isFinite(Number(value?.general?.videoNotesFontSize))
+    ? Number(value.general.videoNotesFontSize)
+    : legacyNoteItemFontSize
+  const videoNotesFontSize = Number.isFinite(rawVideoNotesFontSize)
+    ? Math.max(9, Math.min(18, Math.round(rawVideoNotesFontSize)))
+    : DEFAULT_APP_SETTINGS.general.videoNotesFontSize
+  const rawVideoNotesPoolFontSize = Number.isFinite(Number(value?.general?.videoNotesPoolFontSize))
+    ? Number(value.general.videoNotesPoolFontSize)
+    : legacyNoteItemFontSize
+  const videoNotesPoolFontSize = Number.isFinite(rawVideoNotesPoolFontSize)
+    ? Math.max(9, Math.min(18, Math.round(rawVideoNotesPoolFontSize)))
+    : DEFAULT_APP_SETTINGS.general.videoNotesPoolFontSize
   const rawSubtitleConvertPromptTimeoutSec = Number(value?.general?.subtitleConvertPromptTimeoutSec)
   const subtitleConvertPromptTimeoutSec = Number.isFinite(rawSubtitleConvertPromptTimeoutSec)
     ? Math.max(1, Math.min(60, Math.round(rawSubtitleConvertPromptTimeoutSec)))
@@ -196,6 +211,8 @@ export function normalizeAppSettings(value) {
       extraSubtitleFolder,
       subtitleDisplayMode,
       rollingSubtitleFontSize,
+      videoNotesFontSize,
+      videoNotesPoolFontSize,
       playAllSubtitleSuffix,
       subtitleConvertPromptTimeoutSec,
       imageAutoLoadDelayMs,

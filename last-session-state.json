@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "savedAt": "2026-08-31T10:45:04.425Z",
+  "savedAt": "2026-09-01T11:52:36.854Z",
   "window": {
-    "displayId": 1406708829,
+    "displayId": 491016285,
     "displayBounds": {
       "x": -1920,
       "y": 0,
@@ -10,8 +10,8 @@
       "height": 1080
     },
     "bounds": {
-      "x": -1111,
-      "y": 99,
+      "x": -1256,
+      "y": 237,
       "width": 480,
       "height": 1032
     },
@@ -36,11 +36,11 @@
       "specialFolderPath": "D:\\temp\\WordListExamples\\特殊文件"
     },
     "video": {
-      "currentFilePath": "D:\\youtubeDL\\I Thought I’d Be Eating Dinner Alone… Until She Walked In And Said, “Can We Sit Here For A While？” [eCC0IN6puB0].mp4",
-      "folderPath": "D:\\youtubeDL",
-      "leftTab": "files",
-      "selectedNoteIndex": -1,
-      "playbackTime": 1222.775735,
+      "currentFilePath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中数学  高考数学\\一数 高考数学 120+拔高系统合集\\【一数拔高】高考必会函数！二次+分式！(Av114925406000514,P1).mp4",
+      "folderPath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中数学  高考数学\\一数 高考数学 120+拔高系统合集",
+      "leftTab": "notes",
+      "selectedNoteIndex": 7,
+      "playbackTime": 66.712368,
       "playbackRate": 1,
       "fullscreenCycleState": 0,
       "panelsHidden": false

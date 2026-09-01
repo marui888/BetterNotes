@@ -530,6 +530,44 @@ export default function SettingsDialog({ onClose }) {
                         }))
                       }}
                     />
+                    <label htmlFor="settings-video-notes-font-size">Notes FontSize</label>
+                    <input
+                      id="settings-video-notes-font-size"
+                      min="9"
+                      max="18"
+                      step="1"
+                      type="number"
+                      value={draft.general.videoNotesFontSize}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            videoNotesFontSize: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                    <label htmlFor="settings-video-notes-pool-font-size">Notes Pool FontSize</label>
+                    <input
+                      id="settings-video-notes-pool-font-size"
+                      min="9"
+                      max="18"
+                      step="1"
+                      type="number"
+                      value={draft.general.videoNotesPoolFontSize}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            videoNotesPoolFontSize: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
                     <label htmlFor="settings-play-all-subtitle-suffix">PlayAll Subtitle Suffix</label>
                     <input
                       id="settings-play-all-subtitle-suffix"

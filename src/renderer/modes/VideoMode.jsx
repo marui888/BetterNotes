@@ -1,10 +1,11 @@
-﻿import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_MODES, useAppStore } from '../../stores/appStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useVideoStore } from '../../stores/videoStore'
 import { registerActions, runAction } from '../actions/actionRegistry'
 import SimpleContextMenu from '../components/SimpleContextMenu'
 import useKeywordInsertion from '../hooks/useKeywordInsertion'
+import { compileFilterExpression } from '../utils/filterExpression'
 import RollingSubtitlePanel from '../video/RollingSubtitlePanel'
 import { parseSubtitleCues } from '../video/subtitleParser'
 import VideoPlayer from '../video/VideoPlayer'
@@ -18,6 +19,8 @@ const PLAYBACK_RATE_STEP = 0.05
 const MIN_PLAYBACK_RATE = 0.1
 const MAX_PLAYBACK_RATE = 2
 const VOLUME_STEP = 0.05
+const MIN_NOTE_ITEM_FONT_SIZE = 9
+const MAX_NOTE_ITEM_FONT_SIZE = 18
 const CONTEXT_MENU_WIDTH = 210
 const CONTEXT_MENU_ITEM_HEIGHT = 36
 const CONTEXT_MENU_OFFSET = 8
@@ -32,6 +35,25 @@ function formatTime(seconds) {
   const pad = (part) => part.toString().padStart(2, '0')
 
   return `${pad(hours)}:${pad(minutes)}:${pad(secs)}.0`
+}
+
+function formatDuration(seconds) {
+  const value = Number.isFinite(seconds) ? Math.max(0, seconds) : 0
+  if (value < 60) return `+${value.toFixed(1)}s`
+
+  const wholeSeconds = Math.floor(value)
+  const minutes = Math.floor(wholeSeconds / 60)
+  const secs = wholeSeconds % 60
+  const fraction = Math.floor((value - wholeSeconds) * 10)
+  return `+${minutes}:${secs.toString().padStart(2, '0')}.${fraction}`
+}
+
+function getNoteDuration(note) {
+  const startSeconds = parseTime(note?.start)
+  const endSeconds = parseTime(note?.end)
+  return Number.isFinite(startSeconds) && Number.isFinite(endSeconds)
+    ? endSeconds - startSeconds
+    : Number.NaN
 }
 
 function parseTime(timeText) {
@@ -148,6 +170,21 @@ export default function VideoMode() {
   const [dialog, setDialog] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
   const [keywordMenu, setKeywordMenu] = useState(null)
+  const [notesFilterText, setNotesFilterText] = useState('')
+  const [notesFilterOn, setNotesFilterOn] = useState(false)
+  const [notesReverse, setNotesReverse] = useState(false)
+  const [rightToolTab, setRightToolTab] = useState('main')
+  const [externalNotes, setExternalNotes] = useState([])
+  const [externalNotesFilterText, setExternalNotesFilterText] = useState('')
+  const [externalNotesFilterOn, setExternalNotesFilterOn] = useState(false)
+  const [externalNotesReverse, setExternalNotesReverse] = useState(false)
+  const [externalNotesShowFileName, setExternalNotesShowFileName] = useState(true)
+  const [selectedExternalNoteId, setSelectedExternalNoteId] = useState('')
+  const [expandedExternalNoteId, setExpandedExternalNoteId] = useState('')
+  const [dirtyExternalNoteIds, setDirtyExternalNoteIds] = useState(() => new Set())
+  const [videoLeftWidth, setVideoLeftWidth] = useState(200)
+  const [videoRightWidth, setVideoRightWidth] = useState(240)
+  const [videoStageRatio, setVideoStageRatio] = useState(0.74)
   const [fullscreenCycleState, setFullscreenCycleState] = useState(0)
   const [panelsHidden, setPanelsHidden] = useState(false)
   const [selectedDirectoryMp4Name, setSelectedDirectoryMp4Name] = useState('')
@@ -167,6 +204,8 @@ export default function VideoMode() {
   const extraSubtitleFolder = settings.general.extraSubtitleFolder
   const subtitleDisplayMode = settings.general.subtitleDisplayMode || 'native'
   const rollingSubtitleFontSize = settings.general.rollingSubtitleFontSize
+  const videoNotesFontSize = settings.general.videoNotesFontSize || 11
+  const videoNotesPoolFontSize = settings.general.videoNotesPoolFontSize || 11
   const playAllSubtitleSuffix = useSettingsStore((state) => state.settings.general.playAllSubtitleSuffix)
   const subtitleConvertPromptTimeoutSec = useSettingsStore((state) => state.settings.general.subtitleConvertPromptTimeoutSec)
   const mode = useAppStore((state) => state.mode)
@@ -217,6 +256,41 @@ export default function VideoMode() {
   }, [])
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) || null
+  const selectedNoteIndex = notes.findIndex((note) => note.id === selectedNoteId)
+  const notesFilterExpression = useMemo(
+    () => compileFilterExpression(notesFilterText),
+    [notesFilterText]
+  )
+  const externalNotesFilterExpression = useMemo(
+    () => compileFilterExpression(externalNotesFilterText),
+    [externalNotesFilterText]
+  )
+  const visibleNotes = useMemo(() => {
+    const rows = notes
+      .map((note, index) => ({ note, index }))
+      .filter(({ note }) => {
+        if (!notesFilterOn || !notesFilterExpression.active || !notesFilterExpression.ok) return true
+        return notesFilterExpression.matches(note.content)
+      })
+
+    return notesReverse ? rows.reverse() : rows
+  }, [notes, notesFilterExpression, notesFilterOn, notesReverse])
+  const selectedExternalNote = externalNotes.find((note) => note.id === selectedExternalNoteId) || null
+  const selectedExternalNoteIndex = externalNotes.findIndex((note) => note.id === selectedExternalNoteId)
+  const externalNoteFileCount = useMemo(
+    () => new Set(externalNotes.map((note) => note.sourceJsonPath).filter(Boolean)).size,
+    [externalNotes]
+  )
+  const visibleExternalNotes = useMemo(() => {
+    const rows = externalNotes
+      .map((note, index) => ({ note, index }))
+      .filter(({ note }) => {
+        if (!externalNotesFilterOn || !externalNotesFilterExpression.active || !externalNotesFilterExpression.ok) return true
+        return externalNotesFilterExpression.matches(note.content)
+      })
+
+    return externalNotesReverse ? rows.reverse() : rows
+  }, [externalNotes, externalNotesFilterExpression, externalNotesFilterOn, externalNotesReverse])
   const keywordInsertion = useKeywordInsertion({
     isActive: mode === APP_MODES.VIDEO,
     targets: {
@@ -995,6 +1069,127 @@ export default function VideoMode() {
     await loadVideoInfo(info, { autoplay: true })
   }
 
+  const appendExternalNotes = (result) => {
+    if (!result?.ok && !result?.canceled) {
+      showAutoMessage('旧视频笔记加载失败。', 'Notes Pool', 1400)
+      return
+    }
+
+    const loadedNotes = Array.isArray(result?.notes) ? result.notes : []
+    if (loadedNotes.length === 0) {
+      showAutoMessage('没有找到可用的旧视频笔记。', 'Notes Pool', 1400)
+      return
+    }
+
+    setExternalNotes((current) => {
+      const byId = new Map(current.map((note) => [note.id, note]))
+      loadedNotes.forEach((note) => byId.set(note.id, note))
+      return [...byId.values()]
+    })
+    setDirtyExternalNoteIds((current) => {
+      const next = new Set(current)
+      loadedNotes.forEach((note) => next.delete(note.id))
+      return next
+    })
+    setRightToolTab('notesPool')
+    const skippedCount = Array.isArray(result?.skippedFiles) ? result.skippedFiles.length : 0
+    showAutoMessage(`已加载 ${loadedNotes.length} 条旧视频笔记${skippedCount ? `，跳过 ${skippedCount} 个JSON` : ''}。`, 'Notes Pool', 1600)
+  }
+
+  const updateExternalNoteContent = (noteId, content) => {
+    setExternalNotes((current) => current.map((note) => (
+      note.id === noteId ? { ...note, content } : note
+    )))
+    setDirtyExternalNoteIds((current) => {
+      const next = new Set(current)
+      next.add(noteId)
+      return next
+    })
+  }
+
+  const saveExternalNoteContent = async (externalNote) => {
+    if (!externalNote || !window.videoApi?.saveLegacyNoteContent) {
+      showAutoMessage('videoApi.saveLegacyNoteContent 不可用。', 'Notes Pool', 1400)
+      return
+    }
+
+    const result = await window.videoApi.saveLegacyNoteContent({
+      sourceJsonPath: externalNote.sourceJsonPath,
+      noteIndex: externalNote.noteIndex,
+      start: externalNote.start,
+      end: externalNote.end,
+      content: externalNote.content || '',
+    })
+
+    if (!result?.ok) {
+      const reason = result?.reason || 'save-legacy-note-failed'
+      showAutoMessage('旧视频笔记保存失败。', 'Notes Pool', 1600)
+      window.debugApi?.log(`Save legacy video note failed: ${externalNote.sourceJsonPath}#${externalNote.noteIndex} (${reason})`)
+      return
+    }
+
+    setExternalNotes((current) => current.map((note) => (
+      note.id === externalNote.id
+        ? {
+            ...note,
+            noteIndex: Number.isInteger(result.noteIndex) ? result.noteIndex : note.noteIndex,
+            content: result.note?.content ?? note.content,
+          }
+        : note
+    )))
+    setDirtyExternalNoteIds((current) => {
+      const next = new Set(current)
+      next.delete(externalNote.id)
+      return next
+    })
+    showAutoMessage('旧视频笔记已保存。', 'Notes Pool', 900)
+  }
+
+  const loadExternalNotesFromFiles = async () => {
+    if (!window.videoApi?.selectLegacyNoteFiles) {
+      showAutoMessage('videoApi.selectLegacyNoteFiles 不可用。', 'Notes Pool', 1400)
+      return
+    }
+
+    appendExternalNotes(await window.videoApi.selectLegacyNoteFiles())
+  }
+
+  const loadExternalNotesFromFolder = async () => {
+    if (!window.videoApi?.selectLegacyNoteFolder) {
+      showAutoMessage('videoApi.selectLegacyNoteFolder 不可用。', 'Notes Pool', 1400)
+      return
+    }
+
+    appendExternalNotes(await window.videoApi.selectLegacyNoteFolder())
+  }
+
+  const openExternalNoteTarget = async (externalNote) => {
+    if (!externalNote?.sourceVideoPath || !window.videoApi?.getVideoFileInfo) return
+
+    const info = await window.videoApi.getVideoFileInfo(externalNote.sourceVideoPath, { extraSubtitleFolder })
+    if (!info?.ok) {
+      showAutoMessage('找不到对应的视频文件。', 'Notes Pool', 1400)
+      return
+    }
+
+    setVideoFile(info)
+    setSelectedDirectoryMp4Name(info.fileName || '')
+    setSubtitleLanguages([])
+    setSelectedSubtitleLanguageKey('')
+    setSelectedSubtitle(null)
+    setCurrentFile(info.filePath)
+    addRecentFile(APP_MODES.VIDEO, info.filePath)
+    if (info.folderPath) {
+      addRecentFolder(APP_MODES.VIDEO, info.folderPath)
+    }
+
+    const startSeconds = parseTime(externalNote.start)
+    if (Number.isFinite(startSeconds)) {
+      seekWhenReady(startSeconds)
+      setTimeout(() => playFromCurrentPosition(), 160)
+    }
+  }
+
   const openFromClipboard = async () => {
     if (!window.videoApi?.readClipboardText || !window.videoApi?.validateMp4Path) {
       showAutoMessage('剪贴板读取接口不可用。')
@@ -1028,6 +1223,7 @@ export default function VideoMode() {
     if (!range) return
 
     addNote(createQuickNote(range))
+    setNotesFilterOn(false)
     setCurStart(range.start)
     setCurEnd(range.end)
     setDirty(APP_MODES.VIDEO, true)
@@ -1059,6 +1255,7 @@ export default function VideoMode() {
       raw: {},
     }
     addNote(note)
+    setNotesFilterOn(false)
     setDirty(APP_MODES.VIDEO, true)
     showAutoMessage('已追加标记。', '操作完成', 900)
   }
@@ -1088,6 +1285,7 @@ export default function VideoMode() {
 
     const insertIndex = position === 'before' ? selectedIndex : selectedIndex + 1
     insertNoteAt(insertIndex, createQuickNote(range))
+    setNotesFilterOn(false)
     setDirty(APP_MODES.VIDEO, true)
     showAutoMessage('已插入视频笔记。', '操作完成', 900)
   }
@@ -1286,17 +1484,22 @@ export default function VideoMode() {
     event.stopPropagation()
 
     if (event.key === 'Enter') {
-      const note = selectedNote || selectNoteByIndex(0)
+      const note = selectedNote || visibleNotes[0]?.note || selectNoteByIndex(0)
       if (note) {
         jumpToNote(note)
       }
       return
     }
 
-    const currentIndex = notes.findIndex((note) => note.id === selectedNoteId)
-    const baseIndex = currentIndex >= 0 ? currentIndex : 0
+    if (visibleNotes.length === 0) return
+
+    const currentVisibleIndex = visibleNotes.findIndex(({ note }) => note.id === selectedNoteId)
+    const baseIndex = currentVisibleIndex >= 0 ? currentVisibleIndex : 0
     const nextIndex = event.key === 'ArrowUp' ? baseIndex - 1 : baseIndex + 1
-    selectNoteByIndex(currentIndex >= 0 ? nextIndex : 0)
+    const safeIndex = currentVisibleIndex >= 0
+      ? Math.max(0, Math.min(nextIndex, visibleNotes.length - 1))
+      : 0
+    selectNote(visibleNotes[safeIndex].note)
   }
 
   const toggleCustomFullscreen = () => {
@@ -1320,6 +1523,21 @@ export default function VideoMode() {
     const position = getContextMenuPosition(event, getContextMenuItemCount(type))
     setContextMenu({
       type,
+      x: position.x,
+      y: position.y,
+    })
+  }
+
+  const openExternalNoteContextMenu = (event, externalNote) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    setSelectedExternalNoteId(externalNote.id)
+    setExpandedExternalNoteId(externalNote.id)
+    const position = getContextMenuPosition(event, 2)
+    setContextMenu({
+      type: 'externalNote',
+      externalNote,
       x: position.x,
       y: position.y,
     })
@@ -1352,6 +1570,13 @@ export default function VideoMode() {
   }
 
   const getContextMenuItems = () => {
+    if (contextMenu?.type === 'externalNote') {
+      return [
+        { label: 'Go To', action: () => openExternalNoteTarget(contextMenu.externalNote) },
+        { label: '关闭菜单', action: () => {}, separator: true },
+      ]
+    }
+
     const noteItems = [
       { label: '追加快捷标记', action: () => runAction('video.appendQuickMark') },
       { label: '追加标记', action: () => runAction('video.appendMark') },
@@ -1592,13 +1817,81 @@ export default function VideoMode() {
     }
   }
 
+  const changeNoteItemFontSize = async (settingKey, currentFontSize, step) => {
+    const nextFontSize = Math.max(
+      MIN_NOTE_ITEM_FONT_SIZE,
+      Math.min(MAX_NOTE_ITEM_FONT_SIZE, Math.round(Number(currentFontSize) || 11) + step)
+    )
+    if (nextFontSize === currentFontSize) return
+
+    try {
+      await saveSettings({
+        ...settings,
+        general: {
+          ...settings.general,
+          [settingKey]: nextFontSize,
+        },
+      })
+    } catch (error) {
+      showAutoMessage('Note item 字号保存失败。', '设置', 1400)
+      window.debugApi?.log(`Note item font size save failed: ${error.message || String(error)}`)
+    }
+  }
+
+  const startVideoLayoutResize = (event, type) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const startX = event.clientX
+    const startY = event.clientY
+    const startLeftWidth = videoLeftWidth
+    const startRightWidth = videoRightWidth
+    const startStageRatio = videoStageRatio
+    const centerBounds = event.currentTarget.closest('.video-center')?.getBoundingClientRect()
+
+    const handlePointerMove = (moveEvent) => {
+      if (type === 'left') {
+        const nextWidth = Math.max(150, Math.min(420, startLeftWidth + moveEvent.clientX - startX))
+        setVideoLeftWidth(nextWidth)
+        return
+      }
+
+      if (type === 'right') {
+        const nextWidth = Math.max(150, Math.min(420, startRightWidth - (moveEvent.clientX - startX)))
+        setVideoRightWidth(nextWidth)
+        return
+      }
+
+      if (type === 'center' && centerBounds?.height) {
+        const nextStageHeight = (centerBounds.height * startStageRatio) + moveEvent.clientY - startY
+        const nextRatio = nextStageHeight / centerBounds.height
+        setVideoStageRatio(Math.max(0.45, Math.min(0.88, nextRatio)))
+      }
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }
+
   const fullscreenClass = `fullscreen-state-${fullscreenCycleState}`
   const panelsClass = panelsHidden ? 'panels-hidden' : ''
   const controlModeClass = videoControlMode ? 'video-control-mode' : ''
   const nativeSubtitle = titleOn && subtitleDisplayMode === 'native' ? selectedSubtitle : null
 
   return (
-    <section className={`video-mode ${fullscreenClass} ${panelsClass} ${controlModeClass}`}>
+    <section
+      className={`video-mode ${fullscreenClass} ${panelsClass} ${controlModeClass}`}
+      style={{
+        '--video-left-panel-width': `${videoLeftWidth}px`,
+        '--video-right-panel-width': `${videoRightWidth}px`,
+        '--video-stage-height': `${Math.round(videoStageRatio * 1000) / 10}%`,
+      }}
+    >
       <div className="video-body">
         <aside className="video-left-panel">
         <div className="left-tabs">
@@ -1619,9 +1912,57 @@ export default function VideoMode() {
         </div>
         {leftTab === 'notes' ? (
           <div className="notes-panel">
-            <div className="list-title">Video notes</div>
+            <div className="notes-tools">
+              <label className={notesFilterOn && !notesFilterExpression.ok ? 'notes-filter-field invalid' : 'notes-filter-field'}>
+                <span>Filter</span>
+                <input
+                  onChange={(event) => setNotesFilterText(event.target.value)}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  title={notesFilterExpression.error || '支持 &&, ||, !, ()'}
+                  type="text"
+                  value={notesFilterText}
+                />
+                {notesFilterOn && !notesFilterExpression.ok ? (
+                  <span className="notes-filter-error">Invalid</span>
+                ) : null}
+              </label>
+              <div className="note-font-tools" aria-label="Note item font size">
+                <button
+                  data-tooltip="Smaller note item font"
+                  onClick={() => changeNoteItemFontSize('videoNotesFontSize', videoNotesFontSize, -1)}
+                  type="button"
+                >
+                  -
+                </button>
+                <span>{videoNotesFontSize}px</span>
+                <button
+                  data-tooltip="Larger note item font"
+                  onClick={() => changeNoteItemFontSize('videoNotesFontSize', videoNotesFontSize, 1)}
+                  type="button"
+                >
+                  +
+                </button>
+              </div>
+              <label className="notes-compact-check">
+                <input
+                  checked={notesFilterOn}
+                  onChange={(event) => setNotesFilterOn(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>ON</span>
+              </label>
+              <label className="notes-compact-check">
+                <input
+                  checked={notesReverse}
+                  onChange={(event) => setNotesReverse(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Rev</span>
+              </label>
+            </div>
             <div
               className="notes-list"
+              style={{ '--video-note-item-font-size': `${videoNotesFontSize}px` }}
               onContextMenu={(event) => openContextMenu(event, 'notes')}
               onKeyDown={handleNotesListKeyDown}
               ref={notesListRef}
@@ -1629,22 +1970,37 @@ export default function VideoMode() {
             >
               {notes.length === 0 ? (
                 <div className="empty-list">No video notes</div>
+              ) : visibleNotes.length === 0 ? (
+                <div className="empty-list">No visible notes</div>
               ) : (
-                notes.map((note) => (
-                  <button
-                    className={note.id === selectedNoteId ? 'note-row active' : 'note-row'}
-                    key={note.id}
-                    onClick={() => selectNote(note)}
-                    onContextMenu={(event) => openContextMenu(event, 'notes', note)}
-                    onDoubleClick={() => jumpToNote(note)}
-                    type="button"
-                  >
-                    <span>{note.start}</span>
-                    <span>{note.end}</span>
-                    <span>{note.content}</span>
-                  </button>
-                ))
+                visibleNotes.map(({ note, index }) => {
+                  const startSeconds = parseTime(note.start)
+                  const endSeconds = parseTime(note.end)
+                  const duration = Number.isFinite(startSeconds) && Number.isFinite(endSeconds)
+                    ? endSeconds - startSeconds
+                    : Number.NaN
+                  return (
+                    <button
+                      className={note.id === selectedNoteId ? 'note-row active' : 'note-row'}
+                      key={note.id}
+                      onClick={() => selectNote(note)}
+                      onContextMenu={(event) => openContextMenu(event, 'notes', note)}
+                      onDoubleClick={() => jumpToNote(note)}
+                      type="button"
+                    >
+                      <span className="note-row-index">{index + 1}</span>
+                      <span>{note.start}</span>
+                      <span className="note-row-duration">{formatDuration(duration)}</span>
+                      <span className="note-row-content">{note.content}</span>
+                    </button>
+                  )
+                })
               )}
+            </div>
+            <div className="notes-statusbar">
+              <span>Total {notes.length}</span>
+              <span>Visible {visibleNotes.length}</span>
+              <span>At {selectedNoteIndex >= 0 ? selectedNoteIndex + 1 : '-'}</span>
             </div>
           </div>
         ) : (
@@ -1714,6 +2070,13 @@ export default function VideoMode() {
         )}
         </aside>
 
+        <div
+          className="video-vertical-splitter"
+          onPointerDown={(event) => startVideoLayoutResize(event, 'left')}
+          role="separator"
+          aria-label="Resize left video panel"
+        />
+
         <section className="video-center">
         <div
           className="video-stage"
@@ -1742,6 +2105,13 @@ export default function VideoMode() {
             <div className="rolling-subtitle-error">Rolling subtitle: {rollingSubtitleError}</div>
           ) : null}
         </div>
+
+        <div
+          className="video-horizontal-splitter"
+          onPointerDown={(event) => startVideoLayoutResize(event, 'center')}
+          role="separator"
+          aria-label="Resize video bottom panel"
+        />
 
         <div className="video-bottom-panel">
           <textarea
@@ -1829,37 +2199,215 @@ export default function VideoMode() {
         </div>
         </section>
 
+        <div
+          className="video-vertical-splitter"
+          onPointerDown={(event) => startVideoLayoutResize(event, 'right')}
+          role="separator"
+          aria-label="Resize right video panel"
+        />
+
         <aside className="video-toolbar">
-        <button type="button" onClick={openVideoFile}>Open</button>
-        <button type="button" onClick={saveVideoNotes}>Save</button>
-        <button type="button" onClick={addQuickNote}>QuickNote</button>
-        <button type="button" onClick={() => setRepeat(!repeat)}>Repeat</button>
-        <button type="button" onClick={() => runAction('video.quickUpdateRange')}>QuickUpdate</button>
-        <button type="button" onClick={openFromClipboard}>GetClip</button>
-        <label className={videoControlMode ? 'toolbar-check video-toolbar-check control-on-check' : 'toolbar-check video-toolbar-check'}>
-          <input
-            checked={videoControlMode}
-            onChange={() => runAction('video.toggleControlMode')}
-            type="checkbox"
-          />
-          <span>ControlOn</span>
-        </label>
-        <label className="toolbar-check video-toolbar-check">
-          <input
-            checked={playAll}
-            onChange={(event) => setPlayAll(event.target.checked)}
-            type="checkbox"
-          />
-          <span>PlayAll</span>
-        </label>
-        <label className="toolbar-check video-toolbar-check">
-          <input
-            checked={titleOn}
-            onChange={handleSubtitleToggle}
-            type="checkbox"
-          />
-          <span>Subtitle</span>
-        </label>
+          <div className="video-toolbar-tabs">
+            <button
+              className={rightToolTab === 'main' ? 'active' : ''}
+              onClick={() => setRightToolTab('main')}
+              type="button"
+            >
+              Main
+            </button>
+            <button
+              className={rightToolTab === 'notesPool' ? 'active' : ''}
+              onClick={() => setRightToolTab('notesPool')}
+              type="button"
+            >
+              Notes Pool
+            </button>
+          </div>
+
+          {rightToolTab === 'main' ? (
+            <div className="video-toolbar-page main-page">
+              <button type="button" onClick={openVideoFile}>Open</button>
+              <button type="button" onClick={saveVideoNotes}>Save</button>
+              <button type="button" onClick={addQuickNote}>QuickNote</button>
+              <button type="button" onClick={() => setRepeat(!repeat)}>Repeat</button>
+              <button type="button" onClick={() => runAction('video.quickUpdateRange')}>QuickUpdate</button>
+              <button type="button" onClick={openFromClipboard}>GetClip</button>
+              <label className={videoControlMode ? 'toolbar-check video-toolbar-check control-on-check' : 'toolbar-check video-toolbar-check'}>
+                <input
+                  checked={videoControlMode}
+                  onChange={() => runAction('video.toggleControlMode')}
+                  type="checkbox"
+                />
+                <span>ControlOn</span>
+              </label>
+              <label className="toolbar-check video-toolbar-check">
+                <input
+                  checked={playAll}
+                  onChange={(event) => setPlayAll(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>PlayAll</span>
+              </label>
+              <label className="toolbar-check video-toolbar-check">
+                <input
+                  checked={titleOn}
+                  onChange={handleSubtitleToggle}
+                  type="checkbox"
+                />
+                <span>Subtitle</span>
+              </label>
+            </div>
+          ) : (
+            <div className="video-toolbar-page notes-pool-page">
+              <div className="notes-pool-source-actions">
+                <button data-tooltip="From Folder" type="button" onClick={loadExternalNotesFromFolder}>
+                  <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                </button>
+                <button data-tooltip="From File" type="button" onClick={loadExternalNotesFromFiles}>
+                  <i className="fa-solid fa-file-import" aria-hidden="true" />
+                </button>
+                <button
+                  data-tooltip="Clear"
+                  disabled={externalNotes.length === 0}
+                  onClick={() => {
+                    setExternalNotes([])
+                    setSelectedExternalNoteId('')
+                    setExpandedExternalNoteId('')
+                    setDirtyExternalNoteIds(new Set())
+                  }}
+                  type="button"
+                >
+                  <i className="fa-solid fa-trash" aria-hidden="true" />
+                </button>
+              </div>
+              <div className="notes-pool-tools">
+                <div className="note-font-tools" aria-label="Notes Pool item font size">
+                  <button
+                    data-tooltip="Smaller note item font"
+                    onClick={() => changeNoteItemFontSize('videoNotesPoolFontSize', videoNotesPoolFontSize, -1)}
+                    type="button"
+                  >
+                    -
+                  </button>
+                  <span>{videoNotesPoolFontSize}px</span>
+                  <button
+                    data-tooltip="Larger note item font"
+                    onClick={() => changeNoteItemFontSize('videoNotesPoolFontSize', videoNotesPoolFontSize, 1)}
+                    type="button"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="notes-pool-checks">
+                  <label className="notes-compact-check">
+                    <input
+                      checked={externalNotesFilterOn}
+                      onChange={(event) => setExternalNotesFilterOn(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>ON</span>
+                  </label>
+                  <label className="notes-compact-check">
+                    <input
+                      checked={externalNotesReverse}
+                      onChange={(event) => setExternalNotesReverse(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>Rev</span>
+                  </label>
+                  <label className="notes-compact-check">
+                    <input
+                      checked={externalNotesShowFileName}
+                      onChange={(event) => setExternalNotesShowFileName(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>FileName</span>
+                  </label>
+                </div>
+                <label className={externalNotesFilterOn && !externalNotesFilterExpression.ok ? 'notes-pool-filter-field invalid' : 'notes-pool-filter-field'}>
+                  <span>Filter</span>
+                  <input
+                    onChange={(event) => setExternalNotesFilterText(event.target.value)}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    title={externalNotesFilterExpression.error || '支持 &&, ||, !, ()'}
+                    type="text"
+                    value={externalNotesFilterText}
+                  />
+                  {externalNotesFilterOn && !externalNotesFilterExpression.ok ? (
+                    <span className="notes-filter-error">Invalid</span>
+                  ) : null}
+                </label>
+                <div
+                  className="notes-pool-selected-file"
+                  title={selectedExternalNote?.sourceJsonPath || ''}
+                >
+                  {selectedExternalNote?.sourceJsonName || '-'}
+                </div>
+              </div>
+              <div className="notes-pool-list" style={{ '--video-note-item-font-size': `${videoNotesPoolFontSize}px` }}>
+                {externalNotes.length === 0 ? (
+                  <div className="empty-list">No notes loaded</div>
+                ) : visibleExternalNotes.length === 0 ? (
+                  <div className="empty-list">No visible notes</div>
+                ) : (
+                  visibleExternalNotes.map(({ note, index }) => (
+                    <div
+                      className={note.id === selectedExternalNoteId ? 'notes-pool-row active' : 'notes-pool-row'}
+                      key={note.id}
+                      onClick={() => {
+                        setSelectedExternalNoteId(note.id)
+                        setExpandedExternalNoteId(note.id)
+                      }}
+                      onContextMenu={(event) => openExternalNoteContextMenu(event, note)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          setSelectedExternalNoteId(note.id)
+                          setExpandedExternalNoteId(note.id)
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      title={note.sourceJsonPath}
+                    >
+                      <span className="notes-pool-row-main">
+                        <span className="note-row-index">{index + 1}</span>
+                        <span>{note.start}</span>
+                        <span className="note-row-duration">{formatDuration(getNoteDuration(note))}</span>
+                        <span className="note-row-content-inline">{note.content}</span>
+                      </span>
+                      {externalNotesShowFileName ? (
+                        <span className="notes-pool-row-file">{note.sourceVideoName}</span>
+                      ) : null}
+                      {expandedExternalNoteId === note.id ? (
+                        <div className="notes-pool-row-editor" onClick={(event) => event.stopPropagation()}>
+                          <textarea
+                            onChange={(event) => updateExternalNoteContent(note.id, event.target.value)}
+                            onKeyDown={(event) => event.stopPropagation()}
+                            value={note.content || ''}
+                          />
+                          <button
+                            data-tooltip={dirtyExternalNoteIds.has(note.id) ? 'Save content' : 'Saved'}
+                            disabled={!dirtyExternalNoteIds.has(note.id)}
+                            onClick={() => saveExternalNoteContent(note)}
+                            type="button"
+                          >
+                            <i className="fa-solid fa-floppy-disk" aria-hidden="true" />
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="notes-pool-statusbar">
+                <span>Files {externalNoteFileCount}</span>
+                <span>Total {externalNotes.length}</span>
+                <span>Visible {visibleExternalNotes.length}</span>
+                <span>At {selectedExternalNoteIndex >= 0 ? selectedExternalNoteIndex + 1 : '-'}</span>
+              </div>
+            </div>
+          )}
         </aside>
       </div>
 

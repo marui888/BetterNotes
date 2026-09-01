@@ -165,6 +165,7 @@ export default function RollingSubtitlePanel({
           >
             -
           </button>
+          <span className="rolling-subtitle-font-size">{fontSize}px</span>
           <button
             aria-label="Increase subtitle font size"
             onPointerDown={(event) => event.stopPropagation()}
@@ -174,7 +175,6 @@ export default function RollingSubtitlePanel({
           >
             +
           </button>
-          <span className="rolling-subtitle-font-size">{fontSize}px</span>
         </span>
       </div>
       <div className="rolling-subtitle-list" ref={listRef}>

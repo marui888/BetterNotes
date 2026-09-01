@@ -63,6 +63,8 @@ const DEFAULT_APP_SETTINGS = {
     extraSubtitleFolder: '',
     subtitleDisplayMode: 'native',
     rollingSubtitleFontSize: 25,
+    videoNotesFontSize: 11,
+    videoNotesPoolFontSize: 11,
     playAllSubtitleSuffix: '.en.vtt',
     subtitleConvertPromptTimeoutSec: 5,
     imageAutoLoadDelayMs: 500,
@@ -222,6 +224,19 @@ function normalizeAppSettings(value) {
   const rollingSubtitleFontSize = Number.isFinite(rawRollingSubtitleFontSize)
     ? Math.max(10, Math.min(48, Math.round(rawRollingSubtitleFontSize)))
     : DEFAULT_APP_SETTINGS.general.rollingSubtitleFontSize
+  const legacyNoteItemFontSize = Number(value?.general?.noteItemFontSize)
+  const rawVideoNotesFontSize = Number.isFinite(Number(value?.general?.videoNotesFontSize))
+    ? Number(value.general.videoNotesFontSize)
+    : legacyNoteItemFontSize
+  const videoNotesFontSize = Number.isFinite(rawVideoNotesFontSize)
+    ? Math.max(9, Math.min(18, Math.round(rawVideoNotesFontSize)))
+    : DEFAULT_APP_SETTINGS.general.videoNotesFontSize
+  const rawVideoNotesPoolFontSize = Number.isFinite(Number(value?.general?.videoNotesPoolFontSize))
+    ? Number(value.general.videoNotesPoolFontSize)
+    : legacyNoteItemFontSize
+  const videoNotesPoolFontSize = Number.isFinite(rawVideoNotesPoolFontSize)
+    ? Math.max(9, Math.min(18, Math.round(rawVideoNotesPoolFontSize)))
+    : DEFAULT_APP_SETTINGS.general.videoNotesPoolFontSize
   const rawSubtitleConvertPromptTimeoutSec = Number(value?.general?.subtitleConvertPromptTimeoutSec)
   const subtitleConvertPromptTimeoutSec = Number.isFinite(rawSubtitleConvertPromptTimeoutSec)
     ? Math.max(1, Math.min(60, Math.round(rawSubtitleConvertPromptTimeoutSec)))
@@ -262,6 +277,8 @@ function normalizeAppSettings(value) {
       extraSubtitleFolder,
       subtitleDisplayMode,
       rollingSubtitleFontSize,
+      videoNotesFontSize,
+      videoNotesPoolFontSize,
       playAllSubtitleSuffix,
       subtitleConvertPromptTimeoutSec,
       imageAutoLoadDelayMs,
@@ -1080,6 +1097,141 @@ async function buildVideoFileInfo(filePath, options = {}) {
   }
 }
 
+function normalizeLegacyVideoNote(note) {
+  if (!note || typeof note !== 'object') return null
+
+  const start = typeof note.Start === 'string' ? note.Start : typeof note.start === 'string' ? note.start : ''
+  const end = typeof note.End === 'string' ? note.End : typeof note.end === 'string' ? note.end : ''
+  const content = typeof note.Content === 'string' ? note.Content : typeof note.content === 'string' ? note.content : ''
+  if (!start && !end && !content) return null
+
+  return { start, end, content, raw: note }
+}
+
+async function saveLegacyVideoNoteContent(payload = {}) {
+  const sourceJsonPath = normalizeFilePath(payload.sourceJsonPath)
+  const noteIndex = Number(payload.noteIndex)
+  const content = typeof payload.content === 'string' ? payload.content : ''
+  const expectedStart = typeof payload.start === 'string' ? payload.start : ''
+  const expectedEnd = typeof payload.end === 'string' ? payload.end : ''
+
+  if (!sourceJsonPath || path.extname(sourceJsonPath).toLowerCase() !== '.json') {
+    return { ok: false, reason: 'invalid-json-file', sourceJsonPath }
+  }
+
+  if (!Number.isInteger(noteIndex) || noteIndex < 0) {
+    return { ok: false, reason: 'invalid-note-index', sourceJsonPath, noteIndex }
+  }
+
+  const rawNotes = await readJsonFile(sourceJsonPath, null)
+  if (!Array.isArray(rawNotes) || noteIndex >= rawNotes.length) {
+    return { ok: false, reason: 'invalid-note-json', sourceJsonPath, noteIndex }
+  }
+
+  let targetIndex = noteIndex
+  let target = rawNotes[targetIndex]
+  let normalized = normalizeLegacyVideoNote(target)
+  const isExpectedNote = normalized
+    && (!expectedStart || normalized.start === expectedStart)
+    && (!expectedEnd || normalized.end === expectedEnd)
+
+  if (!isExpectedNote) {
+    targetIndex = rawNotes.findIndex((note) => {
+      const item = normalizeLegacyVideoNote(note)
+      return item && item.start === expectedStart && item.end === expectedEnd
+    })
+    if (targetIndex < 0) {
+      return { ok: false, reason: 'note-not-found', sourceJsonPath, noteIndex }
+    }
+    target = rawNotes[targetIndex]
+    normalized = normalizeLegacyVideoNote(target)
+  }
+
+  if (!target || typeof target !== 'object') {
+    return { ok: false, reason: 'invalid-note-item', sourceJsonPath, noteIndex: targetIndex }
+  }
+
+  if ('Content' in target || !('content' in target)) {
+    target.Content = content
+  } else {
+    target.content = content
+  }
+
+  await fs.writeFile(sourceJsonPath, JSON.stringify(rawNotes, null, 2), 'utf8')
+
+  return {
+    ok: true,
+    sourceJsonPath,
+    noteIndex: targetIndex,
+    note: normalizeLegacyVideoNote(target),
+  }
+}
+
+async function buildLegacyVideoNotesFromJson(jsonPath) {
+  const sourceJsonPath = normalizeFilePath(jsonPath)
+  if (path.extname(sourceJsonPath).toLowerCase() !== '.json' || !(await fileExists(sourceJsonPath))) {
+    return { ok: false, reason: 'invalid-json-file', sourceJsonPath, notes: [] }
+  }
+
+  const parsedPath = path.parse(sourceJsonPath)
+  const sourceVideoPath = path.join(parsedPath.dir, `${parsedPath.name}.mp4`)
+  if (!(await fileExists(sourceVideoPath))) {
+    return { ok: false, reason: 'missing-video-file', sourceJsonPath, sourceVideoPath, notes: [] }
+  }
+
+  const rawNotes = await readJsonFile(sourceJsonPath, [])
+  if (!Array.isArray(rawNotes)) {
+    return { ok: false, reason: 'invalid-note-json', sourceJsonPath, sourceVideoPath, notes: [] }
+  }
+
+  const notes = rawNotes
+    .map((note, noteIndex) => {
+      const normalized = normalizeLegacyVideoNote(note)
+      if (!normalized) return null
+      return {
+        id: `${sourceJsonPath}#${noteIndex}`,
+        sourceJsonPath,
+        sourceVideoPath,
+        sourceJsonName: path.basename(sourceJsonPath),
+        sourceVideoName: path.basename(sourceVideoPath),
+        noteIndex,
+        ...normalized,
+      }
+    })
+    .filter(Boolean)
+
+  return { ok: true, sourceJsonPath, sourceVideoPath, notes }
+}
+
+async function buildLegacyVideoNotesFromJsonFiles(jsonPaths = []) {
+  const uniquePaths = [...new Set(jsonPaths.map(normalizeFilePath).filter(Boolean))]
+  const results = await Promise.all(uniquePaths.map(buildLegacyVideoNotesFromJson))
+  return {
+    ok: true,
+    notes: results.flatMap((result) => result.notes || []),
+    loadedFiles: results.filter((result) => result.ok).map((result) => result.sourceJsonPath),
+    skippedFiles: results.filter((result) => !result.ok).map((result) => ({
+      sourceJsonPath: result.sourceJsonPath,
+      sourceVideoPath: result.sourceVideoPath,
+      reason: result.reason,
+    })),
+  }
+}
+
+async function listJsonFilesInFolder(folderPath) {
+  const normalizedFolder = normalizeFilePath(folderPath)
+  try {
+    const entries = await fs.readdir(normalizedFolder, { withFileTypes: true })
+    return entries
+      .filter((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.json')
+      .map((entry) => path.join(normalizedFolder, entry.name))
+      .sort((a, b) => path.basename(a).localeCompare(path.basename(b)))
+  } catch (error) {
+    console.error('list json files failed:', error)
+    return []
+  }
+}
+
 async function buildImageFileInfo(filePath) {
   filePath = normalizeFilePath(filePath)
 
@@ -1412,6 +1564,37 @@ function registerIpcHandlers() {
       notes: await readJsonFile(notePath, []),
     }
   })
+
+  ipcMain.handle('video:selectLegacyNoteFiles', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'JSON Files', extensions: ['json'] }],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, canceled: true, notes: [], loadedFiles: [], skippedFiles: [] }
+    }
+
+    return buildLegacyVideoNotesFromJsonFiles(result.filePaths)
+  })
+
+  ipcMain.handle('video:selectLegacyNoteFolder', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, canceled: true, notes: [], loadedFiles: [], skippedFiles: [] }
+    }
+
+    const jsonFiles = await listJsonFilesInFolder(result.filePaths[0])
+    return {
+      ...(await buildLegacyVideoNotesFromJsonFiles(jsonFiles)),
+      folderPath: normalizeFilePath(result.filePaths[0]),
+    }
+  })
+
+  ipcMain.handle('video:saveLegacyNoteContent', async (_event, payload) => saveLegacyVideoNoteContent(payload))
 
   ipcMain.handle('video:readSubtitleText', async (_event, filePath) => {
     const subtitlePath = normalizeFilePath(filePath)
