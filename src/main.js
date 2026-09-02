@@ -1112,8 +1112,18 @@ async function saveLegacyVideoNoteContent(payload = {}) {
   const sourceJsonPath = normalizeFilePath(payload.sourceJsonPath)
   const noteIndex = Number(payload.noteIndex)
   const content = typeof payload.content === 'string' ? payload.content : ''
-  const expectedStart = typeof payload.start === 'string' ? payload.start : ''
-  const expectedEnd = typeof payload.end === 'string' ? payload.end : ''
+  const expectedStart = typeof payload.matchStart === 'string'
+    ? payload.matchStart
+    : typeof payload.start === 'string' ? payload.start : ''
+  const expectedEnd = typeof payload.matchEnd === 'string'
+    ? payload.matchEnd
+    : typeof payload.end === 'string' ? payload.end : ''
+  const nextStart = typeof payload.nextStart === 'string'
+    ? payload.nextStart
+    : typeof payload.start === 'string' ? payload.start : ''
+  const nextEnd = typeof payload.nextEnd === 'string'
+    ? payload.nextEnd
+    : typeof payload.end === 'string' ? payload.end : ''
 
   if (!sourceJsonPath || path.extname(sourceJsonPath).toLowerCase() !== '.json') {
     return { ok: false, reason: 'invalid-json-file', sourceJsonPath }
@@ -1141,7 +1151,7 @@ async function saveLegacyVideoNoteContent(payload = {}) {
       return item && item.start === expectedStart && item.end === expectedEnd
     })
     if (targetIndex < 0) {
-      return { ok: false, reason: 'note-not-found', sourceJsonPath, noteIndex }
+      targetIndex = noteIndex
     }
     target = rawNotes[targetIndex]
     normalized = normalizeLegacyVideoNote(target)
@@ -1155,6 +1165,22 @@ async function saveLegacyVideoNoteContent(payload = {}) {
     target.Content = content
   } else {
     target.content = content
+  }
+
+  if (nextStart) {
+    if ('Start' in target || !('start' in target)) {
+      target.Start = nextStart
+    } else {
+      target.start = nextStart
+    }
+  }
+
+  if (nextEnd) {
+    if ('End' in target || !('end' in target)) {
+      target.End = nextEnd
+    } else {
+      target.end = nextEnd
+    }
   }
 
   await fs.writeFile(sourceJsonPath, JSON.stringify(rawNotes, null, 2), 'utf8')
@@ -1615,6 +1641,21 @@ function registerIpcHandlers() {
         filePath: subtitlePath,
         reason: error.message || String(error),
       }
+    }
+  })
+
+  ipcMain.handle('video:openSubtitleExternal', async (_event, filePath) => {
+    const subtitlePath = normalizeFilePath(filePath)
+    const extension = path.extname(subtitlePath).toLowerCase()
+    if (!['.vtt', '.srt'].includes(extension) || !(await fileExists(subtitlePath))) {
+      return { ok: false, reason: 'invalid-subtitle-file', filePath: subtitlePath }
+    }
+
+    const errorMessage = await shell.openPath(subtitlePath)
+    return {
+      ok: !errorMessage,
+      reason: errorMessage || '',
+      filePath: subtitlePath,
     }
   })
 

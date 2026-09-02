@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('videoApi', {
   validateMp4Path: (filePath) => ipcRenderer.invoke('video:validateMp4Path', filePath),
   readNotes: (filePath) => ipcRenderer.invoke('video:readNotes', filePath),
   readSubtitleText: (filePath) => ipcRenderer.invoke('video:readSubtitleText', filePath),
+  openSubtitleExternal: (filePath) => ipcRenderer.invoke('video:openSubtitleExternal', filePath),
   selectLegacyNoteFiles: () => ipcRenderer.invoke('video:selectLegacyNoteFiles'),
   selectLegacyNoteFolder: () => ipcRenderer.invoke('video:selectLegacyNoteFolder'),
   saveLegacyNoteContent: (payload) => ipcRenderer.invoke('video:saveLegacyNoteContent', payload),

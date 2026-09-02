@@ -91,6 +91,12 @@ function joinPath(folderPath, fileName) {
   return `${folderPath}${separator}${fileName}`
 }
 
+function isSameFilePath(firstPath, secondPath) {
+  const first = String(firstPath || '').replaceAll('/', '\\').toLowerCase()
+  const second = String(secondPath || '').replaceAll('/', '\\').toLowerCase()
+  return Boolean(first && second && first === second)
+}
+
 function removeFileExtension(fileName) {
   const dotIndex = String(fileName || '').lastIndexOf('.')
   return dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName
@@ -181,6 +187,7 @@ export default function VideoMode() {
   const [externalNotesShowFileName, setExternalNotesShowFileName] = useState(true)
   const [selectedExternalNoteId, setSelectedExternalNoteId] = useState('')
   const [expandedExternalNoteId, setExpandedExternalNoteId] = useState('')
+  const [externalNoteDraftContent, setExternalNoteDraftContent] = useState('')
   const [dirtyExternalNoteIds, setDirtyExternalNoteIds] = useState(() => new Set())
   const [videoLeftWidth, setVideoLeftWidth] = useState(200)
   const [videoRightWidth, setVideoRightWidth] = useState(240)
@@ -193,8 +200,10 @@ export default function VideoMode() {
   const [subtitleLanguages, setSubtitleLanguages] = useState([])
   const [selectedSubtitleLanguageKey, setSelectedSubtitleLanguageKey] = useState('')
   const [selectedSubtitle, setSelectedSubtitle] = useState(null)
+  const [subtitleMenuOpen, setSubtitleMenuOpen] = useState(false)
   const [rollingSubtitleCues, setRollingSubtitleCues] = useState([])
   const [rollingSubtitleError, setRollingSubtitleError] = useState('')
+  const [videoOpenSource, setVideoOpenSource] = useState('default')
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0)
   const [videoControlMode, setVideoControlMode] = useState(false)
   const [volume, setVolume] = useState(1)
@@ -277,6 +286,13 @@ export default function VideoMode() {
   }, [notes, notesFilterExpression, notesFilterOn, notesReverse])
   const selectedExternalNote = externalNotes.find((note) => note.id === selectedExternalNoteId) || null
   const selectedExternalNoteIndex = externalNotes.findIndex((note) => note.id === selectedExternalNoteId)
+  const selectedExternalNoteDirty = selectedExternalNote
+    ? dirtyExternalNoteIds.has(selectedExternalNote.id)
+    : false
+  const activeNoteSource = videoOpenSource === 'pool' && selectedExternalNote ? 'pool' : 'default'
+  const activeNoteDraft = activeNoteSource === 'pool' ? externalNoteDraftContent : noteDraft
+  const activeNoteStart = activeNoteSource === 'pool' ? selectedExternalNote?.start : selectedStart || selectedNote?.start
+  const activeNoteEnd = activeNoteSource === 'pool' ? selectedExternalNote?.end : selectedEnd || selectedNote?.end
   const externalNoteFileCount = useMemo(
     () => new Set(externalNotes.map((note) => note.sourceJsonPath).filter(Boolean)).size,
     [externalNotes]
@@ -291,6 +307,10 @@ export default function VideoMode() {
 
     return externalNotesReverse ? rows.reverse() : rows
   }, [externalNotes, externalNotesFilterExpression, externalNotesFilterOn, externalNotesReverse])
+  const selectedSubtitleLanguage = subtitleLanguages.find(
+    (entry) => getSubtitleLanguageKey(entry.language) === selectedSubtitleLanguageKey
+  )
+  const selectedSubtitleLabel = selectedSubtitleLanguage?.label || selectedSubtitleLanguage?.language || 'None'
   const keywordInsertion = useKeywordInsertion({
     isActive: mode === APP_MODES.VIDEO,
     targets: {
@@ -466,6 +486,14 @@ export default function VideoMode() {
     }
   }, [keywordMenu])
 
+  useEffect(() => {
+    if (!subtitleMenuOpen) return undefined
+
+    const closeMenu = () => setSubtitleMenuOpen(false)
+    window.addEventListener('click', closeMenu)
+    return () => window.removeEventListener('click', closeMenu)
+  }, [subtitleMenuOpen])
+
   const getPlayerTime = () => playerRef.current?.currentTime() ?? 0
 
   const getDuration = () => {
@@ -594,6 +622,7 @@ export default function VideoMode() {
     setNoteDraft(note.content)
     setSelectedStart(note.start)
     setSelectedEnd(note.end)
+    setVideoOpenSource('default')
   }
 
   const selectNoteByIndex = (index) => {
@@ -605,11 +634,34 @@ export default function VideoMode() {
     return note
   }
 
-  const jumpToNote = (note) => {
-    selectNote(note)
-
+  const jumpToNote = async (note) => {
+    if (!note) return
     const startSeconds = parseTime(note.start)
-    if (!Number.isFinite(startSeconds) || !playerRef.current) return
+    if (!Number.isFinite(startSeconds)) return
+
+    const noteVideoPath = note.sourceVideoPath || videoFile?.filePath || ''
+    const currentVideoPath = videoFile?.filePath || ''
+
+    if (noteVideoPath && !isSameFilePath(noteVideoPath, currentVideoPath)) {
+      const canSwitch = await confirmBeforeSwitchVideo()
+      if (!canSwitch) return
+
+      const info = await window.videoApi?.getVideoFileInfo?.(noteVideoPath, { extraSubtitleFolder })
+      if (!info?.ok) {
+        showAutoMessage('找不到笔记所属的视频文件。', 'Notes', 1400)
+        return
+      }
+
+      await loadVideoInfo(info, {
+        autoplay: true,
+        seekTime: startSeconds,
+        selectedNoteIndex: Number.isInteger(note.noteIndex) ? note.noteIndex : undefined,
+      })
+      return
+    }
+
+    selectNote(note)
+    if (!playerRef.current) return
 
     playerRef.current.pause?.()
     playerRef.current.currentTime(startSeconds)
@@ -676,6 +728,9 @@ export default function VideoMode() {
   }
 
   const confirmBeforeSwitchVideo = async () => {
+    const canLeaveExternalNote = await confirmExternalNoteDirtyBeforeLeave()
+    if (!canLeaveExternalNote) return false
+
     if (!dirty) return true
 
     const decision = await showActionDialog({
@@ -714,22 +769,46 @@ export default function VideoMode() {
       currentFilePath: videoFile?.filePath || '',
       folderPath: videoFile?.folderPath || '',
       leftTab,
+      rightToolTab,
       selectedNoteIndex: notes.findIndex((note) => note.id === selectedNoteId),
       playbackTime: getPlayerTime(),
       playbackRate: getPlaybackRate(),
       fullscreenCycleState,
       panelsHidden,
+      videoOpenSource,
+      notesPool: {
+        notes: externalNotes,
+        filterText: externalNotesFilterText,
+        filterOn: externalNotesFilterOn,
+        reverse: externalNotesReverse,
+        showFileName: externalNotesShowFileName,
+        selectedNoteId: selectedExternalNoteId,
+        expandedNoteId: expandedExternalNoteId,
+        draftContent: externalNoteDraftContent,
+        dirtyNoteIds: [...dirtyExternalNoteIds],
+      },
     }))
     return () => registerSessionProvider(APP_MODES.VIDEO, null)
   }, [
+    dirtyExternalNoteIds,
+    expandedExternalNoteId,
+    externalNoteDraftContent,
+    externalNotes,
+    externalNotesFilterOn,
+    externalNotesFilterText,
+    externalNotesReverse,
+    externalNotesShowFileName,
     fullscreenCycleState,
     leftTab,
     notes,
     panelsHidden,
     registerSessionProvider,
+    rightToolTab,
+    selectedExternalNoteId,
     selectedNoteId,
     videoFile?.filePath,
     videoFile?.folderPath,
+    videoOpenSource,
   ])
 
   useEffect(() => {
@@ -737,14 +816,35 @@ export default function VideoMode() {
     if (!snapshot) return
 
     if (snapshot.leftTab === 'notes' || snapshot.leftTab === 'files') setLeftTab(snapshot.leftTab)
+    if (snapshot.rightToolTab === 'main' || snapshot.rightToolTab === 'notesPool') setRightToolTab(snapshot.rightToolTab)
     setFullscreenCycleState(Number(snapshot.fullscreenCycleState) || 0)
     setPanelsHidden(snapshot.panelsHidden === true)
+    const notesPoolSnapshot = snapshot.notesPool || {}
+    const restoredExternalNotes = Array.isArray(notesPoolSnapshot.notes) ? notesPoolSnapshot.notes : []
+    setExternalNotes(restoredExternalNotes)
+    setExternalNotesFilterText(typeof notesPoolSnapshot.filterText === 'string' ? notesPoolSnapshot.filterText : '')
+    setExternalNotesFilterOn(notesPoolSnapshot.filterOn === true)
+    setExternalNotesReverse(notesPoolSnapshot.reverse === true)
+    setExternalNotesShowFileName(notesPoolSnapshot.showFileName !== false)
+    const restoredExternalNoteId = restoredExternalNotes.some((note) => note.id === notesPoolSnapshot.selectedNoteId)
+      ? notesPoolSnapshot.selectedNoteId
+      : ''
+    setSelectedExternalNoteId(restoredExternalNoteId)
+    setExpandedExternalNoteId(
+      restoredExternalNotes.some((note) => note.id === notesPoolSnapshot.expandedNoteId)
+        ? notesPoolSnapshot.expandedNoteId
+        : ''
+    )
+    setExternalNoteDraftContent(typeof notesPoolSnapshot.draftContent === 'string' ? notesPoolSnapshot.draftContent : '')
+    setDirtyExternalNoteIds(() => new Set(Array.isArray(notesPoolSnapshot.dirtyNoteIds) ? notesPoolSnapshot.dirtyNoteIds : []))
+    setVideoOpenSource(snapshot.videoOpenSource === 'pool' && restoredExternalNoteId ? 'pool' : 'default')
     if (snapshot.currentFilePath) {
       openVideoFileFullPath(snapshot.currentFilePath, {
         autoplay: false,
         playbackRate: Number(snapshot.playbackRate) || 1,
         selectedNoteIndex: snapshot.selectedNoteIndex,
         seekTime: snapshot.playbackTime,
+        videoOpenSource: snapshot.videoOpenSource === 'pool' && restoredExternalNoteId ? 'pool' : 'default',
       })
     }
   }, [restoreSessionState])
@@ -858,11 +958,21 @@ export default function VideoMode() {
     }
   }
 
-  const handleSubtitleLanguageChange = (event) => {
-    const nextLanguageKey = event.target.value
-    setSelectedSubtitleLanguageKey(nextLanguageKey)
+  const selectSubtitleLanguage = (languageKey) => {
+    setSelectedSubtitleLanguageKey(languageKey)
+    setSubtitleMenuOpen(false)
     if (titleOn) {
-      applySubtitleLanguage(nextLanguageKey)
+      applySubtitleLanguage(languageKey)
+    }
+  }
+
+  const openSubtitleExternal = async (entry) => {
+    const subtitlePath = entry?.subtitle?.filePath || entry?.srtSubtitle?.filePath || ''
+    if (!subtitlePath) return
+
+    const result = await window.videoApi?.openSubtitleExternal?.(subtitlePath)
+    if (!result?.ok) {
+      showAutoMessage('字幕文件打开失败。', '字幕', 1400)
     }
   }
 
@@ -880,6 +990,16 @@ export default function VideoMode() {
       return
     }
 
+    if (
+      options.videoOpenSource !== 'pool'
+      && activeNoteSource === 'pool'
+      && selectedExternalNote?.sourceVideoPath
+      && isSameFilePath(info.filePath, selectedExternalNote.sourceVideoPath)
+    ) {
+      showAutoMessage('该视频正在 Notes Pool 中编辑，不能同时作为 Default Notes 打开。', 'Notes Pool', 1800)
+      return
+    }
+
     const nextSubtitleLanguages = normalizeSubtitleLanguages(info)
     const subtitleOptions = {
       ...options,
@@ -894,6 +1014,7 @@ export default function VideoMode() {
     })
 
     setVideoFile(info)
+    setVideoOpenSource(options.videoOpenSource === 'pool' ? 'pool' : 'default')
     setSubtitleLanguages(nextSubtitleLanguages)
     setSelectedSubtitleLanguageKey(selectedLanguageKey)
     setSelectedSubtitle(subtitle)
@@ -902,11 +1023,14 @@ export default function VideoMode() {
     if (info.folderPath) {
       addRecentFolder(APP_MODES.VIDEO, info.folderPath)
     }
-    const loadedNotes = info.notes.map((note, index) => ({
-      id: `${info.filePath}-${index}`,
-      start: note.Start || note.start || '',
-      end: note.End || note.end || '',
-      content: note.Content || note.content || '',
+  const loadedNotes = info.notes.map((note, index) => ({
+    id: `${info.filePath}-${index}`,
+    noteIndex: index,
+    sourceVideoPath: info.filePath,
+    sourceVideoName: info.fileName || '',
+    start: note.Start || note.start || '',
+    end: note.End || note.end || '',
+    content: note.Content || note.content || '',
       raw: note,
     }))
     const restoredNoteIndex = Number.isFinite(Number(options.selectedNoteIndex))
@@ -944,6 +1068,16 @@ export default function VideoMode() {
 
   const openVideoFileFullPath = async (fullPath, options = {}) => {
     if (!fullPath || !window.videoApi?.getVideoFileInfo) return
+
+    if (
+      activeNoteSource === 'pool'
+      && selectedExternalNote?.sourceVideoPath
+      && isSameFilePath(fullPath, selectedExternalNote.sourceVideoPath)
+      && options.videoOpenSource !== 'pool'
+    ) {
+      showAutoMessage('该视频正在 Notes Pool 中编辑，不能同时作为 Default Notes 打开。', 'Notes Pool', 1800)
+      return
+    }
 
     if (!options.skipSwitchConfirm) {
       const canSwitch = await confirmBeforeSwitchVideo()
@@ -1096,10 +1230,31 @@ export default function VideoMode() {
     showAutoMessage(`已加载 ${loadedNotes.length} 条旧视频笔记${skippedCount ? `，跳过 ${skippedCount} 个JSON` : ''}。`, 'Notes Pool', 1600)
   }
 
-  const updateExternalNoteContent = (noteId, content) => {
+  const updateExternalNoteDraftContent = (noteId, content) => {
+    setExternalNoteDraftContent(content)
+    setDirtyExternalNoteIds((current) => {
+      const next = new Set(current)
+      const note = externalNotes.find((item) => item.id === noteId)
+      if (note && content !== (note.content || '')) {
+        next.add(noteId)
+      } else {
+        next.delete(noteId)
+      }
+      return next
+    })
+  }
+
+  const updateExternalNoteFromMainEditor = (noteId, changes) => {
+    if (!noteId) return
+
     setExternalNotes((current) => current.map((note) => (
-      note.id === noteId ? { ...note, content } : note
+      note.id === noteId ? { ...note, ...changes } : note
     )))
+
+    if (Object.prototype.hasOwnProperty.call(changes, 'content')) {
+      setExternalNoteDraftContent(changes.content || '')
+    }
+
     setDirtyExternalNoteIds((current) => {
       const next = new Set(current)
       next.add(noteId)
@@ -1107,42 +1262,105 @@ export default function VideoMode() {
     })
   }
 
-  const saveExternalNoteContent = async (externalNote) => {
+  const saveExternalNoteContent = async (externalNote, content = externalNoteDraftContent) => {
     if (!externalNote || !window.videoApi?.saveLegacyNoteContent) {
       showAutoMessage('videoApi.saveLegacyNoteContent 不可用。', 'Notes Pool', 1400)
-      return
+      return false
     }
 
     const result = await window.videoApi.saveLegacyNoteContent({
       sourceJsonPath: externalNote.sourceJsonPath,
       noteIndex: externalNote.noteIndex,
+      matchStart: externalNote.raw?.Start || externalNote.raw?.start || externalNote.start,
+      matchEnd: externalNote.raw?.End || externalNote.raw?.end || externalNote.end,
       start: externalNote.start,
       end: externalNote.end,
-      content: externalNote.content || '',
+      content,
     })
 
     if (!result?.ok) {
       const reason = result?.reason || 'save-legacy-note-failed'
       showAutoMessage('旧视频笔记保存失败。', 'Notes Pool', 1600)
       window.debugApi?.log(`Save legacy video note failed: ${externalNote.sourceJsonPath}#${externalNote.noteIndex} (${reason})`)
-      return
+      return false
     }
 
+    const savedContent = result.note?.content ?? content
     setExternalNotes((current) => current.map((note) => (
       note.id === externalNote.id
         ? {
             ...note,
             noteIndex: Number.isInteger(result.noteIndex) ? result.noteIndex : note.noteIndex,
-            content: result.note?.content ?? note.content,
+            start: result.note?.start || note.start,
+            end: result.note?.end || note.end,
+            content: savedContent,
+            raw: result.note?.raw || note.raw,
           }
         : note
     )))
+    setExternalNoteDraftContent(savedContent)
     setDirtyExternalNoteIds((current) => {
       const next = new Set(current)
       next.delete(externalNote.id)
       return next
     })
     showAutoMessage('旧视频笔记已保存。', 'Notes Pool', 900)
+    return true
+  }
+
+  const cancelExternalNoteEdit = (externalNote = selectedExternalNote) => {
+    if (externalNote) {
+      setExternalNoteDraftContent(externalNote.content || '')
+      setDirtyExternalNoteIds((current) => {
+        const next = new Set(current)
+        next.delete(externalNote.id)
+        return next
+      })
+    }
+    setExpandedExternalNoteId('')
+  }
+
+  const confirmExternalNoteDirtyBeforeLeave = async () => {
+    if (!selectedExternalNoteDirty || !selectedExternalNote) return true
+
+    const decision = await showActionDialog({
+      title: 'Unsaved Notes Pool Content',
+      message: '当前 Notes Pool item 的 Content 有未保存修改。',
+      actions: [
+        { label: 'Save', value: 'save', primary: true },
+        { label: 'Discard', value: 'discard' },
+        { label: 'Stay', value: 'stay' },
+      ],
+      defaultValue: 'stay',
+      cancelValue: 'stay',
+    })
+
+    if (decision === 'save') {
+      return saveExternalNoteContent(selectedExternalNote, externalNoteDraftContent)
+    }
+
+    if (decision === 'discard') {
+      cancelExternalNoteEdit(selectedExternalNote)
+      return true
+    }
+
+    return false
+  }
+
+  const selectExternalNote = async (externalNote) => {
+    if (!externalNote) return false
+    if (externalNote.id === selectedExternalNoteId) {
+      setExpandedExternalNoteId(externalNote.id)
+      return true
+    }
+
+    const canLeave = await confirmExternalNoteDirtyBeforeLeave()
+    if (!canLeave) return false
+
+    setSelectedExternalNoteId(externalNote.id)
+    setExpandedExternalNoteId(externalNote.id)
+    setExternalNoteDraftContent(externalNote.content || '')
+    return true
   }
 
   const loadExternalNotesFromFiles = async () => {
@@ -1150,6 +1368,9 @@ export default function VideoMode() {
       showAutoMessage('videoApi.selectLegacyNoteFiles 不可用。', 'Notes Pool', 1400)
       return
     }
+
+    const canLeave = await confirmExternalNoteDirtyBeforeLeave()
+    if (!canLeave) return
 
     appendExternalNotes(await window.videoApi.selectLegacyNoteFiles())
   }
@@ -1160,11 +1381,40 @@ export default function VideoMode() {
       return
     }
 
+    const canLeave = await confirmExternalNoteDirtyBeforeLeave()
+    if (!canLeave) return
+
     appendExternalNotes(await window.videoApi.selectLegacyNoteFolder())
   }
 
   const openExternalNoteTarget = async (externalNote) => {
     if (!externalNote?.sourceVideoPath || !window.videoApi?.getVideoFileInfo) return
+
+    if (isSameFilePath(externalNote.sourceVideoPath, videoFile?.filePath) && activeNoteSource !== 'pool') {
+      showAutoMessage('该视频已经在 Default Notes 中打开，不能同时作为 Notes Pool 编辑。', 'Notes Pool', 1800)
+      return
+    }
+
+    const canSelect = await selectExternalNote(externalNote)
+    if (!canSelect) return
+
+    setVideoOpenSource('pool')
+    setExternalNoteDraftContent(externalNote.content || '')
+    setCurStart(externalNote.start || '')
+    setCurEnd(externalNote.end || '')
+
+    const startSeconds = parseTime(externalNote.start)
+    if (isSameFilePath(externalNote.sourceVideoPath, videoFile?.filePath)) {
+      showAutoMessage('当前正在编辑 Notes Pool 来源视频。', 'Notes Pool', 1200)
+      if (Number.isFinite(startSeconds)) {
+        seekWhenReady(startSeconds)
+        setTimeout(() => playFromCurrentPosition(), 160)
+      }
+      return
+    }
+
+    const canSwitch = await confirmBeforeSwitchVideo()
+    if (!canSwitch) return
 
     const info = await window.videoApi.getVideoFileInfo(externalNote.sourceVideoPath, { extraSubtitleFolder })
     if (!info?.ok) {
@@ -1173,6 +1423,7 @@ export default function VideoMode() {
     }
 
     setVideoFile(info)
+    setVideoOpenSource('pool')
     setSelectedDirectoryMp4Name(info.fileName || '')
     setSubtitleLanguages([])
     setSelectedSubtitleLanguageKey('')
@@ -1183,11 +1434,11 @@ export default function VideoMode() {
       addRecentFolder(APP_MODES.VIDEO, info.folderPath)
     }
 
-    const startSeconds = parseTime(externalNote.start)
     if (Number.isFinite(startSeconds)) {
       seekWhenReady(startSeconds)
       setTimeout(() => playFromCurrentPosition(), 160)
     }
+    showAutoMessage('当前正在编辑 Notes Pool 来源视频。', 'Notes Pool', 1200)
   }
 
   const openFromClipboard = async () => {
@@ -1249,9 +1500,11 @@ export default function VideoMode() {
 
     const note = {
       id: `${videoFile.filePath}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      sourceVideoPath: videoFile.filePath,
+      sourceVideoName: videoFile.fileName || '',
       start: formatTime(safeStart),
       end: formatTime(safeEnd),
-      content: noteDraft || '',
+      content: activeNoteDraft || '',
       raw: {},
     }
     addNote(note)
@@ -1262,6 +1515,8 @@ export default function VideoMode() {
 
   const createQuickNote = (range) => ({
     id: `${videoFile?.filePath || 'video'}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    sourceVideoPath: videoFile?.filePath || '',
+    sourceVideoName: videoFile?.fileName || '',
     start: range.start,
     end: range.end,
     content: 'None',
@@ -1331,6 +1586,22 @@ export default function VideoMode() {
     setDirty(APP_MODES.VIDEO, true)
   }
   const quickUpdateSelectedRange = async () => {
+    if (activeNoteSource === 'pool') {
+      if (!selectedExternalNote) {
+        showAutoMessage('没有选中的 Notes Pool 笔记。', '提示', 900)
+        return
+      }
+
+      const range = normalizeRange(buildCaptureRange())
+      if (!range) return
+
+      updateExternalNoteFromMainEditor(selectedExternalNote.id, range)
+      setCurStart(range.start)
+      setCurEnd(range.end)
+      showAutoMessage('已更新时间段。', 'Notes Pool', 900)
+      return
+    }
+
     if (!selectedNoteId) {
       showAutoMessage('没有选中的视频笔记。', '提示', 900)
       return
@@ -1348,6 +1619,29 @@ export default function VideoMode() {
     showAutoMessage('已更新时间段。', '操作完成', 900)
   }
   const writeCurrentRangeToSelected = async () => {
+    if (activeNoteSource === 'pool') {
+      if (!selectedExternalNote || !curStart || !curEnd) return
+
+      const decision = await showActionDialog({
+        title: '更新时间段',
+        message: '确认将 curStart / curEnd 写回当前 Notes Pool 笔记？',
+        defaultValue: 'update',
+        cancelValue: 'cancel',
+        actions: [
+          { label: '更新', value: 'update', primary: true },
+          { label: '取消', value: 'cancel' },
+        ],
+      })
+      if (decision !== 'update') return
+
+      const range = normalizeRange({ start: curStart, end: curEnd })
+      if (!range) return
+
+      updateExternalNoteFromMainEditor(selectedExternalNote.id, range)
+      showAutoMessage('已更新时间段。', 'Notes Pool', 900)
+      return
+    }
+
     if (!selectedNoteId || !curStart || !curEnd) return
 
     const decision = await showActionDialog({
@@ -1372,6 +1666,11 @@ export default function VideoMode() {
   }
 
   const updateSelectedContent = (content) => {
+    if (activeNoteSource === 'pool' && selectedExternalNote) {
+      updateExternalNoteFromMainEditor(selectedExternalNote.id, { content })
+      return
+    }
+
     setNoteDraft(content)
   }
 
@@ -1395,6 +1694,28 @@ export default function VideoMode() {
   }
 
   const confirmUpdateSelectedContent = async () => {
+    if (activeNoteSource === 'pool') {
+      if (!selectedExternalNote) {
+        showAutoMessage('没有选中的 Notes Pool 笔记。', '提示', 900)
+        return
+      }
+
+      const decision = await showActionDialog({
+        title: '更新 Notes Pool 笔记',
+        message: '确认保存当前 Notes Pool 笔记内容？',
+        defaultValue: 'update',
+        cancelValue: 'cancel',
+        actions: [
+          { label: '保存', value: 'update', primary: true },
+          { label: '取消', value: 'cancel' },
+        ],
+      })
+      if (decision !== 'update') return
+
+      await saveExternalNoteContent(selectedExternalNote, externalNoteDraftContent)
+      return
+    }
+
     if (!selectedNoteId) {
       showAutoMessage('没有选中的视频笔记。', '提示', 900)
       return
@@ -1532,14 +1853,15 @@ export default function VideoMode() {
     event.preventDefault()
     event.stopPropagation()
 
-    setSelectedExternalNoteId(externalNote.id)
-    setExpandedExternalNoteId(externalNote.id)
     const position = getContextMenuPosition(event, 2)
-    setContextMenu({
-      type: 'externalNote',
-      externalNote,
-      x: position.x,
-      y: position.y,
+    selectExternalNote(externalNote).then((canOpen) => {
+      if (!canOpen) return
+      setContextMenu({
+        type: 'externalNote',
+        externalNote,
+        x: position.x,
+        y: position.y,
+      })
     })
   }
 
@@ -2121,18 +2443,18 @@ export default function VideoMode() {
             onKeyDown={handleNoteEditorKeyDown}
             placeholder="Note content"
             ref={noteEditorRef}
-            value={noteDraft}
+            value={activeNoteDraft}
           />
           <div className="video-side-panel">
             <div className="video-info">
               <div className="info-pair">
                 <div>
                   <span>start</span>
-                  <strong>{selectedStart || selectedNote?.start || '--:--:--.-'}</strong>
+                  <strong>{activeNoteStart || '--:--:--.-'}</strong>
                 </div>
                 <div>
                   <span>end</span>
-                  <strong>{selectedEnd || selectedNote?.end || '--:--:--.-'}</strong>
+                  <strong>{activeNoteEnd || '--:--:--.-'}</strong>
                 </div>
               </div>
               <div className="info-pair">
@@ -2161,9 +2483,13 @@ export default function VideoMode() {
                 <span>Vol</span>
                 <strong>{Math.round(volume * 100)}%</strong>
               </div>
-              <div className="info-file">
-                <span>file</span>
-                <strong title={videoFile?.fileName || ''}>{videoFile?.fileName || '--'}</strong>
+              <div className="info-file video-source-file">
+                <strong title={videoFile?.filePath || videoFile?.fileName || ''}>
+                  <em className={videoOpenSource === 'pool' ? 'video-file-source pool' : 'video-file-source default'}>
+                    {videoOpenSource === 'pool' ? '[Pool]' : '[Default]'}
+                  </em>
+                  <b className="video-file-name">{videoFile?.fileName || '--'}</b>
+                </strong>
               </div>
             </div>
             <div className="video-mini-controls" aria-label="Video controls">
@@ -2269,10 +2595,13 @@ export default function VideoMode() {
                 <button
                   data-tooltip="Clear"
                   disabled={externalNotes.length === 0}
-                  onClick={() => {
+                  onClick={async () => {
+                    const canLeave = await confirmExternalNoteDirtyBeforeLeave()
+                    if (!canLeave) return
                     setExternalNotes([])
                     setSelectedExternalNoteId('')
                     setExpandedExternalNoteId('')
+                    setExternalNoteDraftContent('')
                     setDirtyExternalNoteIds(new Set())
                   }}
                   type="button"
@@ -2354,16 +2683,12 @@ export default function VideoMode() {
                     <div
                       className={note.id === selectedExternalNoteId ? 'notes-pool-row active' : 'notes-pool-row'}
                       key={note.id}
-                      onClick={() => {
-                        setSelectedExternalNoteId(note.id)
-                        setExpandedExternalNoteId(note.id)
-                      }}
+                      onClick={() => { selectExternalNote(note) }}
                       onContextMenu={(event) => openExternalNoteContextMenu(event, note)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
-                          setSelectedExternalNoteId(note.id)
-                          setExpandedExternalNoteId(note.id)
+                          selectExternalNote(note)
                         }
                       }}
                       role="button"
@@ -2382,18 +2707,32 @@ export default function VideoMode() {
                       {expandedExternalNoteId === note.id ? (
                         <div className="notes-pool-row-editor" onClick={(event) => event.stopPropagation()}>
                           <textarea
-                            onChange={(event) => updateExternalNoteContent(note.id, event.target.value)}
+                            onChange={(event) => updateExternalNoteDraftContent(note.id, event.target.value)}
                             onKeyDown={(event) => event.stopPropagation()}
-                            value={note.content || ''}
+                            value={note.id === selectedExternalNoteId ? externalNoteDraftContent : note.content || ''}
                           />
-                          <button
-                            data-tooltip={dirtyExternalNoteIds.has(note.id) ? 'Save content' : 'Saved'}
-                            disabled={!dirtyExternalNoteIds.has(note.id)}
-                            onClick={() => saveExternalNoteContent(note)}
-                            type="button"
-                          >
-                            <i className="fa-solid fa-floppy-disk" aria-hidden="true" />
-                          </button>
+                          <div className="notes-pool-row-editor-actions">
+                            {dirtyExternalNoteIds.has(note.id) ? (
+                              <span className="notes-pool-row-dirty">Unsaved</span>
+                            ) : null}
+                            <button
+                              data-tooltip={dirtyExternalNoteIds.has(note.id) ? 'Save content' : 'Saved'}
+                              disabled={!dirtyExternalNoteIds.has(note.id)}
+                              onClick={() => saveExternalNoteContent(note, externalNoteDraftContent)}
+                              type="button"
+                            >
+                              <i className="fa-solid fa-floppy-disk" aria-hidden="true" />
+                              <span>Save</span>
+                            </button>
+                            <button
+                              data-tooltip="Cancel editing"
+                              onClick={() => cancelExternalNoteEdit(note)}
+                              type="button"
+                            >
+                              <i className="fa-solid fa-ban" aria-hidden="true" />
+                              <span>Cancel</span>
+                            </button>
+                          </div>
                         </div>
                       ) : null}
                     </div>
@@ -2414,24 +2753,54 @@ export default function VideoMode() {
       <footer className="video-statusbar">
         <span>Status: <strong className={dirty ? 'status-unsaved' : ''}>{dirty ? 'Unsaved' : 'Saved'}</strong></span>
         <span>Control: <strong className={videoControlMode ? 'control-on' : ''}>{videoControlMode ? 'ON' : 'OFF'}</strong></span>
-        <label className="video-subtitle-language">
+        <div
+          className="video-subtitle-language subtitle-language-picker"
+          onClick={(event) => event.stopPropagation()}
+        >
           <span>Subtitle:</span>
-          <select
+          <button
+            className="subtitle-language-trigger"
             disabled={subtitleLanguages.length === 0}
-            onChange={handleSubtitleLanguageChange}
-            value={selectedSubtitleLanguageKey}
+            onClick={() => setSubtitleMenuOpen((open) => !open)}
+            type="button"
           >
-            {subtitleLanguages.length === 0 ? (
-              <option value="">None</option>
-            ) : (
-              subtitleLanguages.map((entry) => (
-                <option key={getSubtitleLanguageKey(entry.language)} value={getSubtitleLanguageKey(entry.language)}>
-                  {entry.label || entry.language || 'Default'}
-                </option>
-              ))
-            )}
-          </select>
-        </label>
+            <span>{subtitleLanguages.length === 0 ? 'None' : selectedSubtitleLabel}</span>
+            <i className="fa-solid fa-caret-up" aria-hidden="true" />
+          </button>
+          {subtitleMenuOpen && subtitleLanguages.length > 0 ? (
+            <div className="subtitle-language-menu">
+              {subtitleLanguages.map((entry) => {
+                const languageKey = getSubtitleLanguageKey(entry.language)
+                const subtitlePath = entry.subtitle?.filePath || entry.srtSubtitle?.filePath || ''
+                return (
+                  <div
+                    className={languageKey === selectedSubtitleLanguageKey ? 'subtitle-language-row active' : 'subtitle-language-row'}
+                    key={languageKey}
+                  >
+                    <button
+                      className="subtitle-language-option"
+                      onClick={() => selectSubtitleLanguage(languageKey)}
+                      title={subtitlePath}
+                      type="button"
+                    >
+                      {entry.label || entry.language || 'Default'}
+                    </button>
+                    <button
+                      className="subtitle-language-open"
+                      data-tooltip="Open subtitle file"
+                      disabled={!subtitlePath}
+                      onClick={() => openSubtitleExternal(entry)}
+                      title={subtitlePath || 'No subtitle file'}
+                      type="button"
+                    >
+                      <i className="fa-solid fa-pen-to-square" aria-hidden="true" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
+        </div>
         <label className="video-subtitle-language">
           <span>View:</span>
           <select

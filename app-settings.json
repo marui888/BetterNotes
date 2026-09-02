@@ -9,7 +9,7 @@
     "extraSubtitleFolder": "",
     "subtitleDisplayMode": "rolling",
     "rollingSubtitleFontSize": 30,
-    "videoNotesFontSize": 18,
+    "videoNotesFontSize": 10,
     "videoNotesPoolFontSize": 12,
     "playAllSubtitleSuffix": ".en-orig.vtt",
     "subtitleConvertPromptTimeoutSec": 5,
