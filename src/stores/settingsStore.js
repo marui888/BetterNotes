@@ -60,6 +60,7 @@ export const DEFAULT_APP_SETTINGS = {
       'video.volumeUp': 'ArrowUp',
       'video.volumeDown': 'ArrowDown',
       'video.toggleView': 'Ctrl+F',
+      'video.toggleVolume': '',
       'video.toggleLeftTab': 'Alt+F',
       'video.updateContent': 'Ctrl+Q',
       'video.quickUpdateRange': 'Ctrl+G',

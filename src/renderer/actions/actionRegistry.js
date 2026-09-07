@@ -27,6 +27,7 @@ const actionCatalog = new Map([
   ['video.volumeUp', { id: 'video.volumeUp', label: 'Volume Up', scope: 'video', description: 'Increase video volume.' }],
   ['video.volumeDown', { id: 'video.volumeDown', label: 'Volume Down', scope: 'video', description: 'Decrease video volume.' }],
   ['video.toggleView', { id: 'video.toggleView', label: 'Toggle View', scope: 'video', description: 'Cycle video view layout.' }],
+  ['video.toggleVolume', { id: 'video.toggleVolume', label: 'Toggle Vol', scope: 'video', description: 'Cycle video volume between 0%, 50%, and 100%.' }],
   ['video.toggleLeftTab', { id: 'video.toggleLeftTab', label: 'Toggle Left Tab', scope: 'video', description: 'Toggle Notes and MP4 Files tabs.' }],
   ['video.updateContent', { id: 'video.updateContent', label: 'Update Content', scope: 'video', description: 'Update selected note content.' }],
   ['video.quickUpdateRange', { id: 'video.quickUpdateRange', label: 'Quick Update Range', scope: 'video', description: 'Quickly update selected note range from current playback position.' }],

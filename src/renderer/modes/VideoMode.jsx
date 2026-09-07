@@ -185,6 +185,7 @@ function getContextMenuPosition(event, itemCount) {
 export default function VideoMode() {
   const playerRef = useRef(null)
   const videoStageRef = useRef(null)
+  const videoBottomPanelRef = useRef(null)
   const notesListRef = useRef(null)
   const directoryListRef = useRef(null)
   const noteEditorRef = useRef(null)
@@ -213,6 +214,7 @@ export default function VideoMode() {
   const [videoRightWidth, setVideoRightWidth] = useState(240)
   const [videoStageRatio, setVideoStageRatio] = useState(0.74)
   const [fullscreenCycleState, setFullscreenCycleState] = useState(0)
+  const [rollingSubtitleDarkLayoutRequest, setRollingSubtitleDarkLayoutRequest] = useState(0)
   const [panelsHidden, setPanelsHidden] = useState(false)
   const [selectedDirectoryMp4Name, setSelectedDirectoryMp4Name] = useState('')
   const [playAll, setPlayAll] = useState(true)
@@ -799,7 +801,7 @@ export default function VideoMode() {
       selectedNoteIndex: notes.findIndex((note) => note.id === selectedNoteId),
       playbackTime: getPlayerTime(),
       playbackRate: getPlaybackRate(),
-      fullscreenCycleState,
+      fullscreenCycleState: 0,
       panelsHidden,
       videoOpenSource,
       notesPool: {
@@ -824,7 +826,6 @@ export default function VideoMode() {
     externalNotesFilterText,
     externalNotesReverse,
     externalNotesShowFileName,
-    fullscreenCycleState,
     leftTab,
     notes,
     panelsHidden,
@@ -843,7 +844,7 @@ export default function VideoMode() {
 
     if (snapshot.leftTab === 'notes' || snapshot.leftTab === 'files') setLeftTab(snapshot.leftTab)
     if (snapshot.rightToolTab === 'main' || snapshot.rightToolTab === 'notesPool') setRightToolTab(snapshot.rightToolTab)
-    setFullscreenCycleState(Number(snapshot.fullscreenCycleState) || 0)
+    setFullscreenCycleState(0)
     setPanelsHidden(snapshot.panelsHidden === true)
     const notesPoolSnapshot = snapshot.notesPool || {}
     const restoredExternalNotes = Array.isArray(notesPoolSnapshot.notes) ? notesPoolSnapshot.notes : []
@@ -1933,13 +1934,37 @@ export default function VideoMode() {
     setVolume(nextVolume)
   }
 
+  const toggleVolumeLevel = () => {
+    const player = playerRef.current
+    if (!player?.volume) return
+
+    const currentVolume = Number(player.volume())
+    const baseVolume = Number.isFinite(currentVolume) ? currentVolume : volume
+    const nextVolume = baseVolume < 0.5
+      ? 0.5
+      : baseVolume < 1
+        ? 1
+        : 0
+
+    player.volume(nextVolume)
+    setVolume(nextVolume)
+  }
+
   const cycleFullscreenPanelState = () => {
     setFullscreenCycleState((state) => {
       if (state === 0) return 2
       if (state === 2) return 3
+      if (state === 3) return 4
       return 0
     })
   }
+
+  useEffect(() => {
+    if (fullscreenCycleState !== 4) return
+    if (!titleOn || subtitleDisplayMode !== 'rolling' || !selectedSubtitle) return
+
+    setRollingSubtitleDarkLayoutRequest((value) => value + 1)
+  }, [fullscreenCycleState, selectedSubtitle, subtitleDisplayMode, titleOn])
 
   const toggleFocusBetweenNotesListAndTextInput = () => {
     const focusEditor = () => {
@@ -2227,6 +2252,12 @@ export default function VideoMode() {
       handler: cycleFullscreenPanelState,
     },
     {
+      id: 'video.toggleVolume',
+      label: 'Toggle Vol',
+      scope: APP_MODES.VIDEO,
+      handler: toggleVolumeLevel,
+    },
+    {
       id: 'video.toggleLeftTab',
       label: 'Toggle Left Tab',
       scope: APP_MODES.VIDEO,
@@ -2269,6 +2300,7 @@ export default function VideoMode() {
     speedByStep,
     togglePlayPause,
     toggleFocusBetweenNotesListAndTextInput,
+    toggleVolumeLevel,
     quickUpdateSelectedRange,
     volumeByStep,
     writeCurrentRangeToSelected,
@@ -2601,9 +2633,12 @@ export default function VideoMode() {
           />
           {titleOn && subtitleDisplayMode === 'rolling' && selectedSubtitle ? (
             <RollingSubtitlePanel
+              bottomPanelRef={videoBottomPanelRef}
               containerRef={videoStageRef}
               cues={rollingSubtitleCues}
               currentTime={currentPlaybackTime}
+              darkModeActive={fullscreenCycleState === 4}
+              darkLayoutRequest={rollingSubtitleDarkLayoutRequest}
               defaultFontSize={rollingSubtitleFontSize}
               getCurrentTime={() => playerRef.current?.currentTime?.()}
               onCueClick={jumpToSubtitleCue}
@@ -2621,7 +2656,7 @@ export default function VideoMode() {
           aria-label="Resize video bottom panel"
         />
 
-        <div className="video-bottom-panel">
+        <div className="video-bottom-panel" ref={videoBottomPanelRef}>
           <textarea
             className="note-editor"
             onContextMenu={handleNoteEditorContextMenu}
@@ -2706,6 +2741,9 @@ export default function VideoMode() {
               </button>
               <button data-tooltip="Volume Up" onClick={() => runAction('video.volumeUp')} type="button">
                 <i className="fa-solid fa-volume-high" aria-hidden="true" />
+              </button>
+              <button data-tooltip="Toggle Vol" onClick={() => runAction('video.toggleVolume')} type="button">
+                <i className="fa-solid fa-volume-xmark" aria-hidden="true" />
               </button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "savedAt": "2026-09-07T04:06:53.541Z",
+  "savedAt": "2026-09-07T11:24:19.851Z",
   "window": {
     "displayId": 1514508209,
     "displayBounds": {
@@ -10,12 +10,12 @@
       "height": 1080
     },
     "bounds": {
-      "x": 1912,
-      "y": -8,
+      "x": 1929,
+      "y": 20,
       "width": 1920,
       "height": 1032
     },
-    "isMaximized": true
+    "isMaximized": false
   },
   "activeMode": "video",
   "mode": "video",
@@ -36,12 +36,12 @@
       "specialFolderPath": "D:\\temp\\WordListExamples\\特殊文件"
     },
     "video": {
-      "currentFilePath": "D:\\youtubeDL\\How China is Forcing the US to Fly F-35 Advanced Stealth Jets Without Radar ｜ Vantage on Firstpost [acrZ9T6adGo].mp4",
+      "currentFilePath": "D:\\youtubeDL\\Poor Single Dad in Seat 12F Was Ignored — Until an F-22 Pilot Heard His Call Sign [k38niGucMKQ].mp4",
       "folderPath": "D:\\youtubeDL",
-      "leftTab": "notes",
-      "rightToolTab": "notesPool",
+      "leftTab": "files",
+      "rightToolTab": "main",
       "selectedNoteIndex": -1,
-      "playbackTime": 132.886345,
+      "playbackTime": 2008.411001,
       "playbackRate": 1,
       "fullscreenCycleState": 0,
       "panelsHidden": false,
