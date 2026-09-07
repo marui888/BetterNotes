@@ -1460,6 +1460,17 @@ button:hover {
   text-align: center;
 }
 
+.notes-replace-button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
 .notes-filter-field {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2017,7 +2028,7 @@ button:hover {
 
 .notes-pool-tools {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto auto minmax(0, 1fr);
   gap: 4px;
   align-items: center;
 }
@@ -2378,8 +2389,44 @@ button:hover {
 
 .video-statusbar .status-unsaved,
 .image-statusbar .status-unsaved,
-.video-statusbar .control-on {
+.video-statusbar .control-on,
+.video-statusbar .repeat-mode {
   color: #ff7a7a;
+}
+
+.replace-dialog {
+  width: min(380px, 92vw);
+}
+
+.replace-scope {
+  margin-bottom: 10px;
+  color: rgba(245, 222, 179, 0.62);
+  font-size: 12px;
+}
+
+.replace-field {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  color: rgba(245, 222, 179, 0.72);
+  font-size: 12px;
+}
+
+.replace-field input {
+  min-width: 0;
+  height: 28px;
+  padding: 0 7px;
+  color: #f5deb3;
+  background: #181818;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  outline: none;
+}
+
+.replace-field input:focus {
+  border-color: rgba(255, 179, 71, 0.7);
 }
 
 .inline-dialog-mask {

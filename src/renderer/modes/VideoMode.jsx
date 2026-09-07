@@ -48,6 +48,25 @@ function formatDuration(seconds) {
   return `+${minutes}:${secs.toString().padStart(2, '0')}.${fraction}`
 }
 
+function countTextMatches(text, findText) {
+  const source = String(text || '')
+  const needle = String(findText || '')
+  if (!needle) return 0
+
+  let count = 0
+  let index = source.indexOf(needle)
+  while (index >= 0) {
+    count += 1
+    index = source.indexOf(needle, index + needle.length)
+  }
+  return count
+}
+
+function replaceAllText(text, findText, replaceText) {
+  if (!findText) return String(text || '')
+  return String(text || '').split(findText).join(replaceText)
+}
+
 function getNoteDuration(note) {
   const startSeconds = parseTime(note?.start)
   const endSeconds = parseTime(note?.end)
@@ -176,6 +195,7 @@ export default function VideoMode() {
   const [dialog, setDialog] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
   const [keywordMenu, setKeywordMenu] = useState(null)
+  const [replaceDialog, setReplaceDialog] = useState(null)
   const [notesFilterText, setNotesFilterText] = useState('')
   const [notesFilterOn, setNotesFilterOn] = useState(false)
   const [notesReverse, setNotesReverse] = useState(false)
@@ -205,6 +225,7 @@ export default function VideoMode() {
   const [rollingSubtitleError, setRollingSubtitleError] = useState('')
   const [videoOpenSource, setVideoOpenSource] = useState('default')
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState(0)
+  const [videoDurationText, setVideoDurationText] = useState('--:--:--.-')
   const [videoControlMode, setVideoControlMode] = useState(false)
   const [volume, setVolume] = useState(1)
 
@@ -499,6 +520,11 @@ export default function VideoMode() {
   const getDuration = () => {
     const duration = playerRef.current?.duration?.()
     return Number.isFinite(duration) ? duration : Number.POSITIVE_INFINITY
+  }
+
+  const refreshVideoDurationText = () => {
+    const duration = Number(playerRef.current?.duration?.())
+    setVideoDurationText(Number.isFinite(duration) ? formatTime(duration) : '--:--:--.-')
   }
 
   const getPlaybackRate = () => {
@@ -1019,6 +1045,7 @@ export default function VideoMode() {
     setSelectedSubtitleLanguageKey(selectedLanguageKey)
     setSelectedSubtitle(subtitle)
     setCurrentFile(info.filePath)
+    setVideoDurationText('--:--:--.-')
     addRecentFile(APP_MODES.VIDEO, info.filePath)
     if (info.folderPath) {
       addRecentFolder(APP_MODES.VIDEO, info.folderPath)
@@ -1674,6 +1701,11 @@ export default function VideoMode() {
     setNoteDraft(content)
   }
 
+  const handleNoteEditorFocus = () => {
+    if (activeNoteDraft !== 'None') return
+    updateSelectedContent('')
+  }
+
   const handleNoteEditorContextMenu = (event) => {
     event.preventDefault()
     event.stopPropagation()
@@ -1736,6 +1768,147 @@ export default function VideoMode() {
     updateNote(selectedNoteId, { content: noteDraft })
     setDirty(APP_MODES.VIDEO, true)
     showAutoMessage('已更新视频笔记内容。', '操作完成', 900)
+  }
+
+  const openReplaceDialog = (scope) => {
+    setReplaceDialog({
+      scope,
+      findText: '',
+      replaceText: '',
+      busy: false,
+    })
+  }
+
+  const updateReplaceDialog = (patch) => {
+    setReplaceDialog((current) => (current ? { ...current, ...patch } : current))
+  }
+
+  const buildReplacePlan = (rows, findText, replaceText) => rows
+    .map(({ note }) => {
+      const matchCount = countTextMatches(note.content, findText)
+      if (matchCount === 0) return null
+      return {
+        note,
+        matchCount,
+        nextContent: replaceAllText(note.content, findText, replaceText),
+      }
+    })
+    .filter(Boolean)
+
+  const confirmReplacePlan = async (plan, replaceText) => {
+    const matchCount = plan.reduce((total, item) => total + item.matchCount, 0)
+    if (matchCount === 0) {
+      showAutoMessage('没有匹配项。', 'Replace', 1000)
+      return false
+    }
+
+    const actionText = replaceText === '' ? '删除' : '替换'
+    const decision = await showActionDialog({
+      title: 'Replace',
+      message: `将${actionText} ${matchCount} 个匹配项，涉及 ${plan.length} 条笔记。是否继续？`,
+      defaultValue: 'replace',
+      cancelValue: 'cancel',
+      actions: [
+        { label: actionText, value: 'replace', primary: true },
+        { label: '取消', value: 'cancel' },
+      ],
+    })
+
+    return decision === 'replace'
+  }
+
+  const replaceVisibleNotes = async ({ findText, replaceText }) => {
+    const plan = buildReplacePlan(visibleNotes, findText, replaceText)
+    const canReplace = await confirmReplacePlan(plan, replaceText)
+    if (!canReplace) return
+
+    const replacements = new Map(plan.map((item) => [item.note.id, item.nextContent]))
+    setNotes(notes.map((note) => (
+      replacements.has(note.id) ? { ...note, content: replacements.get(note.id) } : note
+    )))
+
+    if (selectedNoteId && replacements.has(selectedNoteId)) {
+      setNoteDraft(replacements.get(selectedNoteId))
+    }
+
+    setDirty(APP_MODES.VIDEO, true)
+    setReplaceDialog(null)
+    showAutoMessage('替换完成，当前视频笔记已变为 Dirty。', 'Replace', 1200)
+  }
+
+  const replaceVisibleExternalNotes = async ({ findText, replaceText }) => {
+    const plan = buildReplacePlan(visibleExternalNotes, findText, replaceText)
+    const canReplace = await confirmReplacePlan(plan, replaceText)
+    if (!canReplace) return
+
+    updateReplaceDialog({ busy: true })
+    const results = []
+    for (const item of plan) {
+      const result = await window.videoApi?.saveLegacyNoteContent?.({
+        sourceJsonPath: item.note.sourceJsonPath,
+        noteIndex: item.note.noteIndex,
+        matchStart: item.note.raw?.Start || item.note.raw?.start || item.note.start,
+        matchEnd: item.note.raw?.End || item.note.raw?.end || item.note.end,
+        start: item.note.start,
+        end: item.note.end,
+        content: item.nextContent,
+      })
+      results.push({ ...item, result })
+    }
+    const successResults = results.filter((item) => item.result?.ok)
+    const failedResults = results.filter((item) => !item.result?.ok)
+    const savedById = new Map(successResults.map((item) => [
+      item.note.id,
+      {
+        content: item.result.note?.content ?? item.nextContent,
+        start: item.result.note?.start || item.note.start,
+        end: item.result.note?.end || item.note.end,
+        raw: item.result.note?.raw || item.note.raw,
+        noteIndex: Number.isInteger(item.result.noteIndex) ? item.result.noteIndex : item.note.noteIndex,
+      },
+    ]))
+
+    setExternalNotes((current) => current.map((note) => (
+      savedById.has(note.id) ? { ...note, ...savedById.get(note.id) } : note
+    )))
+
+    if (selectedExternalNoteId && savedById.has(selectedExternalNoteId)) {
+      setExternalNoteDraftContent(savedById.get(selectedExternalNoteId).content || '')
+    }
+
+    setDirtyExternalNoteIds((current) => {
+      const next = new Set(current)
+      successResults.forEach((item) => next.delete(item.note.id))
+      return next
+    })
+
+    if (failedResults.length > 0) {
+      window.debugApi?.log(`Notes Pool replace failed: ${failedResults.map((item) => item.note.sourceJsonPath).join('; ')}`)
+      updateReplaceDialog({ busy: false })
+      showAutoMessage(`部分保存失败：${failedResults.length} 条。`, 'Replace', 1800)
+      return
+    }
+
+    setReplaceDialog(null)
+    showAutoMessage('Notes Pool 替换并保存完成。', 'Replace', 1200)
+  }
+
+  const executeReplaceDialog = async () => {
+    if (!replaceDialog || replaceDialog.busy) return
+
+    const findText = replaceDialog.findText
+    const replaceText = replaceDialog.replaceText
+    if (!findText) {
+      showAutoMessage('Find 不能为空。', 'Replace', 1000)
+      return
+    }
+
+    if (replaceDialog.scope === 'pool') {
+      await replaceVisibleExternalNotes({ findText, replaceText })
+      return
+    }
+
+    await replaceVisibleNotes({ findText, replaceText })
   }
 
   const speedByStep = (step) => {
@@ -2105,17 +2278,21 @@ export default function VideoMode() {
     playerRef.current = player
     setPlaybackRate(player.playbackRate?.() || 1)
     setVolume(player.volume?.() ?? 1)
+    refreshVideoDurationText()
     player.on('ratechange', () => {
       setPlaybackRate(player.playbackRate?.() || 1)
     })
     player.on('volumechange', () => {
       setVolume(player.volume?.() ?? 1)
     })
+    player.on('loadedmetadata', refreshVideoDurationText)
+    player.on('durationchange', refreshVideoDurationText)
   }
 
   const onTimeUpdate = (currentTime) => {
     setCurrentPlaybackTime(currentTime)
     setPlayingTime(formatTime(currentTime))
+    refreshVideoDurationText()
   }
 
   const jumpToSubtitleCue = (cue) => {
@@ -2265,6 +2442,15 @@ export default function VideoMode() {
                   +
                 </button>
               </div>
+              <button
+                className="notes-replace-button"
+                data-tooltip="Replace"
+                onClick={() => openReplaceDialog('notes')}
+                title="Replace"
+                type="button"
+              >
+                <i className="fa-solid fa-arrows-rotate" aria-hidden="true" />
+              </button>
               <label className="notes-compact-check">
                 <input
                   checked={notesFilterOn}
@@ -2440,6 +2626,7 @@ export default function VideoMode() {
             className="note-editor"
             onContextMenu={handleNoteEditorContextMenu}
             onChange={(event) => updateSelectedContent(event.target.value)}
+            onFocus={handleNoteEditorFocus}
             onKeyDown={handleNoteEditorKeyDown}
             placeholder="Note content"
             ref={noteEditorRef}
@@ -2472,8 +2659,8 @@ export default function VideoMode() {
                 <strong className="playing-time">{playingTime}</strong>
               </div>
               <div>
-                <span>Mode</span>
-                <strong className={repeat ? 'repeat-mode' : ''}>{repeat ? 'repeat' : 'normal'}</strong>
+                <span>Length</span>
+                <strong>{videoDurationText}</strong>
               </div>
               <div>
                 <span>speed</span>
@@ -2627,6 +2814,15 @@ export default function VideoMode() {
                     +
                   </button>
                 </div>
+                <button
+                  className="notes-replace-button"
+                  data-tooltip="Replace"
+                  onClick={() => openReplaceDialog('pool')}
+                  title="Replace"
+                  type="button"
+                >
+                  <i className="fa-solid fa-arrows-rotate" aria-hidden="true" />
+                </button>
                 <div className="notes-pool-checks">
                   <label className="notes-compact-check">
                     <input
@@ -2753,6 +2949,7 @@ export default function VideoMode() {
       <footer className="video-statusbar">
         <span>Status: <strong className={dirty ? 'status-unsaved' : ''}>{dirty ? 'Unsaved' : 'Saved'}</strong></span>
         <span>Control: <strong className={videoControlMode ? 'control-on' : ''}>{videoControlMode ? 'ON' : 'OFF'}</strong></span>
+        <span>Mode: <strong className={repeat ? 'repeat-mode' : ''}>{repeat ? 'repeat' : 'normal'}</strong></span>
         <div
           className="video-subtitle-language subtitle-language-picker"
           onClick={(event) => event.stopPropagation()}
@@ -2859,6 +3056,56 @@ export default function VideoMode() {
           <div className="inline-dialog toast">
             <div className="inline-dialog-title">{dialog.title}</div>
             <div className="inline-dialog-message">{dialog.message}</div>
+          </div>
+        </div>
+      ) : null}
+
+      {replaceDialog && !dialog ? (
+        <div className="inline-dialog-mask">
+          <div className="inline-dialog replace-dialog">
+            <div className="inline-dialog-title">Replace</div>
+            <div className="replace-scope">
+              {replaceDialog.scope === 'pool' ? 'Notes Pool visible list' : 'Video Notes visible list'}
+            </div>
+            <label className="replace-field">
+              <span>Find</span>
+              <input
+                autoFocus
+                disabled={replaceDialog.busy}
+                onChange={(event) => updateReplaceDialog({ findText: event.target.value })}
+                onKeyDown={(event) => event.stopPropagation()}
+                type="text"
+                value={replaceDialog.findText}
+              />
+            </label>
+            <label className="replace-field">
+              <span>Replace To</span>
+              <input
+                disabled={replaceDialog.busy}
+                onChange={(event) => updateReplaceDialog({ replaceText: event.target.value })}
+                onKeyDown={(event) => event.stopPropagation()}
+                placeholder="Empty means delete"
+                type="text"
+                value={replaceDialog.replaceText}
+              />
+            </label>
+            <div className="inline-dialog-actions">
+              <button
+                className="primary"
+                disabled={replaceDialog.busy}
+                onClick={executeReplaceDialog}
+                type="button"
+              >
+                Replace
+              </button>
+              <button
+                disabled={replaceDialog.busy}
+                onClick={() => setReplaceDialog(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

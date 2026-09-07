@@ -1,16 +1,16 @@
 {
   "version": 1,
-  "savedAt": "2026-09-02T21:26:21.025Z",
+  "savedAt": "2026-09-07T04:06:53.541Z",
   "window": {
-    "displayId": 2475395367,
+    "displayId": 1514508209,
     "displayBounds": {
-      "x": 0,
+      "x": 1920,
       "y": 0,
       "width": 1920,
       "height": 1080
     },
     "bounds": {
-      "x": -8,
+      "x": 1912,
       "y": -8,
       "width": 1920,
       "height": 1032
@@ -36,12 +36,12 @@
       "specialFolderPath": "D:\\temp\\WordListExamples\\特殊文件"
     },
     "video": {
-      "currentFilePath": "D:\\youtubeDL\\How to Keep Focus on Yourself ｜ Graded Reader ｜ Improve Your English Fluency ✅️ [I2SaYSEIlcc].mp4",
+      "currentFilePath": "D:\\youtubeDL\\How China is Forcing the US to Fly F-35 Advanced Stealth Jets Without Radar ｜ Vantage on Firstpost [acrZ9T6adGo].mp4",
       "folderPath": "D:\\youtubeDL",
       "leftTab": "notes",
       "rightToolTab": "notesPool",
       "selectedNoteIndex": -1,
-      "playbackTime": 75.415516,
+      "playbackTime": 132.886345,
       "playbackRate": 1,
       "fullscreenCycleState": 0,
       "panelsHidden": false,

@@ -71,6 +71,7 @@ Notes Pool 中的 List，选择一个item后，下拉显示content和一个Save�
 2. 右栏 Notes Pool子页，3个checkbox和 [-] 11px [+] 布置在同一个行。
 3. 左栏 Notes子页，右栏 Notes Pool子页的 Note item fontsize 分开单独设置，不要同步。
 在Setting也分开设置默认值。
+
  //mr:: 2026_09_01 18_39_55
 1. 
 在左栏 Notes子页，右栏 Notes Pool子页，都添加一个类似于 rolling 字幕模式的 字体大小的设置工具（ + - 字号显示）
