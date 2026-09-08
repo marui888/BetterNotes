@@ -9,6 +9,8 @@
     "extraSubtitleFolder": "",
     "subtitleDisplayMode": "rolling",
     "rollingSubtitleFontSize": 30,
+    "darkViewBlurPx": 18,
+    "darkViewDim": 0,
     "videoNotesFontSize": 10,
     "videoNotesPoolFontSize": 12,
     "playAllSubtitleSuffix": ".en-orig.vtt",

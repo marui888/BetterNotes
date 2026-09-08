@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "savedAt": "2026-09-07T11:24:19.851Z",
+  "savedAt": "2026-09-08T17:07:32.371Z",
   "window": {
-    "displayId": 1514508209,
+    "displayId": 1431149741,
     "displayBounds": {
       "x": 1920,
       "y": 0,
@@ -15,7 +15,7 @@
       "width": 1920,
       "height": 1032
     },
-    "isMaximized": false
+    "isMaximized": true
   },
   "activeMode": "video",
   "mode": "video",
@@ -36,12 +36,12 @@
       "specialFolderPath": "D:\\temp\\WordListExamples\\特殊文件"
     },
     "video": {
-      "currentFilePath": "D:\\youtubeDL\\Poor Single Dad in Seat 12F Was Ignored — Until an F-22 Pilot Heard His Call Sign [k38niGucMKQ].mp4",
-      "folderPath": "D:\\youtubeDL",
-      "leftTab": "files",
+      "currentFilePath": "C:\\Users\\Admin\\Downloads\\[English (auto-generated)] CEO Secretly Followed Single Dad Janitor After WorkWhat She Discovered Ch.mp4",
+      "folderPath": "C:\\Users\\Admin\\Downloads",
+      "leftTab": "notes",
       "rightToolTab": "main",
       "selectedNoteIndex": -1,
-      "playbackTime": 2008.411001,
+      "playbackTime": 1374.119826,
       "playbackRate": 1,
       "fullscreenCycleState": 0,
       "panelsHidden": false,

@@ -530,6 +530,44 @@ export default function SettingsDialog({ onClose }) {
                         }))
                       }}
                     />
+                    <label htmlFor="settings-dark-view-blur">Dark View Blur</label>
+                    <input
+                      id="settings-dark-view-blur"
+                      min="0"
+                      max="40"
+                      step="1"
+                      type="number"
+                      value={draft.general.darkViewBlurPx}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            darkViewBlurPx: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                    <label htmlFor="settings-dark-view-dim">Dark View Dim</label>
+                    <input
+                      id="settings-dark-view-dim"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      type="number"
+                      value={draft.general.darkViewDim}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            darkViewDim: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
                     <label htmlFor="settings-video-notes-font-size">Notes FontSize</label>
                     <input
                       id="settings-video-notes-font-size"

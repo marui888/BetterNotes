@@ -22,17 +22,18 @@
 
 .rolling-subtitle-drag-handle {
   position: absolute;
-  left: 0;
-  top: 0;
+  top: 28px;
   right: 0;
+  bottom: 28px;
   z-index: 2;
-  height: 24px;
+  width: 74px;
   box-sizing: border-box;
   display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  padding: 0 6px;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 5px;
+  padding: 4px 4px 4px 0;
   color: rgba(245, 222, 179, 0.72);
   background: transparent;
   cursor: move;
@@ -50,7 +51,9 @@
 
 .rolling-subtitle-font-tools {
   display: inline-flex;
+  width: 100%;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
   cursor: default;
 }
@@ -82,14 +85,16 @@
 
 .rolling-subtitle-timing-tools {
   display: inline-flex;
+  width: 100%;
   align-items: center;
-  gap: 4px;
+  justify-content: flex-end;
+  gap: 3px;
   cursor: default;
 }
 
 .rolling-subtitle-timing-tools button {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 22px;
   padding: 0;
   color: rgba(245, 222, 179, 0.88);
   background: rgba(0, 0, 0, 0.24);
@@ -106,20 +111,22 @@
 }
 
 .rolling-subtitle-timing-offset {
-  min-width: 40px;
+  min-width: 34px;
   color: rgba(245, 222, 179, 0.78);
   font-size: 12px;
   text-align: center;
 }
 
 .rolling-subtitle-dim-toggle,
+.rolling-subtitle-dock-toggle,
 .rolling-subtitle-mode-toggle,
 .rolling-subtitle-hide-toggle,
 .rolling-subtitle-add-toggle,
 .rolling-subtitle-cancel-toggle {
   width: auto;
-  height: 24px;
-  padding: 0 8px;
+  min-width: 48px;
+  height: 22px;
+  padding: 0 5px;
   color: rgba(245, 222, 179, 0.86);
   background: rgba(0, 0, 0, 0.24);
   border: 1px solid rgba(245, 222, 179, 0.22);
@@ -140,6 +147,7 @@
 }
 
 .rolling-subtitle-dim-toggle:hover,
+.rolling-subtitle-dock-toggle:hover,
 .rolling-subtitle-mode-toggle:hover,
 .rolling-subtitle-hide-toggle:hover,
 .rolling-subtitle-add-toggle:hover,
@@ -162,7 +170,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  padding: 5px 6px 8px;
+  padding: 5px 82px 8px 6px;
   scrollbar-width: none;
 }
 
@@ -278,6 +286,7 @@
 
 .rolling-subtitle-resize-handle {
   position: absolute;
+  z-index: 3;
   right: 0;
   bottom: 0;
   width: 14px;

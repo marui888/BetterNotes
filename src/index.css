@@ -1390,12 +1390,98 @@ button:hover {
   position: fixed;
   inset: 0;
   z-index: 1;
-  background: #000;
+  background: rgba(0, 0, 0, var(--video-dark-dim, 0.65));
   pointer-events: none;
+}
+
+.video-mode.fullscreen-state-4 .video-js-host {
+  filter: blur(var(--video-dark-blur, 18px)) brightness(0.45);
+  transform: scale(1.04);
+  transform-origin: center;
+}
+
+.video-mode.fullscreen-state-4.dark-view-clear .video-stage::before {
+  display: none;
+}
+
+.video-mode.fullscreen-state-4.dark-view-clear .video-js-host {
+  filter: none;
+  transform: none;
 }
 
 .video-mode.fullscreen-state-4 .rolling-subtitle-panel {
   z-index: 3;
+}
+
+.video-mode.fullscreen-state-4.dark-subview-1 .video-center {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6px minmax(280px, var(--video-dark-subview-right-width, 16.7%));
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+}
+
+.video-mode.fullscreen-state-4.dark-subview-1 .video-stage {
+  position: relative;
+  inset: auto;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.video-mode.fullscreen-state-4.dark-subview-1 .video-stage::before {
+  position: absolute;
+  inset: 0;
+}
+
+.video-mode.fullscreen-state-4.dark-subview-1 .video-horizontal-splitter {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 6px;
+  min-height: 0;
+  cursor: col-resize;
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.video-mode.fullscreen-state-4.dark-subview-1 .video-bottom-panel {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 6px minmax(132px, var(--video-dark-subview-info-height, 180px));
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+  border-top-color: transparent;
+}
+
+.video-mode.fullscreen-state-4.dark-subview-1 .video-side-panel {
+  grid-column: 1;
+  grid-row: 3;
+  min-height: 0;
+}
+
+.video-mode.fullscreen-state-4.dark-subview-1 .note-editor {
+  grid-column: 1;
+  grid-row: 1;
+  min-height: 0;
+}
+
+.video-mode.fullscreen-state-4.dark-subview-1 .video-bottom-inner-splitter {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 6px;
+  cursor: row-resize;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-left: 0;
+  border-right: 0;
 }
 
 .video-left-panel {
@@ -1838,11 +1924,20 @@ button:hover {
 
 .video-bottom-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(310px, 360px);
+  grid-template-columns: minmax(0, 1fr) 6px minmax(260px, var(--video-bottom-side-width, 360px));
   gap: 8px;
   min-height: 0;
   padding: 8px;
   background: #181818;
+}
+
+.video-bottom-inner-splitter {
+  min-width: 6px;
+  min-height: 0;
+  background: #0b0b0b;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 1px solid rgba(255, 255, 255, 0.04);
+  cursor: col-resize;
 }
 
 .note-editor {

@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_MODES, useAppStore } from '../../stores/appStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useVideoStore } from '../../stores/videoStore'
@@ -6,7 +6,7 @@ import { registerActions, runAction } from '../actions/actionRegistry'
 import SimpleContextMenu from '../components/SimpleContextMenu'
 import useKeywordInsertion from '../hooks/useKeywordInsertion'
 import { compileFilterExpression } from '../utils/filterExpression'
-import RollingSubtitlePanel from '../video/RollingSubtitlePanel'
+import RollingSubtitlePanel from '../components/rollingSubtitle'
 import { parseSubtitleCues } from '../video/subtitleParser'
 import VideoPlayer from '../video/VideoPlayer'
 
@@ -19,6 +19,7 @@ const PLAYBACK_RATE_STEP = 0.05
 const MIN_PLAYBACK_RATE = 0.1
 const MAX_PLAYBACK_RATE = 2
 const VOLUME_STEP = 0.05
+const DARK_VIEW_DIM_ACTIVE = 1
 const MIN_NOTE_ITEM_FONT_SIZE = 9
 const MAX_NOTE_ITEM_FONT_SIZE = 18
 const CONTEXT_MENU_WIDTH = 210
@@ -212,8 +213,12 @@ export default function VideoMode() {
   const [dirtyExternalNoteIds, setDirtyExternalNoteIds] = useState(() => new Set())
   const [videoLeftWidth, setVideoLeftWidth] = useState(200)
   const [videoRightWidth, setVideoRightWidth] = useState(240)
+  const [videoBottomSideWidth, setVideoBottomSideWidth] = useState(360)
   const [videoStageRatio, setVideoStageRatio] = useState(0.74)
   const [fullscreenCycleState, setFullscreenCycleState] = useState(0)
+  const [darkSubView, setDarkSubView] = useState(0)
+  const [darkSubViewRightRatio, setDarkSubViewRightRatio] = useState(1 / 6)
+  const [darkSubViewInfoHeight, setDarkSubViewInfoHeight] = useState(180)
   const [rollingSubtitleDarkLayoutRequest, setRollingSubtitleDarkLayoutRequest] = useState(0)
   const [panelsHidden, setPanelsHidden] = useState(false)
   const [selectedDirectoryMp4Name, setSelectedDirectoryMp4Name] = useState('')
@@ -230,12 +235,16 @@ export default function VideoMode() {
   const [videoDurationText, setVideoDurationText] = useState('--:--:--.-')
   const [videoControlMode, setVideoControlMode] = useState(false)
   const [volume, setVolume] = useState(1)
+  const [subtitleNotePreviewContent, setSubtitleNotePreviewContent] = useState(null)
 
   const settings = useSettingsStore((state) => state.settings)
   const saveSettings = useSettingsStore((state) => state.saveSettings)
   const extraSubtitleFolder = settings.general.extraSubtitleFolder
   const subtitleDisplayMode = settings.general.subtitleDisplayMode || 'native'
   const rollingSubtitleFontSize = settings.general.rollingSubtitleFontSize
+  const darkViewBlurPx = settings.general.darkViewBlurPx ?? 18
+  const settingsDarkViewDim = settings.general.darkViewDim ?? 0.65
+  const [runtimeDarkViewDim, setRuntimeDarkViewDim] = useState(settingsDarkViewDim)
   const videoNotesFontSize = settings.general.videoNotesFontSize || 11
   const videoNotesPoolFontSize = settings.general.videoNotesPoolFontSize || 11
   const playAllSubtitleSuffix = useSettingsStore((state) => state.settings.general.playAllSubtitleSuffix)
@@ -284,6 +293,10 @@ export default function VideoMode() {
   const moveNote = useVideoStore((state) => state.moveNote)
 
   useEffect(() => {
+    setRuntimeDarkViewDim(settingsDarkViewDim)
+  }, [settingsDarkViewDim])
+
+  useEffect(() => {
     console.log(`[startup:renderer] VideoMode mounted +${Math.round(performance.now())}ms`)
   }, [])
 
@@ -313,7 +326,7 @@ export default function VideoMode() {
     ? dirtyExternalNoteIds.has(selectedExternalNote.id)
     : false
   const activeNoteSource = videoOpenSource === 'pool' && selectedExternalNote ? 'pool' : 'default'
-  const activeNoteDraft = activeNoteSource === 'pool' ? externalNoteDraftContent : noteDraft
+  const activeNoteDraft = subtitleNotePreviewContent ?? (activeNoteSource === 'pool' ? externalNoteDraftContent : noteDraft)
   const activeNoteStart = activeNoteSource === 'pool' ? selectedExternalNote?.start : selectedStart || selectedNote?.start
   const activeNoteEnd = activeNoteSource === 'pool' ? selectedExternalNote?.end : selectedEnd || selectedNote?.end
   const externalNoteFileCount = useMemo(
@@ -646,6 +659,7 @@ export default function VideoMode() {
   }
 
   const selectNote = (note) => {
+    setSubtitleNotePreviewContent(null)
     setSelectedNoteId(note.id)
     setNoteDraft(note.content)
     setSelectedStart(note.start)
@@ -1385,6 +1399,7 @@ export default function VideoMode() {
     const canLeave = await confirmExternalNoteDirtyBeforeLeave()
     if (!canLeave) return false
 
+    setSubtitleNotePreviewContent(null)
     setSelectedExternalNoteId(externalNote.id)
     setExpandedExternalNoteId(externalNote.id)
     setExternalNoteDraftContent(externalNote.content || '')
@@ -1694,6 +1709,11 @@ export default function VideoMode() {
   }
 
   const updateSelectedContent = (content) => {
+    if (subtitleNotePreviewContent !== null) {
+      setSubtitleNotePreviewContent(content)
+      return
+    }
+
     if (activeNoteSource === 'pool' && selectedExternalNote) {
       updateExternalNoteFromMainEditor(selectedExternalNote.id, { content })
       return
@@ -1952,8 +1972,7 @@ export default function VideoMode() {
 
   const cycleFullscreenPanelState = () => {
     setFullscreenCycleState((state) => {
-      if (state === 0) return 2
-      if (state === 2) return 3
+      if (state === 0) return 3
       if (state === 3) return 4
       return 0
     })
@@ -1964,7 +1983,7 @@ export default function VideoMode() {
     if (!titleOn || subtitleDisplayMode !== 'rolling' || !selectedSubtitle) return
 
     setRollingSubtitleDarkLayoutRequest((value) => value + 1)
-  }, [fullscreenCycleState, selectedSubtitle, subtitleDisplayMode, titleOn])
+  }, [darkSubView, fullscreenCycleState, selectedSubtitle, subtitleDisplayMode, titleOn])
 
   const toggleFocusBetweenNotesListAndTextInput = () => {
     const focusEditor = () => {
@@ -2022,7 +2041,7 @@ export default function VideoMode() {
   }
 
   const toggleCustomFullscreen = () => {
-    setFullscreenCycleState((state) => (state === 1 || state === 2 ? 0 : 1))
+    setFullscreenCycleState((state) => (state === 3 ? 0 : 3))
   }
 
   const togglePanelsVisibility = () => {
@@ -2332,6 +2351,53 @@ export default function VideoMode() {
     playerRef.current?.currentTime?.(cue.start)
   }
 
+  const buildSelectedSubtitleNoteContent = (cues = []) => {
+    const lines = cues.map((cue) => String(cue.text || '').trim()).filter(Boolean)
+    return lines.length > 0 ? `AUTO:\n${lines.join('\n')}` : ''
+  }
+
+  const previewSelectedSubtitleNote = (cues = []) => {
+    const content = buildSelectedSubtitleNoteContent(cues)
+    setSubtitleNotePreviewContent(content)
+  }
+
+  const addSelectedSubtitleNote = async (cues = []) => {
+    if (!videoFile?.filePath) return false
+    if (!Array.isArray(cues) || cues.length === 0) return false
+
+    const sortedCues = [...cues].sort((left, right) => left.start - right.start)
+    const firstCue = sortedCues[0]
+    const lastCue = sortedCues[sortedCues.length - 1]
+    const content = subtitleNotePreviewContent ?? buildSelectedSubtitleNoteContent(sortedCues)
+    const range = normalizeRange({
+      start: formatTime(firstCue.start),
+      end: formatTime(lastCue.end),
+    })
+    if (!range) return false
+
+    const note = {
+      id: `${videoFile.filePath}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      sourceVideoPath: videoFile.filePath,
+      sourceVideoName: videoFile.fileName || '',
+      start: range.start,
+      end: range.end,
+      content,
+      raw: {
+        createdBy: 'rolling-subtitles',
+      },
+    }
+
+    setVideoOpenSource('default')
+    addNote(note)
+    setSubtitleNotePreviewContent(null)
+    setNotesFilterOn(false)
+    setCurStart(range.start)
+    setCurEnd(range.end)
+    setDirty(APP_MODES.VIDEO, true)
+    showAutoMessage('已从字幕追加视频笔记。', '操作完成', 900)
+    return true
+  }
+
   const changeSubtitleDisplayMode = async (event) => {
     const nextMode = event.target.value === 'rolling' ? 'rolling' : 'native'
     try {
@@ -2369,6 +2435,34 @@ export default function VideoMode() {
     }
   }
 
+  const toggleDarkViewDim = () => {
+    const currentDim = Number(runtimeDarkViewDim)
+    const resolvedDim = Number.isFinite(currentDim) ? currentDim : 0
+
+    if (resolvedDim <= 0.01) {
+      setRuntimeDarkViewDim(DARK_VIEW_DIM_ACTIVE)
+      setDarkSubView(0)
+      window.requestAnimationFrame(requestRollingSubtitleLayout)
+      return
+    }
+
+    if (darkSubView === 0) {
+      setRuntimeDarkViewDim(DARK_VIEW_DIM_ACTIVE)
+      setDarkSubView(1)
+      window.requestAnimationFrame(requestRollingSubtitleLayout)
+      return
+    }
+
+    setRuntimeDarkViewDim(0)
+    setDarkSubView(0)
+    window.requestAnimationFrame(requestRollingSubtitleLayout)
+  }
+
+  const requestRollingSubtitleLayout = () => {
+    setRollingSubtitleDarkLayoutRequest((value) => value + 1)
+  }
+
+
   const startVideoLayoutResize = (event, type) => {
     event.preventDefault()
     event.stopPropagation()
@@ -2378,6 +2472,7 @@ export default function VideoMode() {
     const startLeftWidth = videoLeftWidth
     const startRightWidth = videoRightWidth
     const startStageRatio = videoStageRatio
+    const startDarkSubViewRightRatio = darkSubViewRightRatio
     const centerBounds = event.currentTarget.closest('.video-center')?.getBoundingClientRect()
 
     const handlePointerMove = (moveEvent) => {
@@ -2390,6 +2485,15 @@ export default function VideoMode() {
       if (type === 'right') {
         const nextWidth = Math.max(150, Math.min(420, startRightWidth - (moveEvent.clientX - startX)))
         setVideoRightWidth(nextWidth)
+        return
+      }
+
+      if (type === 'center' && fullscreenCycleState === 4 && darkSubView === 1 && centerBounds?.width) {
+        const startRightWidthPx = centerBounds.width * startDarkSubViewRightRatio
+        const nextRightWidth = startRightWidthPx - (moveEvent.clientX - startX)
+        const nextRatio = nextRightWidth / centerBounds.width
+        setDarkSubViewRightRatio(Math.max(1 / 6, Math.min(0.5, nextRatio)))
+        window.requestAnimationFrame(requestRollingSubtitleLayout)
         return
       }
 
@@ -2409,18 +2513,59 @@ export default function VideoMode() {
     window.addEventListener('pointerup', handlePointerUp)
   }
 
+  const startVideoBottomResize = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const startX = event.clientX
+    const startY = event.clientY
+    const startSideWidth = videoBottomSideWidth
+    const startInfoHeight = darkSubViewInfoHeight
+
+    const handlePointerMove = (moveEvent) => {
+      if (fullscreenCycleState === 4 && darkSubView === 1) {
+        const nextHeight = startInfoHeight - (moveEvent.clientY - startY)
+        setDarkSubViewInfoHeight(Math.max(132, Math.min(320, nextHeight)))
+        return
+      }
+
+      const nextWidth = startSideWidth - (moveEvent.clientX - startX)
+      setVideoBottomSideWidth(Math.max(260, Math.min(560, nextWidth)))
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }
+
   const fullscreenClass = `fullscreen-state-${fullscreenCycleState}`
   const panelsClass = panelsHidden ? 'panels-hidden' : ''
   const controlModeClass = videoControlMode ? 'video-control-mode' : ''
+  const darkViewClearClass = runtimeDarkViewDim <= 0 ? 'dark-view-clear' : ''
+  const darkSubViewClass = fullscreenCycleState === 4 ? `dark-subview-${darkSubView}` : ''
+  const rollingSubtitleFontSizeKey = fullscreenCycleState === 4
+    ? 'dark'
+    : fullscreenCycleState === 3
+      ? 'overlay'
+      : 'normal'
   const nativeSubtitle = titleOn && subtitleDisplayMode === 'native' ? selectedSubtitle : null
 
   return (
     <section
-      className={`video-mode ${fullscreenClass} ${panelsClass} ${controlModeClass}`}
+      className={`video-mode ${fullscreenClass} ${panelsClass} ${controlModeClass} ${darkViewClearClass} ${darkSubViewClass}`}
       style={{
         '--video-left-panel-width': `${videoLeftWidth}px`,
         '--video-right-panel-width': `${videoRightWidth}px`,
         '--video-stage-height': `${Math.round(videoStageRatio * 1000) / 10}%`,
+        '--video-dark-blur': `${darkViewBlurPx}px`,
+        '--video-dark-dim': runtimeDarkViewDim,
+        '--video-dark-subview-right-width': `${Math.round(darkSubViewRightRatio * 1000) / 10}%`,
+        '--video-bottom-side-width': `${videoBottomSideWidth}px`,
+        '--video-dark-subview-info-height': `${darkSubViewInfoHeight}px`,
       }}
     >
       <div className="video-body">
@@ -2638,9 +2783,18 @@ export default function VideoMode() {
               cues={rollingSubtitleCues}
               currentTime={currentPlaybackTime}
               darkModeActive={fullscreenCycleState === 4}
+              darkSubView={darkSubView}
               darkLayoutRequest={rollingSubtitleDarkLayoutRequest}
+              darkViewDim={runtimeDarkViewDim}
+              enableDarkLayout
+              enableDimView
+              enableSubtitleNoteAdding
               defaultFontSize={rollingSubtitleFontSize}
+              fontSizeKey={rollingSubtitleFontSizeKey}
               getCurrentTime={() => playerRef.current?.currentTime?.()}
+              onAddSelectedSubtitles={addSelectedSubtitleNote}
+              onToggleDarkViewDim={toggleDarkViewDim}
+              onSelectedSubtitlesChange={previewSelectedSubtitleNote}
               onCueClick={jumpToSubtitleCue}
             />
           ) : null}
@@ -2666,6 +2820,12 @@ export default function VideoMode() {
             placeholder="Note content"
             ref={noteEditorRef}
             value={activeNoteDraft}
+          />
+          <div
+            className="video-bottom-inner-splitter"
+            onPointerDown={startVideoBottomResize}
+            role="separator"
+            aria-label="Resize note content and video info"
           />
           <div className="video-side-panel">
             <div className="video-info">
