@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "savedAt": "2026-09-08T17:07:32.371Z",
+  "savedAt": "2026-09-09T16:33:59.693Z",
   "window": {
-    "displayId": 1431149741,
+    "displayId": 368737986,
     "displayBounds": {
       "x": 1920,
       "y": 0,
@@ -10,8 +10,8 @@
       "height": 1080
     },
     "bounds": {
-      "x": 1929,
-      "y": 20,
+      "x": 1912,
+      "y": -8,
       "width": 1920,
       "height": 1032
     },
@@ -36,15 +36,14 @@
       "specialFolderPath": "D:\\temp\\WordListExamples\\特殊文件"
     },
     "video": {
-      "currentFilePath": "C:\\Users\\Admin\\Downloads\\[English (auto-generated)] CEO Secretly Followed Single Dad Janitor After WorkWhat She Discovered Ch.mp4",
-      "folderPath": "C:\\Users\\Admin\\Downloads",
-      "leftTab": "notes",
-      "rightToolTab": "main",
+      "currentFilePath": "D:\\youtubeDL\\Single Dad Asked the Lonely Soldier, “Want to Have Dinner With Us？Then Christmas Changed Everything [BtvtoqfZ4lo].mp4",
+      "folderPath": "D:\\youtubeDL",
+      "leftTab": "files",
+      "rightToolTab": "notesPool",
       "selectedNoteIndex": -1,
-      "playbackTime": 1374.119826,
+      "playbackTime": 212.737294,
       "playbackRate": 1,
       "fullscreenCycleState": 0,
-      "panelsHidden": false,
       "videoOpenSource": "default",
       "notesPool": {
         "notes": [
@@ -165,9 +164,9 @@
         "filterOn": false,
         "reverse": false,
         "showFileName": false,
-        "selectedNoteId": "F:\\__视频 解题 高中数学 高考数学\\up 赵礼显\\考点梳理 P1 圆锥曲线椭圆篇，带你拆解焦点三角形内切圆常考结论，一遍速通！｜赵礼显-高考数学_33934281532.json#1",
-        "expandedNoteId": "F:\\__视频 解题 高中数学 高考数学\\up 赵礼显\\考点梳理 P1 圆锥曲线椭圆篇，带你拆解焦点三角形内切圆常考结论，一遍速通！｜赵礼显-高考数学_33934281532.json#1",
-        "draftContent": "纵坐标",
+        "selectedNoteId": "F:\\__视频 解题 高中数学 高考数学\\up 赵礼显\\考点梳理 P1 圆锥曲线椭圆篇，带你拆解焦点三角形内切圆常考结论，一遍速通！｜赵礼显-高考数学_33934281532.json#0",
+        "expandedNoteId": "F:\\__视频 解题 高中数学 高考数学\\up 赵礼显\\考点梳理 P1 圆锥曲线椭圆篇，带你拆解焦点三角形内切圆常考结论，一遍速通！｜赵礼显-高考数学_33934281532.json#0",
+        "draftContent": "二级结论 开始",
         "dirtyNoteIds": []
       }
     }

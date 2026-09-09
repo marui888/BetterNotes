@@ -92,6 +92,7 @@ export default function useShortcutManager(mode, disabled = false) {
 
     const handleKeyDown = (event) => {
       if (event.repeat) return
+      if (document.querySelector('.subtitle-pick-dialog')) return
 
       const shortcut = formatShortcutEvent(event)
       if (!shortcut) return

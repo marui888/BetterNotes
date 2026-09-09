@@ -20,6 +20,12 @@
   border-color: rgba(255, 179, 71, 0.48);
 }
 
+.rolling-subtitle-panel.subtitle-note-adding {
+  border-color: rgba(255, 76, 76, 0.95);
+  box-shadow: 0 0 0 2px rgba(255, 76, 76, 0.72), 0 8px 28px rgba(0, 0, 0, 0.16);
+}
+
+
 .rolling-subtitle-drag-handle {
   position: absolute;
   top: 28px;
@@ -60,7 +66,7 @@
 
 
 .rolling-subtitle-font-tools select {
-  height: 24px;
+  height: 28px;
   max-width: 64px;
   padding: 0 4px;
   color: rgba(245, 222, 179, 0.88);
@@ -93,8 +99,8 @@
 }
 
 .rolling-subtitle-timing-tools button {
-  width: 20px;
-  height: 22px;
+  width: 24px;
+  height: 28px;
   padding: 0;
   color: rgba(245, 222, 179, 0.88);
   background: rgba(0, 0, 0, 0.24);
@@ -117,15 +123,16 @@
   text-align: center;
 }
 
-.rolling-subtitle-dim-toggle,
+.rolling-subtitle-view-toggle,
+.rolling-subtitle-layout-toggle,
 .rolling-subtitle-dock-toggle,
 .rolling-subtitle-mode-toggle,
 .rolling-subtitle-hide-toggle,
 .rolling-subtitle-add-toggle,
 .rolling-subtitle-cancel-toggle {
-  width: auto;
-  min-width: 48px;
-  height: 22px;
+  width: 72px;
+  min-width: 72px;
+  height: 32px;
   padding: 0 5px;
   color: rgba(245, 222, 179, 0.86);
   background: rgba(0, 0, 0, 0.24);
@@ -136,17 +143,18 @@
   line-height: 1;
 }
 
-.rolling-subtitle-panel.dark-mode .rolling-subtitle-dim-toggle {
+.rolling-subtitle-panel.subtitle-center-mode .rolling-subtitle-view-toggle {
   color: #ff6b6b;
   border-color: rgba(255, 107, 107, 0.5);
 }
 
-.rolling-subtitle-panel.dark-mode .rolling-subtitle-dim-toggle:hover {
+.rolling-subtitle-panel.subtitle-center-mode .rolling-subtitle-view-toggle:hover {
   color: #ff8585;
   border-color: rgba(255, 107, 107, 0.72);
 }
 
-.rolling-subtitle-dim-toggle:hover,
+.rolling-subtitle-view-toggle:hover,
+.rolling-subtitle-layout-toggle:hover,
 .rolling-subtitle-dock-toggle:hover,
 .rolling-subtitle-mode-toggle:hover,
 .rolling-subtitle-hide-toggle:hover,
@@ -156,9 +164,11 @@
   border-color: rgba(255, 216, 77, 0.48);
 }
 
+.rolling-subtitle-hide-toggle:disabled,
 .rolling-subtitle-add-toggle:disabled,
 .rolling-subtitle-cancel-toggle:disabled {
   color: rgba(245, 222, 179, 0.34);
+  background: rgba(0, 0, 0, 0.14);
   border-color: rgba(245, 222, 179, 0.12);
   cursor: default;
 }

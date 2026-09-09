@@ -9,8 +9,8 @@
     "extraSubtitleFolder": "",
     "subtitleDisplayMode": "rolling",
     "rollingSubtitleFontSize": 30,
-    "darkViewBlurPx": 18,
-    "darkViewDim": 0,
+    "subtitleCenterViewBlurPx": 18,
+    "subtitleCenterViewDim": 0,
     "videoNotesFontSize": 10,
     "videoNotesPoolFontSize": 12,
     "playAllSubtitleSuffix": ".en-orig.vtt",
@@ -55,7 +55,8 @@
       "video.toggleLeftTab": "Alt+F",
       "video.updateContent": "Ctrl+Q",
       "video.quickUpdateRange": "Ctrl+G",
-      "video.writeCurrentRange": "Ctrl+W"
+      "video.writeCurrentRange": "Ctrl+W",
+      "video.pickSub": "Ctrl+B"
     },
     "image": {
       "image.intoEditingFocus": "Alt+E",

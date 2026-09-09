@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('videoApi', {
   saveNotes: (filePath, notes) => ipcRenderer.invoke('video:saveNotes', filePath, notes),
   listMp4Files: (folderPath) => ipcRenderer.invoke('video:listMp4Files', folderPath),
   readClipboardText: () => ipcRenderer.invoke('video:readClipboardText'),
+  writeClipboardText: (text) => ipcRenderer.invoke('video:writeClipboardText', text),
   convertSrtSubtitle: (payload) => ipcRenderer.invoke('video:convertSrtSubtitle', payload),
 })
 

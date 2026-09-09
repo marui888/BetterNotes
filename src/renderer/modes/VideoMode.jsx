@@ -19,7 +19,24 @@ const PLAYBACK_RATE_STEP = 0.05
 const MIN_PLAYBACK_RATE = 0.1
 const MAX_PLAYBACK_RATE = 2
 const VOLUME_STEP = 0.05
-const DARK_VIEW_DIM_ACTIVE = 1
+const SUBTITLE_CENTER_VIEW_HIDDEN_DIM = 1
+const FULLSCREEN_LAYOUT_KEYS = {
+  0: 'f0',
+  3: 'f3',
+  4: 'f4',
+}
+
+const createFullscreenViewState = () => ({
+  hideSub: false,
+  hideView: false,
+  hvLayout: 0,
+})
+
+const createFullscreenViewStates = () => ({
+  f0: createFullscreenViewState(),
+  f3: createFullscreenViewState(),
+  f4: createFullscreenViewState(),
+})
 const MIN_NOTE_ITEM_FONT_SIZE = 9
 const MAX_NOTE_ITEM_FONT_SIZE = 18
 const CONTEXT_MENU_WIDTH = 210
@@ -216,11 +233,11 @@ export default function VideoMode() {
   const [videoBottomSideWidth, setVideoBottomSideWidth] = useState(360)
   const [videoStageRatio, setVideoStageRatio] = useState(0.74)
   const [fullscreenCycleState, setFullscreenCycleState] = useState(0)
-  const [darkSubView, setDarkSubView] = useState(0)
-  const [darkSubViewRightRatio, setDarkSubViewRightRatio] = useState(1 / 6)
-  const [darkSubViewInfoHeight, setDarkSubViewInfoHeight] = useState(180)
-  const [rollingSubtitleDarkLayoutRequest, setRollingSubtitleDarkLayoutRequest] = useState(0)
-  const [panelsHidden, setPanelsHidden] = useState(false)
+  const [fullscreenViewStates, setFullscreenViewStates] = useState(createFullscreenViewStates)
+  const [subtitleCenterSideRatio, setSubtitleCenterSideRatio] = useState(1 / 6)
+  const [subtitleCenterInfoHeight, setSubtitleCenterInfoHeight] = useState(180)
+  const [rollingSubtitleCenterLayoutRequest, setRollingSubtitleCenterLayoutRequest] = useState(0)
+  const [rollingSubtitlePickRequest, setRollingSubtitlePickRequest] = useState(0)
   const [selectedDirectoryMp4Name, setSelectedDirectoryMp4Name] = useState('')
   const [playAll, setPlayAll] = useState(true)
   const [titleOn, setTitleOn] = useState(true)
@@ -242,9 +259,7 @@ export default function VideoMode() {
   const extraSubtitleFolder = settings.general.extraSubtitleFolder
   const subtitleDisplayMode = settings.general.subtitleDisplayMode || 'native'
   const rollingSubtitleFontSize = settings.general.rollingSubtitleFontSize
-  const darkViewBlurPx = settings.general.darkViewBlurPx ?? 18
-  const settingsDarkViewDim = settings.general.darkViewDim ?? 0.65
-  const [runtimeDarkViewDim, setRuntimeDarkViewDim] = useState(settingsDarkViewDim)
+  const subtitleCenterViewBlurPx = settings.general.subtitleCenterViewBlurPx ?? 18
   const videoNotesFontSize = settings.general.videoNotesFontSize || 11
   const videoNotesPoolFontSize = settings.general.videoNotesPoolFontSize || 11
   const playAllSubtitleSuffix = useSettingsStore((state) => state.settings.general.playAllSubtitleSuffix)
@@ -292,9 +307,6 @@ export default function VideoMode() {
   const clearNotes = useVideoStore((state) => state.clearNotes)
   const moveNote = useVideoStore((state) => state.moveNote)
 
-  useEffect(() => {
-    setRuntimeDarkViewDim(settingsDarkViewDim)
-  }, [settingsDarkViewDim])
 
   useEffect(() => {
     console.log(`[startup:renderer] VideoMode mounted +${Math.round(performance.now())}ms`)
@@ -310,6 +322,41 @@ export default function VideoMode() {
     () => compileFilterExpression(externalNotesFilterText),
     [externalNotesFilterText]
   )
+  const fullscreenLayoutKey = FULLSCREEN_LAYOUT_KEYS[fullscreenCycleState] || 'f0'
+  const fullscreenViewState = fullscreenViewStates[fullscreenLayoutKey] || createFullscreenViewState()
+  const videoViewDim = fullscreenViewState.hideView ? SUBTITLE_CENTER_VIEW_HIDDEN_DIM : 0
+  const canPickRollingSubtitle = titleOn
+    && subtitleDisplayMode === 'rolling'
+    && Boolean(selectedSubtitle)
+    && rollingSubtitleCues.length > 0
+    && !fullscreenViewState.hideSub
+
+  const updateCurrentFullscreenViewState = (updater) => {
+    setFullscreenViewStates((current) => {
+      const currentState = current[fullscreenLayoutKey] || createFullscreenViewState()
+      const patch = typeof updater === 'function' ? updater(currentState) : updater
+      return {
+        ...current,
+        [fullscreenLayoutKey]: {
+          ...currentState,
+          ...patch,
+        },
+      }
+    })
+  }
+
+  const toggleCurrentSubtitleHidden = () => {
+    updateCurrentFullscreenViewState((state) => ({ hideSub: !state.hideSub }))
+  }
+
+  const toggleCurrentVideoHidden = () => {
+    updateCurrentFullscreenViewState((state) => ({ hideView: !state.hideView }))
+  }
+
+  const toggleCurrentHvLayout = () => {
+    updateCurrentFullscreenViewState((state) => ({ hvLayout: state.hvLayout === 1 ? 0 : 1 }))
+    window.requestAnimationFrame(requestRollingSubtitleLayout)
+  }
   const visibleNotes = useMemo(() => {
     const rows = notes
       .map((note, index) => ({ note, index }))
@@ -442,12 +489,12 @@ export default function VideoMode() {
 
     dialogResolveRef.current = resolve
     setDialog({
-      title: options.title || '选择字幕文件',
+      title: options.title || 'Select subtitle file',
       subtitleCandidates,
       defaultValue: subtitleCandidates[0]?.filePath || 'none',
       cancelValue: 'none',
       nonModal: true,
-      actions: [{ label: options.noneLabel || '不加载字幕', value: 'none' }],
+      actions: [{ label: options.noneLabel || 'No subtitle', value: 'none' }],
     })
 
     if (Number.isFinite(Number(options.timeoutMs)) && Number(options.timeoutMs) > 0) {
@@ -457,7 +504,7 @@ export default function VideoMode() {
     }
   })
 
-  const showAutoMessage = (message, title = '提示', timeout = 1200) => {
+  const showAutoMessage = (message, title = 'Message', timeout = 1200) => {
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current)
     }
@@ -465,7 +512,7 @@ export default function VideoMode() {
     setDialog({
       title,
       message,
-      actions: [{ label: '确定', value: 'ok', primary: true }],
+      actions: [{ label: 'OK', value: 'ok', primary: true }],
       autoClose: true,
     })
 
@@ -484,6 +531,36 @@ export default function VideoMode() {
     if (!dialog) return undefined
 
     const onKeyDown = (event) => {
+      if (dialog.kind === 'subtitlePick') {
+        const key = event.key?.toLowerCase?.() || ''
+        const shortcutMap = {
+          q: 'copySave',
+          w: 'copy',
+          e: 'save',
+          r: 'cancel',
+          t: 'goBack',
+        }
+
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          event.stopImmediatePropagation?.()
+          closeDialog({ decision: 'cancel', text: dialog.subtitleText || '' })
+          return
+        }
+
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault()
+          event.stopPropagation()
+          event.stopImmediatePropagation?.()
+          const decision = shortcutMap[key]
+          if (decision) {
+            closeDialog({ decision, text: dialog.subtitleText || '' })
+          }
+        }
+        return
+      }
+
       if (event.key === 'Escape') {
         event.preventDefault()
         closeDialog(dialog.cancelValue || 'cancel')
@@ -563,7 +640,7 @@ export default function VideoMode() {
   const seekToCurrentStart = () => {
     const startSeconds = parseTime(curStart)
     if (!Number.isFinite(startSeconds)) {
-      showAutoMessage('当前 start 时间无效。', '提示', 900)
+      showAutoMessage('Action message.', 'Message', 900)
       return
     }
 
@@ -613,12 +690,12 @@ export default function VideoMode() {
     const endSeconds = parseTime(range.end)
 
     if (!Number.isFinite(startSeconds)) {
-      showAutoMessage('当前 start 时间无效，无法生成视频笔记。', '时间无效', 1800)
+      showAutoMessage('Action message.', 'Message', 1800)
       return null
     }
 
     if (!Number.isFinite(endSeconds) || endSeconds <= startSeconds) {
-      showAutoMessage('结束时间小于或等于开始时间，已自动调整为 start + 1秒。', '时间已调整', 1600)
+      showAutoMessage('End time adjusted to start + 1s.', 'Time adjusted', 1600)
       return {
         start: range.start,
         end: formatTime(startSeconds + 1),
@@ -636,7 +713,7 @@ export default function VideoMode() {
       const result = player.play()
       if (result?.catch) {
         result.catch(() => {
-          showAutoMessage('浏览器阻止了自动播放，请手动点击播放。', '播放提示', 1800)
+          showAutoMessage('Action message.', 'Message', 1800)
         })
       }
     }
@@ -690,7 +767,7 @@ export default function VideoMode() {
 
       const info = await window.videoApi?.getVideoFileInfo?.(noteVideoPath, { extraSubtitleFolder })
       if (!info?.ok) {
-        showAutoMessage('找不到笔记所属的视频文件。', 'Notes', 1400)
+        showAutoMessage('Action message.', 'Message', 1400)
         return
       }
 
@@ -733,7 +810,7 @@ export default function VideoMode() {
       const result = player.play()
       if (result?.catch) {
         result.catch(() => {
-          showAutoMessage('浏览器阻止了自动播放，请手动点击播放。', '播放提示', 1800)
+          showAutoMessage('Action message.', 'Message', 1800)
         })
       }
     }
@@ -745,7 +822,7 @@ export default function VideoMode() {
 
   const saveVideoNotes = async ({ silent = false } = {}) => {
     if (!videoFile?.filePath || !window.videoApi?.saveNotes) {
-      showAutoMessage('没有可保存的视频文件。')
+      showAutoMessage('No video file to save.')
       return false
     }
 
@@ -758,13 +835,13 @@ export default function VideoMode() {
 
     const result = await window.videoApi.saveNotes(videoFile.filePath, payload)
     if (!result?.ok) {
-      showAutoMessage('保存失败。')
+      showAutoMessage('No video file to save.')
       return false
     }
 
     setDirty(APP_MODES.VIDEO, false)
     if (!silent) {
-      showAutoMessage('文件已经保存。', '保存完成', 900)
+      showAutoMessage('Action message.', 'Message', 900)
     }
     return true
   }
@@ -776,14 +853,14 @@ export default function VideoMode() {
     if (!dirty) return true
 
     const decision = await showActionDialog({
-      title: '视频笔记已修改',
-      message: '当前视频笔记已经修改，切换MP4文件前需要处理这些修改。',
+      title: 'Video notes changed',
+      message: 'Current video notes have unsaved changes. Save before switching video?',
       defaultValue: 'save',
       cancelValue: 'cancel',
       actions: [
-        { label: '保存并切换', value: 'save', primary: true },
-        { label: '放弃修改', value: 'discard', danger: true },
-        { label: '取消', value: 'cancel' },
+        { label: 'Save and Switch', value: 'save', primary: true },
+        { label: 'Discard Changes', value: 'discard', danger: true },
+        { label: 'Cancel', value: 'cancel' },
       ],
     })
 
@@ -815,8 +892,7 @@ export default function VideoMode() {
       selectedNoteIndex: notes.findIndex((note) => note.id === selectedNoteId),
       playbackTime: getPlayerTime(),
       playbackRate: getPlaybackRate(),
-      fullscreenCycleState: 0,
-      panelsHidden,
+      fullscreenCycleState: 0,
       videoOpenSource,
       notesPool: {
         notes: externalNotes,
@@ -842,7 +918,6 @@ export default function VideoMode() {
     externalNotesShowFileName,
     leftTab,
     notes,
-    panelsHidden,
     registerSessionProvider,
     rightToolTab,
     selectedExternalNoteId,
@@ -858,8 +933,7 @@ export default function VideoMode() {
 
     if (snapshot.leftTab === 'notes' || snapshot.leftTab === 'files') setLeftTab(snapshot.leftTab)
     if (snapshot.rightToolTab === 'main' || snapshot.rightToolTab === 'notesPool') setRightToolTab(snapshot.rightToolTab)
-    setFullscreenCycleState(0)
-    setPanelsHidden(snapshot.panelsHidden === true)
+    setFullscreenCycleState(0)
     const notesPoolSnapshot = snapshot.notesPool || {}
     const restoredExternalNotes = Array.isArray(notesPoolSnapshot.notes) ? notesPoolSnapshot.notes : []
     setExternalNotes(restoredExternalNotes)
@@ -932,15 +1006,15 @@ export default function VideoMode() {
     }
 
     const decision = await showActionDialog({
-      title: '转换SRT字幕',
-      message: `未找到VTT字幕，发现SRT字幕：${srtSubtitle.fileName}。是否转换为VTT？`,
+      title: 'Convert SRT subtitle',
+      message: 'No VTT subtitle found. Convert SRT subtitle ' + srtSubtitle.fileName + ' to VTT?',
       defaultValue: 'convert',
       cancelValue: 'cancel',
       timeoutMs: subtitleConvertPromptTimeoutSec * 1000,
       timeoutValue: 'cancel',
       actions: [
-        { label: '转换', value: 'convert', primary: true },
-        { label: '取消', value: 'cancel' },
+        { label: 'Convert', value: 'convert', primary: true },
+        { label: 'Cancel', value: 'cancel' },
       ],
     })
 
@@ -966,13 +1040,13 @@ export default function VideoMode() {
             ? { ...entry, subtitle: result.subtitle }
             : entry
         )))
-        showAutoMessage('字幕转换完成。', '字幕', 900)
+        showAutoMessage('Action message.', 'Message', 900)
         return
       }
 
-      showAutoMessage('字幕转换失败。', '字幕', 1500)
+      showAutoMessage('Action message.', 'Message', 1500)
     } catch {
-      showAutoMessage('字幕转换失败。', '字幕', 1500)
+      showAutoMessage('Action message.', 'Message', 1500)
     }
   }
 
@@ -1013,7 +1087,7 @@ export default function VideoMode() {
 
     const result = await window.videoApi?.openSubtitleExternal?.(subtitlePath)
     if (!result?.ok) {
-      showAutoMessage('字幕文件打开失败。', '字幕', 1400)
+      showAutoMessage('Action message.', 'Message', 1400)
     }
   }
 
@@ -1027,7 +1101,7 @@ export default function VideoMode() {
 
   const loadVideoInfo = async (info, options = {}) => {
     if (!info?.ok) {
-      showAutoMessage('没有合法的MP4文件。')
+      showAutoMessage('No video file to save.')
       return
     }
 
@@ -1037,7 +1111,7 @@ export default function VideoMode() {
       && selectedExternalNote?.sourceVideoPath
       && isSameFilePath(info.filePath, selectedExternalNote.sourceVideoPath)
     ) {
-      showAutoMessage('该视频正在 Notes Pool 中编辑，不能同时作为 Default Notes 打开。', 'Notes Pool', 1800)
+      showAutoMessage('Action message.', 'Message', 1800)
       return
     }
 
@@ -1117,7 +1191,7 @@ export default function VideoMode() {
       && isSameFilePath(fullPath, selectedExternalNote.sourceVideoPath)
       && options.videoOpenSource !== 'pool'
     ) {
-      showAutoMessage('该视频正在 Notes Pool 中编辑，不能同时作为 Default Notes 打开。', 'Notes Pool', 1800)
+      showAutoMessage('Action message.', 'Message', 1800)
       return
     }
 
@@ -1139,14 +1213,14 @@ export default function VideoMode() {
     if (!dirty) return true
 
     const decision = await showActionDialog({
-      title: '自动播放下一视频',
-      message: '当前视频笔记有未保存修改，如何处理？',
+      title: 'Video notes changed',
+      message: 'Current video notes have unsaved changes. Save before playing next video?',
       defaultValue: 'save-next',
       cancelValue: 'stay',
       actions: [
-        { label: '保存并播放下一视频', value: 'save-next', primary: true },
-        { label: '放弃修改并播放下一视频', value: 'discard-next' },
-        { label: '停留当前视频', value: 'stay' },
+        { label: 'Save and Play Next', value: 'save-next', primary: true },
+        { label: 'Discard and Play Next', value: 'discard-next' },
+        { label: 'Stay Here', value: 'stay' },
       ],
     })
 
@@ -1233,7 +1307,7 @@ export default function VideoMode() {
 
   const openVideoFile = async () => {
     if (!window.videoApi?.openVideoFile) {
-      showAutoMessage('videoApi.openVideoFile 不可用。')
+      showAutoMessage('No video file to save.')
       return
     }
 
@@ -1247,13 +1321,13 @@ export default function VideoMode() {
 
   const appendExternalNotes = (result) => {
     if (!result?.ok && !result?.canceled) {
-      showAutoMessage('旧视频笔记加载失败。', 'Notes Pool', 1400)
+      showAutoMessage('Action message.', 'Message', 1400)
       return
     }
 
     const loadedNotes = Array.isArray(result?.notes) ? result.notes : []
     if (loadedNotes.length === 0) {
-      showAutoMessage('没有找到可用的旧视频笔记。', 'Notes Pool', 1400)
+      showAutoMessage('Action message.', 'Message', 1400)
       return
     }
 
@@ -1269,7 +1343,7 @@ export default function VideoMode() {
     })
     setRightToolTab('notesPool')
     const skippedCount = Array.isArray(result?.skippedFiles) ? result.skippedFiles.length : 0
-    showAutoMessage(`已加载 ${loadedNotes.length} 条旧视频笔记${skippedCount ? `，跳过 ${skippedCount} 个JSON` : ''}。`, 'Notes Pool', 1600)
+    showAutoMessage('Loaded ' + loadedNotes.length + ' legacy video notes' + (skippedCount ? ', skipped ' + skippedCount + ' JSON files' : '') + '.', 'Notes Pool', 1600)
   }
 
   const updateExternalNoteDraftContent = (noteId, content) => {
@@ -1306,7 +1380,7 @@ export default function VideoMode() {
 
   const saveExternalNoteContent = async (externalNote, content = externalNoteDraftContent) => {
     if (!externalNote || !window.videoApi?.saveLegacyNoteContent) {
-      showAutoMessage('videoApi.saveLegacyNoteContent 不可用。', 'Notes Pool', 1400)
+      showAutoMessage('Action message.', 'Message', 1400)
       return false
     }
 
@@ -1322,7 +1396,7 @@ export default function VideoMode() {
 
     if (!result?.ok) {
       const reason = result?.reason || 'save-legacy-note-failed'
-      showAutoMessage('旧视频笔记保存失败。', 'Notes Pool', 1600)
+      showAutoMessage('Action message.', 'Message', 1600)
       window.debugApi?.log(`Save legacy video note failed: ${externalNote.sourceJsonPath}#${externalNote.noteIndex} (${reason})`)
       return false
     }
@@ -1346,7 +1420,7 @@ export default function VideoMode() {
       next.delete(externalNote.id)
       return next
     })
-    showAutoMessage('旧视频笔记已保存。', 'Notes Pool', 900)
+    showAutoMessage('Action message.', 'Message', 900)
     return true
   }
 
@@ -1366,8 +1440,8 @@ export default function VideoMode() {
     if (!selectedExternalNoteDirty || !selectedExternalNote) return true
 
     const decision = await showActionDialog({
-      title: 'Unsaved Notes Pool Content',
-      message: '当前 Notes Pool item 的 Content 有未保存修改。',
+      title: 'Notes Pool item changed',
+      message: 'Current Notes Pool item has unsaved content changes.',
       actions: [
         { label: 'Save', value: 'save', primary: true },
         { label: 'Discard', value: 'discard' },
@@ -1408,7 +1482,7 @@ export default function VideoMode() {
 
   const loadExternalNotesFromFiles = async () => {
     if (!window.videoApi?.selectLegacyNoteFiles) {
-      showAutoMessage('videoApi.selectLegacyNoteFiles 不可用。', 'Notes Pool', 1400)
+      showAutoMessage('Action message.', 'Message', 1400)
       return
     }
 
@@ -1420,7 +1494,7 @@ export default function VideoMode() {
 
   const loadExternalNotesFromFolder = async () => {
     if (!window.videoApi?.selectLegacyNoteFolder) {
-      showAutoMessage('videoApi.selectLegacyNoteFolder 不可用。', 'Notes Pool', 1400)
+      showAutoMessage('Action message.', 'Message', 1400)
       return
     }
 
@@ -1434,7 +1508,7 @@ export default function VideoMode() {
     if (!externalNote?.sourceVideoPath || !window.videoApi?.getVideoFileInfo) return
 
     if (isSameFilePath(externalNote.sourceVideoPath, videoFile?.filePath) && activeNoteSource !== 'pool') {
-      showAutoMessage('该视频已经在 Default Notes 中打开，不能同时作为 Notes Pool 编辑。', 'Notes Pool', 1800)
+      showAutoMessage('Action message.', 'Message', 1800)
       return
     }
 
@@ -1448,7 +1522,7 @@ export default function VideoMode() {
 
     const startSeconds = parseTime(externalNote.start)
     if (isSameFilePath(externalNote.sourceVideoPath, videoFile?.filePath)) {
-      showAutoMessage('当前正在编辑 Notes Pool 来源视频。', 'Notes Pool', 1200)
+      showAutoMessage('Action message.', 'Message', 1200)
       if (Number.isFinite(startSeconds)) {
         seekWhenReady(startSeconds)
         setTimeout(() => playFromCurrentPosition(), 160)
@@ -1461,7 +1535,7 @@ export default function VideoMode() {
 
     const info = await window.videoApi.getVideoFileInfo(externalNote.sourceVideoPath, { extraSubtitleFolder })
     if (!info?.ok) {
-      showAutoMessage('找不到对应的视频文件。', 'Notes Pool', 1400)
+      showAutoMessage('Action message.', 'Message', 1400)
       return
     }
 
@@ -1481,12 +1555,65 @@ export default function VideoMode() {
       seekWhenReady(startSeconds)
       setTimeout(() => playFromCurrentPosition(), 160)
     }
-    showAutoMessage('当前正在编辑 Notes Pool 来源视频。', 'Notes Pool', 1200)
+    showAutoMessage('Action message.', 'Message', 1200)
   }
 
+  const writeVideoClipboardText = async (text, label = 'Copy') => {
+    if (!window.videoApi?.writeClipboardText) {
+      showAutoMessage('Clipboard write API is unavailable.', label, 1200)
+      return false
+    }
+
+    try {
+      await window.videoApi.writeClipboardText(text)
+      showAutoMessage('Copied.', label, 700)
+      return true
+    } catch {
+      showAutoMessage('Copy failed.', label, 1200)
+      return false
+    }
+  }
+
+  const getNoteCopySourceFileName = (note) => {
+    if (note?.sourceVideoName) return note.sourceVideoName
+    if (note?.sourceVideoPath) return splitPath(note.sourceVideoPath).fileName
+    return videoFile?.fileName || ''
+  }
+
+  const getContextCopyNote = (note = null) => {
+    if (note) return note
+    if (contextMenu?.type === 'externalNote') return contextMenu.externalNote
+    if (contextMenu?.note) return contextMenu.note
+    return selectedNote
+  }
+
+  const getContextCopyStart = (note = null) => {
+    const resolvedNote = getContextCopyNote(note)
+    return resolvedNote?.start || curStart || ''
+  }
+
+  const copyContextStart = (note = null) => {
+    const start = getContextCopyStart(note)
+    if (!start) {
+      showAutoMessage('No start time.', 'Copy Start', 900)
+      return
+    }
+    writeVideoClipboardText(`{{ startTime: ${start} }}`, 'Copy Start')
+  }
+
+  const copyContextStartAndFile = (note = null) => {
+    const resolvedNote = getContextCopyNote(note)
+    const start = resolvedNote?.start || curStart || ''
+    const fileName = getNoteCopySourceFileName(resolvedNote)
+    if (!start) {
+      showAutoMessage('No start time.', 'Copy Start+File', 900)
+      return
+    }
+    writeVideoClipboardText(`{{ startTime: ${start} ; fileName: ${fileName} }}`, 'Copy Start+File')
+  }
   const openFromClipboard = async () => {
     if (!window.videoApi?.readClipboardText || !window.videoApi?.validateMp4Path) {
-      showAutoMessage('剪贴板读取接口不可用。')
+      showAutoMessage('No video file to save.')
       return
     }
 
@@ -1494,13 +1621,13 @@ export default function VideoMode() {
     try {
       clipboardText = await window.videoApi.readClipboardText()
     } catch {
-      showAutoMessage('剪贴板读取失败。', 'GetClip', 1200)
+      showAutoMessage('Action message.', 'Message', 1200)
       return
     }
 
     const result = await window.videoApi.validateMp4Path(clipboardText)
     if (!result?.ok) {
-      showAutoMessage('没有合法的MP4文件。', 'GetClip', 1200)
+      showAutoMessage('Action message.', 'Message', 1200)
       return
     }
 
@@ -1521,7 +1648,7 @@ export default function VideoMode() {
     setCurStart(range.start)
     setCurEnd(range.end)
     setDirty(APP_MODES.VIDEO, true)
-    showAutoMessage('已追加视频笔记。', '操作完成', 900)
+    showAutoMessage('Action message.', 'Message', 900)
   }
 
   const appendCurrentMark = () => {
@@ -1530,7 +1657,7 @@ export default function VideoMode() {
     const startSeconds = parseTime(curStart)
     const endSeconds = parseTime(curEnd)
     if (!Number.isFinite(startSeconds)) {
-      showAutoMessage('当前 start 时间无效。', '提示', 1200)
+      showAutoMessage('Action message.', 'Message', 1200)
       return
     }
 
@@ -1553,7 +1680,7 @@ export default function VideoMode() {
     addNote(note)
     setNotesFilterOn(false)
     setDirty(APP_MODES.VIDEO, true)
-    showAutoMessage('已追加标记。', '操作完成', 900)
+    showAutoMessage('Action message.', 'Message', 900)
   }
 
   const createQuickNote = (range) => ({
@@ -1568,13 +1695,13 @@ export default function VideoMode() {
 
   const insertQuickNoteNearSelected = (position) => {
     if (!selectedNoteId || !videoFile?.filePath) {
-      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      showAutoMessage('Action message.', 'Message', 900)
       return
     }
 
     const selectedIndex = notes.findIndex((note) => note.id === selectedNoteId)
     if (selectedIndex < 0) {
-      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      showAutoMessage('Action message.', 'Message', 900)
       return
     }
 
@@ -1585,23 +1712,23 @@ export default function VideoMode() {
     insertNoteAt(insertIndex, createQuickNote(range))
     setNotesFilterOn(false)
     setDirty(APP_MODES.VIDEO, true)
-    showAutoMessage('已插入视频笔记。', '操作完成', 900)
+    showAutoMessage('Action message.', 'Message', 900)
   }
 
   const deleteSelectedNote = async () => {
     if (!selectedNoteId) {
-      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      showAutoMessage('Action message.', 'Message', 900)
       return
     }
 
     const decision = await showActionDialog({
-      title: '删除视频笔记',
-      message: '确认删除当前选中的视频笔记？',
+      title: 'Confirm action',
+      message: 'Confirm this action?',
       defaultValue: 'delete',
       cancelValue: 'cancel',
       actions: [
-        { label: '删除', value: 'delete', danger: true },
-        { label: '取消', value: 'cancel' },
+        { label: 'Delete', value: 'delete', danger: true },
+        { label: 'Cancel', value: 'cancel' },
       ],
     })
     if (decision !== 'delete') return
@@ -1612,13 +1739,13 @@ export default function VideoMode() {
 
   const clearNotesList = async () => {
     const decision = await showActionDialog({
-      title: '清空笔记列表',
-      message: '确认清空当前视频的全部笔记数据？',
+      title: 'Confirm action',
+      message: 'Confirm this action?',
       defaultValue: 'clear',
       cancelValue: 'cancel',
       actions: [
-        { label: '清空', value: 'clear', danger: true },
-        { label: '取消', value: 'cancel' },
+        { label: 'Clear', value: 'clear', danger: true },
+        { label: 'Cancel', value: 'cancel' },
       ],
     })
     if (decision !== 'clear') return
@@ -1631,7 +1758,7 @@ export default function VideoMode() {
   const quickUpdateSelectedRange = async () => {
     if (activeNoteSource === 'pool') {
       if (!selectedExternalNote) {
-        showAutoMessage('没有选中的 Notes Pool 笔记。', '提示', 900)
+        showAutoMessage('Action message.', 'Message', 900)
         return
       }
 
@@ -1641,12 +1768,12 @@ export default function VideoMode() {
       updateExternalNoteFromMainEditor(selectedExternalNote.id, range)
       setCurStart(range.start)
       setCurEnd(range.end)
-      showAutoMessage('已更新时间段。', 'Notes Pool', 900)
+      showAutoMessage('Action message.', 'Message', 900)
       return
     }
 
     if (!selectedNoteId) {
-      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      showAutoMessage('Action message.', 'Message', 900)
       return
     }
 
@@ -1659,20 +1786,20 @@ export default function VideoMode() {
     setCurStart(range.start)
     setCurEnd(range.end)
     setDirty(APP_MODES.VIDEO, true)
-    showAutoMessage('已更新时间段。', '操作完成', 900)
+    showAutoMessage('Action message.', 'Message', 900)
   }
   const writeCurrentRangeToSelected = async () => {
     if (activeNoteSource === 'pool') {
       if (!selectedExternalNote || !curStart || !curEnd) return
 
       const decision = await showActionDialog({
-        title: '更新时间段',
-        message: '确认将 curStart / curEnd 写回当前 Notes Pool 笔记？',
+      title: 'Confirm action',
+      message: 'Confirm this action?',
         defaultValue: 'update',
         cancelValue: 'cancel',
         actions: [
-          { label: '更新', value: 'update', primary: true },
-          { label: '取消', value: 'cancel' },
+          { label: 'Update', value: 'update', primary: true },
+          { label: 'Cancel', value: 'cancel' },
         ],
       })
       if (decision !== 'update') return
@@ -1681,20 +1808,20 @@ export default function VideoMode() {
       if (!range) return
 
       updateExternalNoteFromMainEditor(selectedExternalNote.id, range)
-      showAutoMessage('已更新时间段。', 'Notes Pool', 900)
+      showAutoMessage('Action message.', 'Message', 900)
       return
     }
 
     if (!selectedNoteId || !curStart || !curEnd) return
 
     const decision = await showActionDialog({
-      title: '更新时间段',
-      message: '确认将 curStart / curEnd 写回当前选中视频笔记？',
+      title: 'Confirm action',
+      message: 'Confirm this action?',
       defaultValue: 'update',
       cancelValue: 'cancel',
       actions: [
-        { label: '更新', value: 'update', primary: true },
-        { label: '取消', value: 'cancel' },
+        { label: 'Update', value: 'update', primary: true },
+        { label: 'Cancel', value: 'cancel' },
       ],
     })
     if (decision !== 'update') return
@@ -1749,18 +1876,18 @@ export default function VideoMode() {
   const confirmUpdateSelectedContent = async () => {
     if (activeNoteSource === 'pool') {
       if (!selectedExternalNote) {
-        showAutoMessage('没有选中的 Notes Pool 笔记。', '提示', 900)
+        showAutoMessage('Action message.', 'Message', 900)
         return
       }
 
       const decision = await showActionDialog({
-        title: '更新 Notes Pool 笔记',
-        message: '确认保存当前 Notes Pool 笔记内容？',
+      title: 'Confirm action',
+      message: 'Confirm this action?',
         defaultValue: 'update',
         cancelValue: 'cancel',
         actions: [
-          { label: '保存', value: 'update', primary: true },
-          { label: '取消', value: 'cancel' },
+          { label: 'Save', value: 'update', primary: true },
+          { label: 'Cancel', value: 'cancel' },
         ],
       })
       if (decision !== 'update') return
@@ -1770,25 +1897,25 @@ export default function VideoMode() {
     }
 
     if (!selectedNoteId) {
-      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      showAutoMessage('Action message.', 'Message', 900)
       return
     }
 
     const decision = await showActionDialog({
-      title: '更新视频笔记',
-      message: '确认更新当前选中视频笔记内容？',
+      title: 'Confirm action',
+      message: 'Confirm this action?',
       defaultValue: 'update',
       cancelValue: 'cancel',
       actions: [
-        { label: '更新', value: 'update', primary: true },
-        { label: '取消', value: 'cancel' },
+        { label: 'Update', value: 'update', primary: true },
+        { label: 'Cancel', value: 'cancel' },
       ],
     })
     if (decision !== 'update') return
 
     updateNote(selectedNoteId, { content: noteDraft })
     setDirty(APP_MODES.VIDEO, true)
-    showAutoMessage('已更新视频笔记内容。', '操作完成', 900)
+    showAutoMessage('Action message.', 'Message', 900)
   }
 
   const openReplaceDialog = (scope) => {
@@ -1819,19 +1946,19 @@ export default function VideoMode() {
   const confirmReplacePlan = async (plan, replaceText) => {
     const matchCount = plan.reduce((total, item) => total + item.matchCount, 0)
     if (matchCount === 0) {
-      showAutoMessage('没有匹配项。', 'Replace', 1000)
+      showAutoMessage('Action message.', 'Message', 1000)
       return false
     }
 
-    const actionText = replaceText === '' ? '删除' : '替换'
+    const actionText = replaceText === '' ? 'Delete' : 'Replace'
     const decision = await showActionDialog({
-      title: 'Replace',
-      message: `将${actionText} ${matchCount} 个匹配项，涉及 ${plan.length} 条笔记。是否继续？`,
+      title: 'Confirm action',
+      message: 'Confirm this action?',
       defaultValue: 'replace',
       cancelValue: 'cancel',
       actions: [
         { label: actionText, value: 'replace', primary: true },
-        { label: '取消', value: 'cancel' },
+        { label: 'Cancel', value: 'cancel' },
       ],
     })
 
@@ -1854,7 +1981,7 @@ export default function VideoMode() {
 
     setDirty(APP_MODES.VIDEO, true)
     setReplaceDialog(null)
-    showAutoMessage('替换完成，当前视频笔记已变为 Dirty。', 'Replace', 1200)
+    showAutoMessage('Action message.', 'Message', 1200)
   }
 
   const replaceVisibleExternalNotes = async ({ findText, replaceText }) => {
@@ -1906,12 +2033,12 @@ export default function VideoMode() {
     if (failedResults.length > 0) {
       window.debugApi?.log(`Notes Pool replace failed: ${failedResults.map((item) => item.note.sourceJsonPath).join('; ')}`)
       updateReplaceDialog({ busy: false })
-      showAutoMessage(`部分保存失败：${failedResults.length} 条。`, 'Replace', 1800)
+      showAutoMessage(`Save failed for ${failedResults.length} item(s).`, 'Replace', 1800)
       return
     }
 
     setReplaceDialog(null)
-    showAutoMessage('Notes Pool 替换并保存完成。', 'Replace', 1200)
+    showAutoMessage('Action message.', 'Message', 1200)
   }
 
   const executeReplaceDialog = async () => {
@@ -1920,7 +2047,7 @@ export default function VideoMode() {
     const findText = replaceDialog.findText
     const replaceText = replaceDialog.replaceText
     if (!findText) {
-      showAutoMessage('Find 不能为空。', 'Replace', 1000)
+      showAutoMessage('Action message.', 'Message', 1000)
       return
     }
 
@@ -1971,19 +2098,15 @@ export default function VideoMode() {
   }
 
   const cycleFullscreenPanelState = () => {
-    setFullscreenCycleState((state) => {
-      if (state === 0) return 3
-      if (state === 3) return 4
-      return 0
-    })
+    setFullscreenCycleState((state) => (state === 4 ? 0 : 4))
   }
 
   useEffect(() => {
-    if (fullscreenCycleState !== 4) return
     if (!titleOn || subtitleDisplayMode !== 'rolling' || !selectedSubtitle) return
+    if (fullscreenViewState.hvLayout !== 1 && fullscreenCycleState !== 4) return
 
-    setRollingSubtitleDarkLayoutRequest((value) => value + 1)
-  }, [darkSubView, fullscreenCycleState, selectedSubtitle, subtitleDisplayMode, titleOn])
+    setRollingSubtitleCenterLayoutRequest((value) => value + 1)
+  }, [fullscreenViewState.hvLayout, fullscreenCycleState, selectedSubtitle, subtitleDisplayMode, titleOn])
 
   const toggleFocusBetweenNotesListAndTextInput = () => {
     const focusEditor = () => {
@@ -2044,11 +2167,7 @@ export default function VideoMode() {
     setFullscreenCycleState((state) => (state === 3 ? 0 : 3))
   }
 
-  const togglePanelsVisibility = () => {
-    setPanelsHidden((value) => !value)
-  }
-
-  const getContextMenuItemCount = (type) => (type === 'video' ? 11 : 10)
+  const getContextMenuItemCount = (type) => (type === 'externalNote' ? 4 : type === 'video' ? 13 : 12)
 
   const openContextMenu = (event, type, note = null) => {
     event.preventDefault()
@@ -2061,6 +2180,7 @@ export default function VideoMode() {
     const position = getContextMenuPosition(event, getContextMenuItemCount(type))
     setContextMenu({
       type,
+      note,
       x: position.x,
       y: position.y,
     })
@@ -2070,7 +2190,7 @@ export default function VideoMode() {
     event.preventDefault()
     event.stopPropagation()
 
-    const position = getContextMenuPosition(event, 2)
+    const position = getContextMenuPosition(event, getContextMenuItemCount('externalNote'))
     selectExternalNote(externalNote).then((canOpen) => {
       if (!canOpen) return
       setContextMenu({
@@ -2084,7 +2204,7 @@ export default function VideoMode() {
 
   const moveSelectedNote = (direction) => {
     if (!selectedNoteId) {
-      showAutoMessage('没有选中的视频笔记。', '提示', 900)
+      showAutoMessage('Action message.', 'Message', 900)
       return
     }
 
@@ -2110,37 +2230,47 @@ export default function VideoMode() {
 
   const getContextMenuItems = () => {
     if (contextMenu?.type === 'externalNote') {
+      const externalNote = contextMenu.externalNote
       return [
-        { label: 'Go To', action: () => openExternalNoteTarget(contextMenu.externalNote) },
-        { label: '关闭菜单', action: () => {}, separator: true },
+        { label: 'Go To', action: () => openExternalNoteTarget(externalNote) },
+        { label: 'Copy Start', action: () => copyContextStart(externalNote), separator: true },
+        { label: 'Copy Start+File', action: () => copyContextStartAndFile(externalNote) },
+        { label: 'Close Menu', action: () => {}, separator: true },
       ]
     }
 
+    const menuNote = contextMenu?.note || selectedNote
     const noteItems = [
-      { label: '追加快捷标记', action: () => runAction('video.appendQuickMark') },
-      { label: '追加标记', action: () => runAction('video.appendMark') },
-      { label: '前插入快捷标记', action: () => insertQuickNoteNearSelected('before') },
-      { label: '后插入快捷标记', action: () => insertQuickNoteNearSelected('after') },
+      { label: 'Append Quick Mark', action: () => runAction('video.appendQuickMark') },
+      { label: 'Append Mark', action: () => runAction('video.appendMark') },
+      { label: 'Insert Quick Before', action: () => insertQuickNoteNearSelected('before') },
+      { label: 'Insert Quick After', action: () => insertQuickNoteNearSelected('after') },
       { label: 'Quick Update Range', action: quickUpdateSelectedRange, separator: true },
-      { label: '向上移动', action: () => moveSelectedNote('up') },
-      { label: '向下移动', action: () => moveSelectedNote('down') },
-      { label: '删除当前选中', action: deleteSelectedNote, separator: true },
+      { label: 'Copy Start', action: () => copyContextStart(menuNote), separator: true },
+      { label: 'Copy Start+File', action: () => copyContextStartAndFile(menuNote) },
+      { label: 'Move Up', action: () => moveSelectedNote('up') },
+      { label: 'Move Down', action: () => moveSelectedNote('down') },
+      { label: 'Delete Selected', action: deleteSelectedNote, separator: true },
     ]
 
     if (contextMenu?.type === 'video') {
       return [
         ...noteItems,
-        { label: '切换全屏模式', action: toggleCustomFullscreen, separator: true },
-        { label: '显示/隐藏控制区', action: togglePanelsVisibility },
-        { label: '关闭菜单', action: () => {}, separator: true },
+        { label: 'Toggle View', action: toggleCustomFullscreen, separator: true },
+        { label: 'Close Menu', action: () => {}, separator: true },
       ]
     }
 
     return [
       ...noteItems,
-      { label: '清空笔记列表', action: clearNotesList },
-      { label: '关闭菜单', action: () => {}, separator: true },
+      { label: 'Clear Notes List', action: clearNotesList },
+      { label: 'Close Menu', action: () => {}, separator: true },
     ]
+  }
+
+  const requestPickRollingSubtitle = () => {
+    if (!canPickRollingSubtitle) return
+    setRollingSubtitlePickRequest((value) => value + 1)
   }
 
   useEffect(() => registerActions([
@@ -2277,6 +2407,12 @@ export default function VideoMode() {
       handler: toggleVolumeLevel,
     },
     {
+      id: 'video.pickSub',
+      label: 'Pick Sub',
+      scope: APP_MODES.VIDEO,
+      handler: requestPickRollingSubtitle,
+    },
+    {
       id: 'video.toggleLeftTab',
       label: 'Toggle Left Tab',
       scope: APP_MODES.VIDEO,
@@ -2320,6 +2456,7 @@ export default function VideoMode() {
     togglePlayPause,
     toggleFocusBetweenNotesListAndTextInput,
     toggleVolumeLevel,
+    requestPickRollingSubtitle,
     quickUpdateSelectedRange,
     volumeByStep,
     writeCurrentRangeToSelected,
@@ -2351,9 +2488,14 @@ export default function VideoMode() {
     playerRef.current?.currentTime?.(cue.start)
   }
 
+  const buildSelectedSubtitlePlainText = (cues = []) => {
+    const sortedCues = [...cues].sort((left, right) => left.start - right.start)
+    return sortedCues.map((cue) => String(cue.text || '').trim()).filter(Boolean).join('\n')
+  }
+
   const buildSelectedSubtitleNoteContent = (cues = []) => {
-    const lines = cues.map((cue) => String(cue.text || '').trim()).filter(Boolean)
-    return lines.length > 0 ? `AUTO:\n${lines.join('\n')}` : ''
+    const plainText = buildSelectedSubtitlePlainText(cues)
+    return plainText ? `AUTO:\n${plainText}` : ''
   }
 
   const previewSelectedSubtitleNote = (cues = []) => {
@@ -2361,14 +2503,14 @@ export default function VideoMode() {
     setSubtitleNotePreviewContent(content)
   }
 
-  const addSelectedSubtitleNote = async (cues = []) => {
+  const addSelectedSubtitleNote = async (cues = [], contentOverride = null) => {
     if (!videoFile?.filePath) return false
     if (!Array.isArray(cues) || cues.length === 0) return false
 
     const sortedCues = [...cues].sort((left, right) => left.start - right.start)
     const firstCue = sortedCues[0]
     const lastCue = sortedCues[sortedCues.length - 1]
-    const content = subtitleNotePreviewContent ?? buildSelectedSubtitleNoteContent(sortedCues)
+    const content = contentOverride ?? subtitleNotePreviewContent ?? buildSelectedSubtitleNoteContent(sortedCues)
     const range = normalizeRange({
       start: formatTime(firstCue.start),
       end: formatTime(lastCue.end),
@@ -2394,8 +2536,63 @@ export default function VideoMode() {
     setCurStart(range.start)
     setCurEnd(range.end)
     setDirty(APP_MODES.VIDEO, true)
-    showAutoMessage('已从字幕追加视频笔记。', '操作完成', 900)
+    showAutoMessage('Action message.', 'Message', 900)
     return true
+  }
+
+
+  const showSubtitlePickDialog = (initialText) => new Promise((resolve) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = null
+    }
+
+    dialogResolveRef.current = resolve
+    setDialog({
+      kind: 'subtitlePick',
+      title: 'Pick Subtitles',
+      subtitleText: initialText,
+      defaultValue: 'save',
+      cancelValue: 'cancel',
+      actions: [
+        { label: 'Copy&Save&Exit', value: 'copySave', shortcut: 'Ctrl+Q', primary: true },
+        { label: 'Copy&Exit', value: 'copy', shortcut: 'Ctrl+W' },
+        { label: 'Save&Exit', value: 'save', shortcut: 'Ctrl+E' },
+        { label: 'Cancel', value: 'cancel', shortcut: 'Ctrl+R' },
+        { label: 'Go Back', value: 'goBack', shortcut: 'Ctrl+T' },
+      ],
+    })
+  })
+
+  const confirmPickedSubtitleNote = async (cues = []) => {
+    if (!Array.isArray(cues) || cues.length === 0) return 'done'
+
+    const sortedCues = [...cues].sort((left, right) => left.start - right.start)
+    const initialText = buildSelectedSubtitlePlainText(sortedCues)
+    if (!initialText) return 'done'
+
+    const result = await showSubtitlePickDialog(initialText)
+    const decision = result?.decision || result || 'cancel'
+    const text = String(result?.text ?? initialText).trim()
+
+    if (decision === 'goBack') return 'goBack'
+
+    if (decision === 'copy' || decision === 'copySave') {
+      if (text) await writeVideoClipboardText(text, 'Pick Sub')
+      if (decision === 'copy') {
+        setSubtitleNotePreviewContent(null)
+        return 'done'
+      }
+    }
+
+    if (decision === 'save' || decision === 'copySave') {
+      if (!text) return 'goBack'
+      const saved = await addSelectedSubtitleNote(sortedCues, `AUTO:\n${text}`)
+      return saved === false ? 'goBack' : 'done'
+    }
+
+    setSubtitleNotePreviewContent(null)
+    return 'done'
   }
 
   const changeSubtitleDisplayMode = async (event) => {
@@ -2409,7 +2606,7 @@ export default function VideoMode() {
         },
       })
     } catch (error) {
-      showAutoMessage('字幕显示模式保存失败。', '字幕', 1800)
+      showAutoMessage('Action message.', 'Message', 1800)
       window.debugApi?.log(`Subtitle display mode save failed: ${error.message || String(error)}`)
     }
   }
@@ -2430,36 +2627,13 @@ export default function VideoMode() {
         },
       })
     } catch (error) {
-      showAutoMessage('Note item 字号保存失败。', '设置', 1400)
+      showAutoMessage('Action message.', 'Message', 1400)
       window.debugApi?.log(`Note item font size save failed: ${error.message || String(error)}`)
     }
   }
 
-  const toggleDarkViewDim = () => {
-    const currentDim = Number(runtimeDarkViewDim)
-    const resolvedDim = Number.isFinite(currentDim) ? currentDim : 0
-
-    if (resolvedDim <= 0.01) {
-      setRuntimeDarkViewDim(DARK_VIEW_DIM_ACTIVE)
-      setDarkSubView(0)
-      window.requestAnimationFrame(requestRollingSubtitleLayout)
-      return
-    }
-
-    if (darkSubView === 0) {
-      setRuntimeDarkViewDim(DARK_VIEW_DIM_ACTIVE)
-      setDarkSubView(1)
-      window.requestAnimationFrame(requestRollingSubtitleLayout)
-      return
-    }
-
-    setRuntimeDarkViewDim(0)
-    setDarkSubView(0)
-    window.requestAnimationFrame(requestRollingSubtitleLayout)
-  }
-
   const requestRollingSubtitleLayout = () => {
-    setRollingSubtitleDarkLayoutRequest((value) => value + 1)
+    setRollingSubtitleCenterLayoutRequest((value) => value + 1)
   }
 
 
@@ -2472,7 +2646,7 @@ export default function VideoMode() {
     const startLeftWidth = videoLeftWidth
     const startRightWidth = videoRightWidth
     const startStageRatio = videoStageRatio
-    const startDarkSubViewRightRatio = darkSubViewRightRatio
+    const startSubtitleCenterSideRatio = subtitleCenterSideRatio
     const centerBounds = event.currentTarget.closest('.video-center')?.getBoundingClientRect()
 
     const handlePointerMove = (moveEvent) => {
@@ -2488,11 +2662,11 @@ export default function VideoMode() {
         return
       }
 
-      if (type === 'center' && fullscreenCycleState === 4 && darkSubView === 1 && centerBounds?.width) {
-        const startRightWidthPx = centerBounds.width * startDarkSubViewRightRatio
+      if (type === 'center' && fullscreenViewState.hvLayout === 1 && centerBounds?.width) {
+        const startRightWidthPx = centerBounds.width * startSubtitleCenterSideRatio
         const nextRightWidth = startRightWidthPx - (moveEvent.clientX - startX)
         const nextRatio = nextRightWidth / centerBounds.width
-        setDarkSubViewRightRatio(Math.max(1 / 6, Math.min(0.5, nextRatio)))
+        setSubtitleCenterSideRatio(Math.max(1 / 6, Math.min(0.5, nextRatio)))
         window.requestAnimationFrame(requestRollingSubtitleLayout)
         return
       }
@@ -2520,12 +2694,12 @@ export default function VideoMode() {
     const startX = event.clientX
     const startY = event.clientY
     const startSideWidth = videoBottomSideWidth
-    const startInfoHeight = darkSubViewInfoHeight
+    const startInfoHeight = subtitleCenterInfoHeight
 
     const handlePointerMove = (moveEvent) => {
-      if (fullscreenCycleState === 4 && darkSubView === 1) {
+      if (fullscreenViewState.hvLayout === 1) {
         const nextHeight = startInfoHeight - (moveEvent.clientY - startY)
-        setDarkSubViewInfoHeight(Math.max(132, Math.min(320, nextHeight)))
+        setSubtitleCenterInfoHeight(Math.max(132, Math.min(320, nextHeight)))
         return
       }
 
@@ -2543,12 +2717,11 @@ export default function VideoMode() {
   }
 
   const fullscreenClass = `fullscreen-state-${fullscreenCycleState}`
-  const panelsClass = panelsHidden ? 'panels-hidden' : ''
   const controlModeClass = videoControlMode ? 'video-control-mode' : ''
-  const darkViewClearClass = runtimeDarkViewDim <= 0 ? 'dark-view-clear' : ''
-  const darkSubViewClass = fullscreenCycleState === 4 ? `dark-subview-${darkSubView}` : ''
+  const videoViewHiddenClass = fullscreenViewState.hideView ? 'video-view-hidden' : 'video-view-visible'
+  const subtitleCenterLayoutClass = `subtitle-center-layout-${fullscreenViewState.hvLayout}`
   const rollingSubtitleFontSizeKey = fullscreenCycleState === 4
-    ? 'dark'
+    ? 'subtitleCenter'
     : fullscreenCycleState === 3
       ? 'overlay'
       : 'normal'
@@ -2556,16 +2729,16 @@ export default function VideoMode() {
 
   return (
     <section
-      className={`video-mode ${fullscreenClass} ${panelsClass} ${controlModeClass} ${darkViewClearClass} ${darkSubViewClass}`}
+      className={`video-mode ${fullscreenClass} ${controlModeClass} ${videoViewHiddenClass} ${subtitleCenterLayoutClass}`}
       style={{
         '--video-left-panel-width': `${videoLeftWidth}px`,
         '--video-right-panel-width': `${videoRightWidth}px`,
         '--video-stage-height': `${Math.round(videoStageRatio * 1000) / 10}%`,
-        '--video-dark-blur': `${darkViewBlurPx}px`,
-        '--video-dark-dim': runtimeDarkViewDim,
-        '--video-dark-subview-right-width': `${Math.round(darkSubViewRightRatio * 1000) / 10}%`,
+        '--video-subtitle-center-blur': `${subtitleCenterViewBlurPx}px`,
+        '--video-subtitle-center-dim': videoViewDim,
+        '--video-subtitle-center-layout-right-width': `${Math.round(subtitleCenterSideRatio * 1000) / 10}%`,
         '--video-bottom-side-width': `${videoBottomSideWidth}px`,
-        '--video-dark-subview-info-height': `${darkSubViewInfoHeight}px`,
+        '--video-subtitle-center-layout-info-height': `${subtitleCenterInfoHeight}px`,
       }}
     >
       <div className="video-body">
@@ -2594,7 +2767,7 @@ export default function VideoMode() {
                 <input
                   onChange={(event) => setNotesFilterText(event.target.value)}
                   onKeyDown={(event) => event.stopPropagation()}
-                  title={notesFilterExpression.error || '支持 &&, ||, !, ()'}
+                  title={notesFilterExpression.error || 'Supports &&, ||, !, ()'}
                   type="text"
                   value={notesFilterText}
                 />
@@ -2776,24 +2949,30 @@ export default function VideoMode() {
             subtitleEnabled={Boolean(nativeSubtitle)}
             src={videoFile?.fileUrl}
           />
-          {titleOn && subtitleDisplayMode === 'rolling' && selectedSubtitle ? (
+          {titleOn && subtitleDisplayMode === 'rolling' ? (
             <RollingSubtitlePanel
               bottomPanelRef={videoBottomPanelRef}
               containerRef={videoStageRef}
               cues={rollingSubtitleCues}
               currentTime={currentPlaybackTime}
-              darkModeActive={fullscreenCycleState === 4}
-              darkSubView={darkSubView}
-              darkLayoutRequest={rollingSubtitleDarkLayoutRequest}
-              darkViewDim={runtimeDarkViewDim}
-              enableDarkLayout
-              enableDimView
+              subtitleCenterModeActive={fullscreenCycleState === 4}
+              subtitleCenterLayout={fullscreenViewState.hvLayout}
+              subtitleCenterLayoutRequest={rollingSubtitleCenterLayoutRequest}
+              subtitleCenterViewDim={videoViewDim}
+              enableSubtitleCenterLayout
+              hvLayout={fullscreenViewState.hvLayout}
+              subtitleHidden={fullscreenViewState.hideSub}
+              videoViewHidden={fullscreenViewState.hideView}
               enableSubtitleNoteAdding
               defaultFontSize={rollingSubtitleFontSize}
               fontSizeKey={rollingSubtitleFontSizeKey}
               getCurrentTime={() => playerRef.current?.currentTime?.()}
               onAddSelectedSubtitles={addSelectedSubtitleNote}
-              onToggleDarkViewDim={toggleDarkViewDim}
+              onPickSelectedSubtitles={confirmPickedSubtitleNote}
+              pickSubRequest={rollingSubtitlePickRequest}
+              onToggleHvLayout={toggleCurrentHvLayout}
+              onToggleSubtitleHidden={toggleCurrentSubtitleHidden}
+              onToggleVideoViewHidden={toggleCurrentVideoHidden}
               onSelectedSubtitlesChange={previewSelectedSubtitleNote}
               onCueClick={jumpToSubtitleCue}
             />
@@ -3052,7 +3231,7 @@ export default function VideoMode() {
                   <input
                     onChange={(event) => setExternalNotesFilterText(event.target.value)}
                     onKeyDown={(event) => event.stopPropagation()}
-                    title={externalNotesFilterExpression.error || '支持 &&, ||, !, ()'}
+                    title={externalNotesFilterExpression.error || 'Supports &&, ||, !, ()'}
                     type="text"
                     value={externalNotesFilterText}
                   />
@@ -3210,9 +3389,19 @@ export default function VideoMode() {
 
       {dialog && !dialog.autoClose ? (
         <div className={dialog.nonModal ? 'inline-dialog-layer non-modal' : 'inline-dialog-mask'}>
-          <div className="inline-dialog">
+          <div className={dialog.kind === 'subtitlePick' ? 'inline-dialog subtitle-pick-dialog' : 'inline-dialog'}>
             <div className="inline-dialog-title">{dialog.title}</div>
-            {dialog.subtitleCandidates ? (
+            {dialog.kind === 'subtitlePick' ? (
+              <label className="subtitle-pick-editor">
+                <span>Selected subtitles</span>
+                <textarea
+                  autoFocus
+                  onChange={(event) => setDialog((current) => ({ ...current, subtitleText: event.target.value }))}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  value={dialog.subtitleText || ''}
+                />
+              </label>
+            ) : dialog.subtitleCandidates ? (
               <div className="subtitle-choice-list">
                 {dialog.subtitleCandidates.map((subtitle) => (
                   <button
@@ -3237,11 +3426,12 @@ export default function VideoMode() {
                     action.danger ? 'danger' : '',
                   ].filter(Boolean).join(' ')}
                   key={action.value}
-                  onClick={() => closeDialog(action.value)}
+                  onClick={() => closeDialog(dialog.kind === 'subtitlePick' ? { decision: action.value, text: dialog.subtitleText || '' } : action.value)}
                   autoFocus={index === 0}
                   type="button"
                 >
                   {action.label}
+                  {action.shortcut ? <span className="subtitle-pick-shortcut">{action.shortcut}</span> : null}
                 </button>
               ))}
             </div>
@@ -3347,5 +3537,13 @@ export default function VideoMode() {
     </section>
   )
 }
+
+
+
+
+
+
+
+
 
 

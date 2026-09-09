@@ -20,8 +20,8 @@ export const DEFAULT_APP_SETTINGS = {
     extraSubtitleFolder: '',
     subtitleDisplayMode: 'native',
     rollingSubtitleFontSize: 25,
-    darkViewBlurPx: 18,
-    darkViewDim: 0.65,
+    subtitleCenterViewBlurPx: 18,
+    subtitleCenterViewDim: 0.65,
     videoNotesFontSize: 11,
     videoNotesPoolFontSize: 11,
     playAllSubtitleSuffix: '.en.vtt',
@@ -63,6 +63,7 @@ export const DEFAULT_APP_SETTINGS = {
       'video.volumeDown': 'ArrowDown',
       'video.toggleView': 'Ctrl+F',
       'video.toggleVolume': '',
+      'video.pickSub': '',
       'video.toggleLeftTab': 'Alt+F',
       'video.updateContent': 'Ctrl+Q',
       'video.quickUpdateRange': 'Ctrl+G',
@@ -161,14 +162,14 @@ export function normalizeAppSettings(value) {
   const rollingSubtitleFontSize = Number.isFinite(rawRollingSubtitleFontSize)
     ? Math.max(10, Math.min(48, Math.round(rawRollingSubtitleFontSize)))
     : DEFAULT_APP_SETTINGS.general.rollingSubtitleFontSize
-  const rawDarkViewBlurPx = Number(value?.general?.darkViewBlurPx)
-  const darkViewBlurPx = Number.isFinite(rawDarkViewBlurPx)
-    ? Math.max(0, Math.min(40, Math.round(rawDarkViewBlurPx)))
-    : DEFAULT_APP_SETTINGS.general.darkViewBlurPx
-  const rawDarkViewDim = Number(value?.general?.darkViewDim)
-  const darkViewDim = Number.isFinite(rawDarkViewDim)
-    ? Math.max(0, Math.min(1, Math.round(rawDarkViewDim * 100) / 100))
-    : DEFAULT_APP_SETTINGS.general.darkViewDim
+  const rawSubtitleCenterViewBlurPx = Number(value?.general?.subtitleCenterViewBlurPx)
+  const subtitleCenterViewBlurPx = Number.isFinite(rawSubtitleCenterViewBlurPx)
+    ? Math.max(0, Math.min(40, Math.round(rawSubtitleCenterViewBlurPx)))
+    : DEFAULT_APP_SETTINGS.general.subtitleCenterViewBlurPx
+  const rawSubtitleCenterViewDim = Number(value?.general?.subtitleCenterViewDim)
+  const subtitleCenterViewDim = Number.isFinite(rawSubtitleCenterViewDim)
+    ? Math.max(0, Math.min(1, Math.round(rawSubtitleCenterViewDim * 100) / 100))
+    : DEFAULT_APP_SETTINGS.general.subtitleCenterViewDim
   const legacyNoteItemFontSize = Number(value?.general?.noteItemFontSize)
   const rawVideoNotesFontSize = Number.isFinite(Number(value?.general?.videoNotesFontSize))
     ? Number(value.general.videoNotesFontSize)
@@ -222,8 +223,8 @@ export function normalizeAppSettings(value) {
       extraSubtitleFolder,
       subtitleDisplayMode,
       rollingSubtitleFontSize,
-      darkViewBlurPx,
-      darkViewDim,
+      subtitleCenterViewBlurPx,
+      subtitleCenterViewDim,
       videoNotesFontSize,
       videoNotesPoolFontSize,
       playAllSubtitleSuffix,

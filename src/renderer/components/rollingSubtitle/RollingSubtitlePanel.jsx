@@ -52,18 +52,24 @@ export default function RollingSubtitlePanel({
   containerRef,
   cues = [],
   currentTime = 0,
-  darkModeActive = false,
-  darkSubView = 0,
-  darkLayoutRequest = 0,
-  darkViewDim = 0.65,
-  enableDarkLayout = false,
-  enableDimView = false,
+  subtitleCenterModeActive = false,
+  subtitleCenterLayout = 0,
+  subtitleCenterLayoutRequest = 0,
+  subtitleCenterViewDim = 0.65,
+  enableSubtitleCenterLayout = false,
   enableSubtitleNoteAdding = false,
+  hvLayout = 0,
+  subtitleHidden = false,
+  videoViewHidden = false,
   defaultFontSize = DEFAULT_FONT_SIZE,
   fontSizeKey = 'normal',
   getCurrentTime,
   onAddSelectedSubtitles,
-  onToggleDarkViewDim,
+  onPickSelectedSubtitles,
+  pickSubRequest = 0,
+  onToggleHvLayout,
+  onToggleSubtitleHidden,
+  onToggleVideoViewHidden,
   onSelectedSubtitlesChange,
   onCueClick,
 }) {
@@ -89,24 +95,25 @@ export default function RollingSubtitlePanel({
   const getCurrentTimeRef = useRef(getCurrentTime)
   const rectRef = useRef(DEFAULT_RECT)
   const subtitleNoteAddingRef = useRef(false)
-  const rectBeforeDarkModeRef = useRef(null)
-  const darkModeActiveRef = useRef(false)
+  const rectBeforeSubtitleCenterModeRef = useRef(null)
+  const subtitleCenterModeActiveRef = useRef(false)
+  const subtitleCenterModeSessionSizeRef = useRef(null)
   const [rect, setRect] = useState(DEFAULT_RECT)
   const [fontSizeByView, setFontSizeByView] = useState(() => {
     const initialFontSize = clamp(Number(defaultFontSize) || DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE)
     return {
       normal: initialFontSize,
       overlay: initialFontSize,
-      dark: initialFontSize,
+      subtitleCenter: initialFontSize,
     }
   })
   const [timingOffset, setTimingOffset] = useState(0)
   const initialActiveIndex = getActiveSubtitleCueIndex(cues, currentTime)
   const [activeIndex, setActiveIndex] = useState(() => initialActiveIndex)
   const [renderWindow, setRenderWindow] = useState(() => buildRenderWindow(initialActiveIndex, cues.length))
-  const [subtitleHidden, setSubtitleHidden] = useState(false)
+  const [localSubtitleHidden, setLocalSubtitleHidden] = useState(false)
   const [scrollMode, setScrollMode] = useState('follow')
-  const [dockPosition, setDockPosition] = useState('center')
+  const [dockPosition, setDockPosition] = useState('left')
   const [subtitleNoteAdding, setSubtitleNoteAdding] = useState(false)
   const [selectedCueIds, setSelectedCueIds] = useState(() => new Set())
   const selectedCues = useMemo(() => (
@@ -115,17 +122,16 @@ export default function RollingSubtitlePanel({
   const visibleCues = useMemo(() => (
     cues.slice(renderWindow.start, renderWindow.end)
   ), [cues, renderWindow])
-  const resolvedFontSizeKey = ['normal', 'overlay', 'dark'].includes(fontSizeKey) ? fontSizeKey : 'normal'
+  const resolvedFontSizeKey = ['normal', 'overlay', 'subtitleCenter'].includes(fontSizeKey) ? fontSizeKey : 'normal'
   const fallbackFontSize = clamp(Number(defaultFontSize) || DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE)
   const fontSize = clamp(Number(fontSizeByView[resolvedFontSizeKey]) || fallbackFontSize, MIN_FONT_SIZE, MAX_FONT_SIZE)
-  const darkViewDimNumber = Number(darkViewDim)
-  const darkLayoutActive = enableDarkLayout && darkModeActive
+  const subtitleCenterViewDimNumber = Number(subtitleCenterViewDim)
+  const subtitleCenterLayoutActive = enableSubtitleCenterLayout && subtitleCenterModeActive
   const subtitleNoteAddingActive = enableSubtitleNoteAdding && subtitleNoteAdding
-  const darkViewDimLabel = !Number.isFinite(darkViewDimNumber) || darkViewDimNumber <= 0.005
-    ? '0'
-    : darkSubView === 1
-      ? '2'
-      : '1'
+  const effectiveSubtitleHidden = typeof subtitleHidden === 'boolean' ? subtitleHidden : localSubtitleHidden
+  const hvLayoutLabel = Number(hvLayout) === 1 ? 'V' : 'H'
+  const videoViewHiddenLabel = videoViewHidden ? 'Show View' : 'Hide View'
+  const addSubsDisabled = effectiveSubtitleHidden || !enableSubtitleNoteAdding || cues.length === 0
 
   const getEffectiveTime = (time) => {
     const number = Number(time)
@@ -276,7 +282,7 @@ export default function RollingSubtitlePanel({
     setFontSizeByView((current) => {
       const next = { ...current }
       let changed = false
-      ;['normal', 'overlay', 'dark'].forEach((key) => {
+      ;['normal', 'overlay', 'subtitleCenter'].forEach((key) => {
         if (!Number.isFinite(Number(next[key]))) {
           next[key] = nextDefaultFontSize
           changed = true
@@ -331,27 +337,31 @@ export default function RollingSubtitlePanel({
   }, [containerRef])
 
   useEffect(() => {
-    if (!darkModeActive && darkModeActiveRef.current && rectBeforeDarkModeRef.current) {
-      setRect(rectBeforeDarkModeRef.current)
-      rectBeforeDarkModeRef.current = null
+    if (!subtitleCenterModeActive && subtitleCenterModeActiveRef.current && rectBeforeSubtitleCenterModeRef.current) {
+      setRect(rectBeforeSubtitleCenterModeRef.current)
+      rectBeforeSubtitleCenterModeRef.current = null
       window.requestAnimationFrame(rebuildLayoutAndMotionPlan)
     }
 
-    darkModeActiveRef.current = darkModeActive
-  }, [darkModeActive])
+    subtitleCenterModeActiveRef.current = subtitleCenterModeActive
+  }, [subtitleCenterModeActive])
 
   useEffect(() => {
-    if (!enableDarkLayout || !darkLayoutRequest) return
+    if (!enableSubtitleCenterLayout || !subtitleCenterLayoutRequest) return
 
     const stageRect = containerRef?.current?.getBoundingClientRect()
     if (!stageRect?.width || !stageRect?.height) return
 
-    if (!rectBeforeDarkModeRef.current) rectBeforeDarkModeRef.current = rectRef.current
+    if (!rectBeforeSubtitleCenterModeRef.current) rectBeforeSubtitleCenterModeRef.current = rectRef.current
 
     const bottomRect = bottomPanelRef?.current?.getBoundingClientRect()
     const bottomTop = bottomRect ? bottomRect.top - stageRect.top : stageRect.height
     const availableHeight = bottomTop > MIN_HEIGHT ? bottomTop : stageRect.height
-    const nextWidth = Math.max(MIN_WIDTH, Math.round(stageRect.width * 0.7))
+    const sessionSize = subtitleCenterModeSessionSizeRef.current
+    const widthSource = Number.isFinite(Number(sessionSize?.width))
+      ? Number(sessionSize.width)
+      : Math.round(stageRect.width * 0.5)
+    const nextWidth = clamp(widthSource, MIN_WIDTH, Math.round(stageRect.width))
     const nextHeight = Math.max(
       MIN_HEIGHT,
       Math.min(Math.round(stageRect.height), Math.round(availableHeight)),
@@ -364,7 +374,7 @@ export default function RollingSubtitlePanel({
       height: nextHeight,
     })
     window.requestAnimationFrame(rebuildLayoutAndMotionPlan)
-  }, [bottomPanelRef, containerRef, darkLayoutRequest, enableDarkLayout])
+  }, [bottomPanelRef, containerRef, subtitleCenterLayoutRequest, enableSubtitleCenterLayout])
 
   useEffect(() => {
     let animationId = 0
@@ -547,6 +557,15 @@ export default function RollingSubtitlePanel({
       }
 
       setRect((current) => {
+        if (subtitleCenterModeActive) {
+          const direction = drag.type === 'resize-ne' ? -1 : 1
+          const width = clamp(drag.rect.width + (dx * direction), MIN_WIDTH, maxWidth)
+          const x = Math.max(0, Math.round((maxWidth - width) / 2))
+          subtitleCenterModeSessionSizeRef.current = { width }
+          window.requestAnimationFrame(refreshVisibleMetrics)
+          return { ...current, x, width, height: drag.rect.height }
+        }
+
         if (drag.type === 'resize-ne') {
           const maxHeightFromTop = drag.rect.y + drag.rect.height
           const nextY = clamp(drag.rect.y + dy, 0, Math.max(0, maxHeightFromTop - MIN_HEIGHT))
@@ -573,7 +592,7 @@ export default function RollingSubtitlePanel({
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [containerRef])
+  }, [containerRef, subtitleCenterModeActive])
 
   const startDrag = (event, type) => {
     event.preventDefault()
@@ -654,19 +673,9 @@ export default function RollingSubtitlePanel({
     onSelectedSubtitlesChange?.([])
   }
 
-  const cancelSubtitleNoteAdding = (event) => {
-    event.preventDefault()
-    event.stopPropagation()
-    setSubtitleNoteAdding(false)
-    clearSelectedCues()
-  }
-
-  const addSelectedSubtitles = async (event) => {
-    event.preventDefault()
-    event.stopPropagation()
-
+  const pickSelectedSubtitles = async () => {
     if (!subtitleNoteAdding) {
-      setSubtitleHidden(false)
+      if (addSubsDisabled) return
       setSubtitleNoteAdding(true)
       return
     }
@@ -677,18 +686,32 @@ export default function RollingSubtitlePanel({
       return
     }
 
-    const added = await onAddSelectedSubtitles?.(selectedCues)
-    if (added !== false) {
-      setSubtitleNoteAdding(false)
-      clearSelectedCues()
-    }
+    const result = onPickSelectedSubtitles
+      ? await onPickSelectedSubtitles(selectedCues)
+      : await onAddSelectedSubtitles?.(selectedCues)
+
+    if (result === 'goBack') return
+
+    setSubtitleNoteAdding(false)
+    clearSelectedCues()
+  }
+
+  useEffect(() => {
+    if (!pickSubRequest) return
+    pickSelectedSubtitles()
+  }, [pickSubRequest])
+
+  const addSelectedSubtitles = async (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    pickSelectedSubtitles()
   }
 
   return (
     <div
       className={[
         'rolling-subtitle-panel',
-        darkModeActive ? 'dark-mode' : '',
+        subtitleCenterModeActive ? 'subtitle-center-mode' : '',
         subtitleNoteAdding ? 'subtitle-note-adding' : '',
       ].filter(Boolean).join(' ')}
       style={{
@@ -768,64 +791,74 @@ export default function RollingSubtitlePanel({
         >
           {scrollMode === 'follow' ? 'Follow' : 'Float'}
         </button>
-
-        {enableDimView && onToggleDarkViewDim ? (
-          <button
-            aria-label="Toggle DimView"
-            className="rolling-subtitle-dim-toggle"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onToggleDarkViewDim?.()
-            }}
-            title={`Toggle DimView (${Math.round(Number(darkViewDim || 0) * 100)}%)`}
-            type="button"
-          >
-            {darkLayoutActive ? `Dim ${darkViewDimLabel}` : 'Dim'}
-          </button>
-        ) : null}
-
         <button
-          aria-label={subtitleHidden ? 'Show rolling subtitles' : 'Hide rolling subtitles'}
+          aria-label={effectiveSubtitleHidden ? 'Show rolling subtitles' : 'Hide rolling subtitles'}
           className="rolling-subtitle-hide-toggle"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.preventDefault()
             event.stopPropagation()
-            setSubtitleHidden((value) => !value)
+            if (!effectiveSubtitleHidden && subtitleNoteAdding) {
+              setSubtitleNoteAdding(false)
+              clearSelectedCues()
+            }
+            if (onToggleSubtitleHidden) {
+              onToggleSubtitleHidden()
+              return
+            }
+            setLocalSubtitleHidden((value) => !value)
           }}
-          title={subtitleHidden ? 'Show rolling subtitles' : 'Hide rolling subtitles'}
+          disabled={subtitleNoteAddingActive}
+          title={subtitleNoteAddingActive ? 'Finish subtitle picking before hiding subtitles' : effectiveSubtitleHidden ? 'Show rolling subtitles' : 'Hide rolling subtitles'}
           type="button"
         >
-          {subtitleHidden ? 'Show' : 'Hide'}
+          {effectiveSubtitleHidden ? 'Show Sub' : 'Hide Sub'}
+        </button>
+
+        <button
+          aria-label={videoViewHidden ? 'Show video view' : 'Hide video view'}
+          className="rolling-subtitle-view-toggle"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onToggleVideoViewHidden?.()
+          }}
+          title={videoViewHidden ? 'Show video view' : 'Hide video view'}
+          type="button"
+        >
+          {videoViewHiddenLabel}
+        </button>
+
+        <button
+          aria-label="Toggle HV Layout"
+          className="rolling-subtitle-layout-toggle"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onToggleHvLayout?.()
+          }}
+          title="Toggle HV Layout"
+          type="button"
+        >
+          HV Layout {hvLayoutLabel}
         </button>
         {enableSubtitleNoteAdding ? (
           <button
-            aria-label="Add selected subtitles as note"
+            aria-label="Pick selected subtitles as note"
             className="rolling-subtitle-add-toggle"
+            disabled={addSubsDisabled}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={addSelectedSubtitles}
-            title={subtitleNoteAddingActive ? 'Add selected subtitles as note' : 'Start subtitle note adding'}
+            title={subtitleNoteAddingActive ? 'Pick selected subtitles as note' : 'Start subtitle selection'}
             type="button"
           >
-            Add Subs{subtitleNoteAddingActive && selectedCues.length > 0 ? ` ${selectedCues.length}` : ''}
-          </button>
-        ) : null}
-        {subtitleNoteAddingActive ? (
-          <button
-            aria-label="Cancel selected subtitles"
-            className="rolling-subtitle-cancel-toggle"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={cancelSubtitleNoteAdding}
-            title="Cancel selected subtitles"
-            type="button"
-          >
-            Cancel Subs
+            Pick Sub{subtitleNoteAddingActive && selectedCues.length > 0 ? ` ${selectedCues.length}` : ''}
           </button>
         ) : null}
       </div>
-      <div className={subtitleHidden ? 'rolling-subtitle-list hidden' : 'rolling-subtitle-list'} ref={listRef}>
+      <div className={effectiveSubtitleHidden ? 'rolling-subtitle-list hidden' : 'rolling-subtitle-list'} ref={listRef}>
         <div className="rolling-subtitle-track" ref={trackRef}>
           {cues.length === 0 ? (
             <div className="rolling-subtitle-empty">No subtitle cues.</div>

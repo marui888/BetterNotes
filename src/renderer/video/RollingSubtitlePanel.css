@@ -112,7 +112,7 @@
   text-align: center;
 }
 
-.rolling-subtitle-dim-toggle,
+.rolling-subtitle-view-toggle,
 .rolling-subtitle-mode-toggle,
 .rolling-subtitle-hide-toggle,
 .rolling-subtitle-add-toggle,
@@ -129,17 +129,17 @@
   line-height: 1;
 }
 
-.rolling-subtitle-panel.dark-mode .rolling-subtitle-dim-toggle {
+.rolling-subtitle-panel.subtitle-center-mode .rolling-subtitle-view-toggle {
   color: #ff6b6b;
   border-color: rgba(255, 107, 107, 0.5);
 }
 
-.rolling-subtitle-panel.dark-mode .rolling-subtitle-dim-toggle:hover {
+.rolling-subtitle-panel.subtitle-center-mode .rolling-subtitle-view-toggle:hover {
   color: #ff8585;
   border-color: rgba(255, 107, 107, 0.72);
 }
 
-.rolling-subtitle-dim-toggle:hover,
+.rolling-subtitle-view-toggle:hover,
 .rolling-subtitle-mode-toggle:hover,
 .rolling-subtitle-hide-toggle:hover,
 .rolling-subtitle-add-toggle:hover,

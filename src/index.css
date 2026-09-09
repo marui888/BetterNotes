@@ -1385,26 +1385,28 @@ button:hover {
   border-color: rgba(255, 255, 255, 0.12);
 }
 
-.video-mode.fullscreen-state-4 .video-stage::before {
+.video-mode.video-view-hidden .video-stage::before {
   content: '';
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 1;
-  background: rgba(0, 0, 0, var(--video-dark-dim, 0.65));
+  background: #050505;
   pointer-events: none;
 }
 
-.video-mode.fullscreen-state-4 .video-js-host {
-  filter: blur(var(--video-dark-blur, 18px)) brightness(0.45);
-  transform: scale(1.04);
+.video-mode.video-view-hidden .video-js-host {
+  opacity: 0;
+  filter: none;
+  transform: none;
   transform-origin: center;
 }
 
-.video-mode.fullscreen-state-4.dark-view-clear .video-stage::before {
+.video-mode.video-view-visible .video-stage::before {
   display: none;
 }
 
-.video-mode.fullscreen-state-4.dark-view-clear .video-js-host {
+.video-mode.video-view-visible .video-js-host {
+  opacity: 1;
   filter: none;
   transform: none;
 }
@@ -1413,15 +1415,15 @@ button:hover {
   z-index: 3;
 }
 
-.video-mode.fullscreen-state-4.dark-subview-1 .video-center {
+.video-mode.fullscreen-state-4.subtitle-center-layout-1 .video-center {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 6px minmax(280px, var(--video-dark-subview-right-width, 16.7%));
+  grid-template-columns: minmax(0, 1fr) 6px minmax(280px, var(--video-subtitle-center-layout-right-width, 16.7%));
   grid-template-rows: minmax(0, 1fr);
   width: 100%;
   height: 100%;
 }
 
-.video-mode.fullscreen-state-4.dark-subview-1 .video-stage {
+.video-mode.fullscreen-state-4.subtitle-center-layout-1 .video-stage {
   position: relative;
   inset: auto;
   grid-column: 1;
@@ -1430,12 +1432,12 @@ button:hover {
   min-height: 0;
 }
 
-.video-mode.fullscreen-state-4.dark-subview-1 .video-stage::before {
+.video-mode.fullscreen-state-4.subtitle-center-layout-1 .video-stage::before {
   position: absolute;
   inset: 0;
 }
 
-.video-mode.fullscreen-state-4.dark-subview-1 .video-horizontal-splitter {
+.video-mode.fullscreen-state-4.subtitle-center-layout-1 .video-horizontal-splitter {
   grid-column: 2;
   grid-row: 1;
   min-width: 6px;
@@ -1447,32 +1449,32 @@ button:hover {
   border-right: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.video-mode.fullscreen-state-4.dark-subview-1 .video-bottom-panel {
+.video-mode.fullscreen-state-4.subtitle-center-layout-1 .video-bottom-panel {
   grid-column: 3;
   grid-row: 1;
   align-self: stretch;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 6px minmax(132px, var(--video-dark-subview-info-height, 180px));
+  grid-template-rows: minmax(0, 1fr) 6px minmax(132px, var(--video-subtitle-center-layout-info-height, 180px));
   min-width: 0;
   min-height: 0;
   background: transparent;
   border-top-color: transparent;
 }
 
-.video-mode.fullscreen-state-4.dark-subview-1 .video-side-panel {
+.video-mode.fullscreen-state-4.subtitle-center-layout-1 .video-side-panel {
   grid-column: 1;
   grid-row: 3;
   min-height: 0;
 }
 
-.video-mode.fullscreen-state-4.dark-subview-1 .note-editor {
+.video-mode.fullscreen-state-4.subtitle-center-layout-1 .note-editor {
   grid-column: 1;
   grid-row: 1;
   min-height: 0;
 }
 
-.video-mode.fullscreen-state-4.dark-subview-1 .video-bottom-inner-splitter {
+.video-mode.fullscreen-state-4.subtitle-center-layout-1 .video-bottom-inner-splitter {
   grid-column: 1;
   grid-row: 2;
   min-width: 0;
@@ -3097,4 +3099,112 @@ button:hover {
   background: #1e1e1e;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 4px;
+}
+
+.video-mode.subtitle-center-layout-1 .video-center {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6px minmax(280px, var(--video-subtitle-center-layout-right-width, 16.7%));
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+}
+
+.video-mode.subtitle-center-layout-1 .video-stage {
+  position: relative;
+  inset: auto;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.video-mode.subtitle-center-layout-1 .video-stage::before {
+  position: absolute;
+  inset: 0;
+}
+
+.video-mode.subtitle-center-layout-1 .video-horizontal-splitter {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 6px;
+  min-height: 0;
+  cursor: col-resize;
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.video-mode.subtitle-center-layout-1 .video-bottom-panel {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 6px minmax(132px, var(--video-subtitle-center-layout-info-height, 180px));
+  min-width: 0;
+  min-height: 0;
+}
+
+.video-mode.subtitle-center-layout-1 .video-side-panel {
+  grid-column: 1;
+  grid-row: 3;
+  min-height: 0;
+}
+
+.video-mode.subtitle-center-layout-1 .note-editor {
+  grid-column: 1;
+  grid-row: 1;
+  min-height: 0;
+}
+
+.video-mode.subtitle-center-layout-1 .video-bottom-inner-splitter {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 6px;
+  cursor: row-resize;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-left: 0;
+  border-right: 0;
+}
+
+.subtitle-pick-dialog {
+  width: min(720px, calc(100vw - 96px));
+}
+
+.subtitle-pick-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: rgba(245, 222, 179, 0.86);
+  font-size: 12px;
+}
+
+.subtitle-pick-editor textarea {
+  min-height: 220px;
+  resize: vertical;
+  padding: 10px 12px;
+  color: #f3e7c9;
+  background: #171717;
+  border: 1px solid rgba(245, 222, 179, 0.28);
+  border-radius: 4px;
+  outline: none;
+  font: 14px/1.55 Consolas, 'Microsoft YaHei', sans-serif;
+}
+
+.subtitle-pick-editor textarea:focus {
+  border-color: rgba(255, 214, 89, 0.64);
+  box-shadow: 0 0 0 1px rgba(255, 214, 89, 0.2);
+}
+
+.subtitle-pick-dialog .inline-dialog-actions button {
+  min-width: 92px;
+}
+
+.subtitle-pick-shortcut {
+  margin-left: 6px;
+  color: rgba(245, 222, 179, 0.52);
+  font-size: 11px;
 }
