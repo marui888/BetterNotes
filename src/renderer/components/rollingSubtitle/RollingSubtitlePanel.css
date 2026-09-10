@@ -32,12 +32,14 @@
   right: 0;
   bottom: 28px;
   z-index: 2;
-  width: 74px;
+  width: 100px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  justify-content: center;
+  justify-content: safe center;
+  overflow-y: auto;
+  overflow-x: hidden;
   gap: 5px;
   padding: 4px 4px 4px 0;
   color: rgba(245, 222, 179, 0.72);
@@ -56,6 +58,7 @@
 }
 
 .rolling-subtitle-font-tools {
+  flex-shrink: 0;
   display: inline-flex;
   width: 100%;
   align-items: center;
@@ -66,8 +69,9 @@
 
 
 .rolling-subtitle-font-tools select {
-  height: 28px;
-  max-width: 64px;
+  height: 56px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 0 4px;
   color: rgba(245, 222, 179, 0.88);
   background: rgba(0, 0, 0, 0.24);
@@ -90,6 +94,7 @@
 }
 
 .rolling-subtitle-timing-tools {
+  flex-shrink: 0;
   display: inline-flex;
   width: 100%;
   align-items: center;
@@ -100,7 +105,8 @@
 
 .rolling-subtitle-timing-tools button {
   width: 24px;
-  height: 28px;
+  height: 56px;
+  flex-shrink: 0;
   padding: 0;
   color: rgba(245, 222, 179, 0.88);
   background: rgba(0, 0, 0, 0.24);
@@ -126,13 +132,14 @@
 .rolling-subtitle-view-toggle,
 .rolling-subtitle-layout-toggle,
 .rolling-subtitle-dock-toggle,
-.rolling-subtitle-mode-toggle,
 .rolling-subtitle-hide-toggle,
 .rolling-subtitle-add-toggle,
 .rolling-subtitle-cancel-toggle {
-  width: 72px;
-  min-width: 72px;
-  height: 32px;
+  width: 100%;
+  min-width: 0;
+  height: 64px;
+  flex-shrink: 0;
+  box-sizing: border-box;
   padding: 0 5px;
   color: rgba(245, 222, 179, 0.86);
   background: rgba(0, 0, 0, 0.24);
@@ -156,7 +163,6 @@
 .rolling-subtitle-view-toggle:hover,
 .rolling-subtitle-layout-toggle:hover,
 .rolling-subtitle-dock-toggle:hover,
-.rolling-subtitle-mode-toggle:hover,
 .rolling-subtitle-hide-toggle:hover,
 .rolling-subtitle-add-toggle:hover,
 .rolling-subtitle-cancel-toggle:hover {
@@ -180,7 +186,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  padding: 5px 82px 8px 6px;
+  padding: 5px 108px 8px 6px;
   scrollbar-width: none;
 }
 

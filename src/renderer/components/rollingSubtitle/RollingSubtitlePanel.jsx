@@ -114,7 +114,7 @@ export default function RollingSubtitlePanel({
   const [activeIndex, setActiveIndex] = useState(() => initialActiveIndex)
   const [renderWindow, setRenderWindow] = useState(() => buildRenderWindow(initialActiveIndex, cues.length))
   const [localSubtitleHidden, setLocalSubtitleHidden] = useState(false)
-  const [scrollMode, setScrollMode] = useState('follow')
+  const scrollMode = 'float'
   const [dockPosition, setDockPosition] = useState('left')
   const [subtitleNoteAdding, setSubtitleNoteAdding] = useState(false)
   const [selectedCueIds, setSelectedCueIds] = useState(() => new Set())
@@ -825,21 +825,6 @@ export default function RollingSubtitlePanel({
           Dock
         </button>
 
-        <button
-          aria-label="Toggle rolling subtitle scroll mode"
-          className="rolling-subtitle-mode-toggle"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            setScrollMode((value) => (value === 'follow' ? 'float' : 'follow'))
-            window.requestAnimationFrame(syncTrackToCurrentCue)
-          }}
-          title={scrollMode === 'follow' ? 'Switch to Float scroll mode' : 'Switch to Follow scroll mode'}
-          type="button"
-        >
-          {scrollMode === 'follow' ? 'Follow' : 'Float'}
-        </button>
         <button
           aria-label={effectiveSubtitleHidden ? 'Show rolling subtitles' : 'Hide rolling subtitles'}
           className="rolling-subtitle-hide-toggle"
