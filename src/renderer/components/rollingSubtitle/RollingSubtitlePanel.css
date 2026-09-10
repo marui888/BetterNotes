@@ -247,6 +247,11 @@
   border: 1px solid rgba(245, 222, 179, 0.42);
   border-radius: 2px;
   cursor: pointer;
+  visibility: hidden;
+}
+
+.rolling-subtitle-panel.subtitle-note-adding .rolling-subtitle-cue-check {
+  visibility: visible;
 }
 
 .rolling-subtitle-cue-check:checked {

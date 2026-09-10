@@ -892,7 +892,8 @@ export default function VideoMode() {
       selectedNoteIndex: notes.findIndex((note) => note.id === selectedNoteId),
       playbackTime: getPlayerTime(),
       playbackRate: getPlaybackRate(),
-      fullscreenCycleState: 0,
+      fullscreenCycleState: 0,
+
       videoOpenSource,
       notesPool: {
         notes: externalNotes,
@@ -933,7 +934,8 @@ export default function VideoMode() {
 
     if (snapshot.leftTab === 'notes' || snapshot.leftTab === 'files') setLeftTab(snapshot.leftTab)
     if (snapshot.rightToolTab === 'main' || snapshot.rightToolTab === 'notesPool') setRightToolTab(snapshot.rightToolTab)
-    setFullscreenCycleState(0)
+    setFullscreenCycleState(0)
+
     const notesPoolSnapshot = snapshot.notesPool || {}
     const restoredExternalNotes = Array.isArray(notesPoolSnapshot.notes) ? notesPoolSnapshot.notes : []
     setExternalNotes(restoredExternalNotes)
@@ -2163,11 +2165,8 @@ export default function VideoMode() {
     selectNote(visibleNotes[safeIndex].note)
   }
 
-  const toggleCustomFullscreen = () => {
-    setFullscreenCycleState((state) => (state === 3 ? 0 : 3))
-  }
 
-  const getContextMenuItemCount = (type) => (type === 'externalNote' ? 4 : type === 'video' ? 13 : 12)
+  const getContextMenuItemCount = (type) => (type === 'externalNote' ? 4 : type === 'video' ? 11 : 12)
 
   const openContextMenu = (event, type, note = null) => {
     event.preventDefault()
@@ -2256,7 +2255,7 @@ export default function VideoMode() {
     if (contextMenu?.type === 'video') {
       return [
         ...noteItems,
-        { label: 'Toggle View', action: toggleCustomFullscreen, separator: true },
+
         { label: 'Close Menu', action: () => {}, separator: true },
       ]
     }
@@ -3083,6 +3082,9 @@ export default function VideoMode() {
               </button>
               <button data-tooltip="Toggle Vol" onClick={() => runAction('video.toggleVolume')} type="button">
                 <i className="fa-solid fa-volume-xmark" aria-hidden="true" />
+              </button>
+              <button data-tooltip="Toggle View" onClick={() => runAction('video.toggleView')} type="button">
+                <i className="fa-solid fa-table-columns" aria-hidden="true" />
               </button>
             </div>
           </div>

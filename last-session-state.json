@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "savedAt": "2026-09-09T16:33:59.693Z",
+  "savedAt": "2026-09-10T03:32:04.401Z",
   "window": {
-    "displayId": 368737986,
+    "displayId": 3585556873,
     "displayBounds": {
       "x": 1920,
       "y": 0,
@@ -10,8 +10,8 @@
       "height": 1080
     },
     "bounds": {
-      "x": 1912,
-      "y": -8,
+      "x": 2057,
+      "y": 1,
       "width": 1920,
       "height": 1032
     },
@@ -36,12 +36,12 @@
       "specialFolderPath": "D:\\temp\\WordListExamples\\特殊文件"
     },
     "video": {
-      "currentFilePath": "D:\\youtubeDL\\Single Dad Asked the Lonely Soldier, “Want to Have Dinner With Us？Then Christmas Changed Everything [BtvtoqfZ4lo].mp4",
+      "currentFilePath": "D:\\youtubeDL\\Why oil markets stabilized far faster than anticipated ｜ DW News [LbT9H6CLFfo].mp4",
       "folderPath": "D:\\youtubeDL",
       "leftTab": "files",
       "rightToolTab": "notesPool",
       "selectedNoteIndex": -1,
-      "playbackTime": 212.737294,
+      "playbackTime": 39.736408,
       "playbackRate": 1,
       "fullscreenCycleState": 0,
       "videoOpenSource": "default",

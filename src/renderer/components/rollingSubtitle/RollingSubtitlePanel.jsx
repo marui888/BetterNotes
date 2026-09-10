@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   findActiveCueIndexNear,
   formatTimingOffset,
@@ -95,6 +95,8 @@ export default function RollingSubtitlePanel({
   const getCurrentTimeRef = useRef(getCurrentTime)
   const rectRef = useRef(DEFAULT_RECT)
   const subtitleNoteAddingRef = useRef(false)
+  const resumeScrollingRef = useRef(false)
+  const resumeSettlingTimeRef = useRef(0)
   const rectBeforeSubtitleCenterModeRef = useRef(null)
   const subtitleCenterModeActiveRef = useRef(false)
   const subtitleCenterModeSessionSizeRef = useRef(null)
@@ -182,12 +184,11 @@ export default function RollingSubtitlePanel({
     return true
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     renderWindowRef.current = renderWindow
     const anchor = pendingWindowAnchorRef.current
     if (!anchor) return
 
-    window.requestAnimationFrame(() => {
       rebuildLayoutAndMotionPlan()
       const layout = cueLayoutsRef.current[anchor.index]
       if (!layout) {
@@ -197,7 +198,6 @@ export default function RollingSubtitlePanel({
 
       setVisualTrackOffset(anchor.screenCenter - layout.center)
       pendingWindowAnchorRef.current = null
-    })
   }, [renderWindow, scrollMode])
 
   useEffect(() => {
@@ -241,6 +241,7 @@ export default function RollingSubtitlePanel({
 
   const syncTrackToCurrentCue = () => {
     rebuildLayoutAndMotionPlan()
+    if (subtitleNoteAddingRef.current || resumeScrollingRef.current) return
     const track = trackRef.current
 
     const liveTime = Number(getCurrentTimeRef.current?.())
@@ -271,10 +272,11 @@ export default function RollingSubtitlePanel({
   }
 
   useEffect(() => {
-    subtitleNoteAddingRef.current = subtitleNoteAdding
-    if (!subtitleNoteAdding) {
-      window.requestAnimationFrame(syncTrackToCurrentCue)
-    }
+    const wasPicking = subtitleNoteAddingRef.current
+    resumeSettlingTimeRef.current = 0
+    subtitleNoteAddingRef.current = subtitleNoteAddingActive
+    if (subtitleNoteAddingActive) resumeScrollingRef.current = false
+    else if (wasPicking) resumeScrollingRef.current = true
   }, [subtitleNoteAddingActive])
 
   useEffect(() => {
@@ -301,6 +303,8 @@ export default function RollingSubtitlePanel({
     const nextActiveIndex = getActiveSubtitleCueIndex(cues, getEffectiveTime(currentTimeRef.current))
     const nextWindow = buildRenderWindow(nextActiveIndex, cues.length)
     activeIndexRef.current = -1
+    resumeScrollingRef.current = false
+    pendingWindowAnchorRef.current = null
     renderWindowRef.current = nextWindow
     trackOffsetRef.current = 0
     displayOffsetRef.current = 0
@@ -392,7 +396,52 @@ export default function RollingSubtitlePanel({
         setActiveIndex(nextActiveIndex)
       }
 
-      if (nextActiveIndex >= 0 && updateRenderWindowForIndex(nextActiveIndex)) {
+      // Keep overlapping rows when resuming across several virtual windows.
+      let windowIndex = nextActiveIndex
+      if (resumeScrollingRef.current) {
+        const center = visibleMetricsRef.current?.targetCenter ?? 0
+        let nearestDistance = Infinity
+        cueLayoutsRef.current.forEach((layout, index) => {
+          const distance = Math.abs(layout.center + getVisualTrackOffset() - center)
+          if (distance < nearestDistance) {
+            nearestDistance = distance
+            windowIndex = index
+          }
+        })
+      }
+      if (!subtitleNoteAddingRef.current && windowIndex >= 0 && updateRenderWindowForIndex(windowIndex)) {
+        lastFrameTimeRef.current = frameTime
+        lastVideoTimeRef.current = effectiveTime
+        animationId = window.requestAnimationFrame(tick)
+        return
+      }
+
+      if (resumeScrollingRef.current && list && track && nextActiveIndex >= 0) {
+        const layouts = cueLayoutsRef.current
+        const indices = Object.keys(layouts).map(Number)
+        const targetIndex = clamp(nextActiveIndex, indices[0], indices[indices.length - 1])
+        const layout = layouts[targetIndex]
+        const metrics = visibleMetricsRef.current
+        if (layout && metrics) {
+          const curveOffset = scrollMode === 'float' && targetIndex === nextActiveIndex
+            ? getFloatCurveOffset(floatCurveRef.current, effectiveTime) : NaN
+          const target = clampTrackOffset(Number.isFinite(curveOffset)
+            ? curveOffset : metrics.targetCenter - layout.center)
+          const offset = getVisualTrackOffset()
+          const delta = Math.min(MAX_FRAME_DELTA_MS, Math.max(0, frameTime - lastFrameTimeRef.current)) / 1000
+          const difference = target - offset
+          const step = difference * (1 - Math.exp(-delta / 0.18))
+          const maxStep = Math.max(240, list.clientHeight * 2) * delta
+          setVisualTrackOffset(offset + clamp(step, -maxStep, maxStep))
+          resumeSettlingTimeRef.current = targetIndex === nextActiveIndex
+            && Math.abs(difference) < Math.max(24, list.clientHeight * 0.1)
+            ? resumeSettlingTimeRef.current + delta : 0
+          if (targetIndex === nextActiveIndex
+            && (Math.abs(difference) < 0.5 || resumeSettlingTimeRef.current >= 0.4)) {
+            // Hand off the actual displayed position, including while playing.
+            resumeScrollingRef.current = false
+          }
+        }
         lastFrameTimeRef.current = frameTime
         lastVideoTimeRef.current = effectiveTime
         animationId = window.requestAnimationFrame(tick)
@@ -890,16 +939,15 @@ export default function RollingSubtitlePanel({
                 style={{ fontSize }}
                 tabIndex={0}
               >
-                {subtitleNoteAddingActive ? (
-                  <input
-                    aria-label="Select subtitle cue"
-                    checked={selectedCueIds.has(cue.id)}
-                    className="rolling-subtitle-cue-check"
-                    onChange={(event) => toggleCueSelection(event, cue)}
-                    onClick={(event) => event.stopPropagation()}
-                    type="checkbox"
-                  />
-                ) : null}
+                <input
+                  aria-label="Select subtitle cue"
+                  checked={selectedCueIds.has(cue.id)}
+                  className="rolling-subtitle-cue-check"
+                  onChange={(event) => toggleCueSelection(event, cue)}
+                  onClick={(event) => event.stopPropagation()}
+                  tabIndex={subtitleNoteAddingActive ? 0 : -1}
+                  type="checkbox"
+                />
                 <strong>{cue.text}</strong>
               </div>
             )
