@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "savedAt": "2026-09-10T03:59:25.363Z",
+  "savedAt": "2026-09-10T04:09:22.172Z",
   "window": {
     "displayId": 3585556873,
     "displayBounds": {
@@ -41,7 +41,7 @@
       "leftTab": "files",
       "rightToolTab": "notesPool",
       "selectedNoteIndex": -1,
-      "playbackTime": 116.435701,
+      "playbackTime": 336.143967,
       "playbackRate": 1,
       "fullscreenCycleState": 0,
       "videoOpenSource": "default",
