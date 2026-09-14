@@ -117,6 +117,7 @@ export default function RollingSubtitlePanel({
   const scrollMode = 'float'
   const [dockPosition, setDockPosition] = useState('left')
   const [subtitleNoteAdding, setSubtitleNoteAdding] = useState(false)
+  const [checkboxHotZoneActive, setCheckboxHotZoneActive] = useState(false)
   const [selectedCueIds, setSelectedCueIds] = useState(() => new Set())
   const selectedCues = useMemo(() => (
     cues.filter((cue) => selectedCueIds.has(cue.id))
@@ -607,8 +608,7 @@ export default function RollingSubtitlePanel({
 
       setRect((current) => {
         if (subtitleCenterModeActive) {
-          const direction = drag.type === 'resize-ne' ? -1 : 1
-          const width = clamp(drag.rect.width + (dx * direction), MIN_WIDTH, maxWidth)
+          const width = clamp(drag.rect.width + dx, MIN_WIDTH, maxWidth)
           const x = Math.max(0, Math.round((maxWidth - width) / 2))
           subtitleCenterModeSessionSizeRef.current = { width }
           window.requestAnimationFrame(refreshVisibleMetrics)
@@ -712,9 +712,20 @@ export default function RollingSubtitlePanel({
       next.delete(cue.id)
     } else {
       next.add(cue.id)
+      setSubtitleNoteAdding(true)
     }
     setSelectedCueIds(next)
     onSelectedSubtitlesChange?.(getSelectedCuesByIds(next))
+  }
+
+  const updateCheckboxHotZone = (event) => {
+    const trackBounds = trackRef.current?.getBoundingClientRect()
+    if (!trackBounds) return
+    const hotZoneActive = event.clientX >= trackBounds.left
+      && event.clientX <= trackBounds.left + 38
+    setCheckboxHotZoneActive((current) => (
+      current === hotZoneActive ? current : hotZoneActive
+    ))
   }
 
   const clearSelectedCues = () => {
@@ -722,9 +733,17 @@ export default function RollingSubtitlePanel({
     onSelectedSubtitlesChange?.([])
   }
 
-  const pickSelectedSubtitles = async () => {
+  const pickSelectedSubtitles = async ({ fromShortcut = false } = {}) => {
     if (!subtitleNoteAdding) {
       if (addSubsDisabled) return
+      const currentIndex = activeIndexRef.current >= 0 ? activeIndexRef.current : activeIndex
+      const currentCue = currentIndex >= 0 ? cues[currentIndex] : null
+      if (currentCue) {
+        const next = new Set(selectedCueIds)
+        next.add(currentCue.id)
+        setSelectedCueIds(next)
+        onSelectedSubtitlesChange?.(getSelectedCuesByIds(next))
+      }
       setSubtitleNoteAdding(true)
       return
     }
@@ -736,7 +755,7 @@ export default function RollingSubtitlePanel({
     }
 
     const result = onPickSelectedSubtitles
-      ? await onPickSelectedSubtitles(selectedCues)
+      ? await onPickSelectedSubtitles(selectedCues, { fromShortcut })
       : await onAddSelectedSubtitles?.(selectedCues)
 
     if (result === 'goBack') return
@@ -747,7 +766,7 @@ export default function RollingSubtitlePanel({
 
   useEffect(() => {
     if (!pickSubRequest) return
-    pickSelectedSubtitles()
+    pickSelectedSubtitles({ fromShortcut: true })
   }, [pickSubRequest])
 
   const addSelectedSubtitles = async (event) => {
@@ -762,6 +781,7 @@ export default function RollingSubtitlePanel({
         'rolling-subtitle-panel',
         subtitleCenterModeActive ? 'subtitle-center-mode' : '',
         subtitleNoteAdding ? 'subtitle-note-adding' : '',
+        checkboxHotZoneActive ? 'checkbox-hot-zone-active' : '',
       ].filter(Boolean).join(' ')}
       style={{
         width: rect.width,
@@ -892,7 +912,12 @@ export default function RollingSubtitlePanel({
           </button>
         ) : null}
       </div>
-      <div className={effectiveSubtitleHidden ? 'rolling-subtitle-list hidden' : 'rolling-subtitle-list'} ref={listRef}>
+      <div
+        className={effectiveSubtitleHidden ? 'rolling-subtitle-list hidden' : 'rolling-subtitle-list'}
+        onPointerLeave={() => setCheckboxHotZoneActive(false)}
+        onPointerMove={updateCheckboxHotZone}
+        ref={listRef}
+      >
         <div className="rolling-subtitle-track" ref={trackRef}>
           {cues.length === 0 ? (
             <div className="rolling-subtitle-empty">No subtitle cues.</div>
@@ -930,7 +955,7 @@ export default function RollingSubtitlePanel({
                   className="rolling-subtitle-cue-check"
                   onChange={(event) => toggleCueSelection(event, cue)}
                   onClick={(event) => event.stopPropagation()}
-                  tabIndex={subtitleNoteAddingActive ? 0 : -1}
+                  tabIndex={subtitleNoteAddingActive || checkboxHotZoneActive ? 0 : -1}
                   type="checkbox"
                 />
                 <strong>{cue.text}</strong>

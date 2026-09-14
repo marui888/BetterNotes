@@ -24,6 +24,28 @@ const shortcutTabs = [
   { id: SHORTCUT_SCOPES.GLOBAL, label: 'GLOBAL' },
 ]
 
+const VIDEO_SEGMENTED_ACTION_IDS = [
+  'video.toggleControlModeChord',
+  'video.toggleSubtitleHidden',
+  'video.toggleVideoViewHidden',
+  'video.toggleView',
+  'video.toggleHvLayout',
+]
+
+function splitSegmentedShortcut(shortcut) {
+  const parts = String(shortcut || '').trim().split(/\s+/).filter(Boolean)
+  return {
+    firstKey: parts[0] || '',
+    secondKey: parts.slice(1).join(' '),
+  }
+}
+
+function buildSegmentedShortcut(firstKey, secondKey) {
+  const first = String(firstKey || '').trim()
+  const second = String(secondKey || '').trim()
+  return first && second ? `${first} ${second}` : ''
+}
+
 function SettingsTabButton({ active, children, onClick }) {
   return (
     <button
@@ -82,7 +104,6 @@ export default function SettingsDialog({ onClose }) {
   const [message, setMessage] = useState('')
   const [alertDialog, setAlertDialog] = useState(null)
   const [registeredActions, setRegisteredActions] = useState([])
-  const [pendingShortcutCapture, setPendingShortcutCapture] = useState(null)
   const [keywordFileOptions, setKeywordFileOptions] = useState([])
 
   useEffect(() => {
@@ -131,63 +152,100 @@ export default function SettingsDialog({ onClose }) {
   }, [draft.shortcuts, registeredActions, shortcutTab])
 
   const shortcutGroups = useMemo(() => {
+    if (shortcutTab === SHORTCUT_SCOPES.VIDEO) {
+      const segmentedRows = VIDEO_SEGMENTED_ACTION_IDS
+        .map((actionId) => shortcutRows.find((action) => action.id === actionId))
+        .filter(Boolean)
+      return [
+        {
+          key: 'video-normal',
+          title: '普通快捷键',
+          rows: shortcutRows.filter((action) => !action.segmentedShortcut),
+        },
+        {
+          key: 'video-segmented',
+          title: '分段快捷键',
+          firstKey: draft.shortcuts?.[SHORTCUT_SCOPES.VIDEO]?.['video.toggleControlMode'] || '',
+          firstKeyReadOnly: true,
+          rows: segmentedRows,
+          segmented: true,
+        },
+      ]
+    }
+
     if (shortcutTab !== SHORTCUT_SCOPES.GLOBAL) {
       return [{ title: '', rows: shortcutRows }]
     }
 
+    const segmentedRows = shortcutRows.filter((action) => action.segmentedShortcut)
+    const firstKey = segmentedRows
+      .map((action) => splitSegmentedShortcut(action.shortcut).firstKey)
+      .find(Boolean) || 'Ctrl+K'
+
     return [
       {
+        key: 'global-normal',
         title: '普通快捷键',
-        rows: shortcutRows.filter((action) => !String(action.shortcut || '').includes(' ')),
+        rows: shortcutRows.filter((action) => !action.segmentedShortcut),
       },
       {
+        key: 'global-segmented',
         title: '分段快捷键',
-        rows: shortcutRows.filter((action) => String(action.shortcut || '').includes(' ')),
+        firstKey,
+        firstKeyReadOnly: false,
+        rows: segmentedRows,
+        segmented: true,
       },
     ]
-  }, [shortcutRows, shortcutTab])
+  }, [draft.shortcuts, shortcutRows, shortcutTab])
 
   const setShortcut = (scope, actionId, shortcut) => {
     setMessage('')
-    setPendingShortcutCapture(null)
-    setDraft((current) => ({
-      ...current,
-      shortcuts: {
-        ...current.shortcuts,
-        [scope]: {
-          ...(current.shortcuts?.[scope] || {}),
-          [actionId]: shortcut,
+    setDraft((current) => {
+      const currentBucket = current.shortcuts?.[scope] || {}
+      const nextBucket = {
+        ...currentBucket,
+        [actionId]: shortcut,
+      }
+
+      if (scope === SHORTCUT_SCOPES.VIDEO && actionId === 'video.toggleControlMode') {
+        VIDEO_SEGMENTED_ACTION_IDS.forEach((segmentedActionId) => {
+          const { secondKey } = splitSegmentedShortcut(currentBucket[segmentedActionId])
+          nextBucket[segmentedActionId] = buildSegmentedShortcut(shortcut, secondKey)
+        })
+      }
+
+      return {
+        ...current,
+        shortcuts: {
+          ...current.shortcuts,
+          [scope]: nextBucket,
         },
-      },
-    }))
+      }
+    })
   }
 
   const captureShortcut = (scope, actionId, shortcut) => {
-    if (scope !== SHORTCUT_SCOPES.GLOBAL) {
-      setShortcut(scope, actionId, shortcut)
-      return
-    }
+    setShortcut(scope, actionId, shortcut)
+  }
 
-    if (
-      pendingShortcutCapture?.scope === scope
-      && pendingShortcutCapture?.actionId === actionId
-    ) {
-      setShortcut(scope, actionId, `${pendingShortcutCapture.shortcut} ${shortcut}`)
-      return
-    }
-
-    setMessage('Press second key for chord shortcut')
-    setPendingShortcutCapture({ scope, actionId, shortcut })
-    setDraft((current) => ({
-      ...current,
-      shortcuts: {
-        ...current.shortcuts,
-        [scope]: {
-          ...(current.shortcuts?.[scope] || {}),
-          [actionId]: shortcut,
+  const setSegmentedFirstKey = (group, firstKey) => {
+    setMessage('')
+    setDraft((current) => {
+      const currentBucket = current.shortcuts?.[shortcutTab] || {}
+      const nextBucket = { ...currentBucket }
+      group.rows.forEach((action) => {
+        const { secondKey } = splitSegmentedShortcut(currentBucket[action.id])
+        nextBucket[action.id] = buildSegmentedShortcut(firstKey, secondKey)
+      })
+      return {
+        ...current,
+        shortcuts: {
+          ...current.shortcuts,
+          [shortcutTab]: nextBucket,
         },
-      },
-    }))
+      }
+    })
   }
 
   const chooseMonthlyNotesFolder = async () => {
@@ -349,7 +407,6 @@ export default function SettingsDialog({ onClose }) {
               return
             }
             if (event.key === 'Escape') {
-              setPendingShortcutCapture(null)
               setMessage('')
               return
             }
@@ -367,6 +424,51 @@ export default function SettingsDialog({ onClose }) {
       </div>
     </div>
   )
+
+  const renderSegmentedShortcutRow = (action, group) => {
+    const { secondKey } = splitSegmentedShortcut(action.shortcut)
+    return (
+      <div
+        className={shortcutConflicts[shortcutTab]?.has(action.id)
+          ? 'settings-shortcut-row settings-segmented-shortcut-row conflict'
+          : 'settings-shortcut-row settings-segmented-shortcut-row'}
+        key={action.id}
+      >
+        <span>{action.label || action.id}</span>
+        <div className="settings-shortcut-input-wrap">
+          <input
+            value={secondKey}
+            placeholder="Letter"
+            onKeyDown={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              if (event.key === 'Backspace' || event.key === 'Delete') {
+                setShortcut(shortcutTab, action.id, '')
+                return
+              }
+              if (event.key === 'Escape') {
+                setMessage('')
+                return
+              }
+              const shortcut = formatShortcutEvent(event)
+              if (!/^[A-Z]$/.test(shortcut)) {
+                if (shortcut) setMessage('Second key must be one letter')
+                return
+              }
+              setShortcut(shortcutTab, action.id, buildSegmentedShortcut(group.firstKey, shortcut))
+            }}
+            onChange={() => {}}
+          />
+          <button
+            type="button"
+            onClick={() => setShortcut(shortcutTab, action.id, '')}
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="settings-dialog-layer" role="presentation">
@@ -898,15 +1000,40 @@ export default function SettingsDialog({ onClose }) {
                     <div className="settings-empty">No shortcut items configured yet.</div>
                   ) : (
                     shortcutGroups.map((group) => (
-                      <section className="settings-shortcut-group" key={group.title || 'default'}>
+                      <section className="settings-shortcut-group" key={group.key || group.title || 'default'}>
                         {group.title ? (
                           <div className="settings-shortcut-group-title">
                             <span>{group.title}</span>
                           </div>
                         ) : null}
+                        {group.segmented ? (
+                          <label className="settings-segmented-first-key">
+                            <span>First key:</span>
+                            {group.firstKeyReadOnly ? (
+                              <kbd>{group.firstKey || 'Not set'}</kbd>
+                            ) : (
+                              <input
+                                value={group.firstKey}
+                                placeholder="Click and press keys"
+                                onKeyDown={(event) => {
+                                  event.preventDefault()
+                                  event.stopPropagation()
+                                  if (event.key === 'Escape') return
+                                  const shortcut = formatShortcutEvent(event)
+                                  if (shortcut) setSegmentedFirstKey(group, shortcut)
+                                }}
+                                onChange={() => {}}
+                              />
+                            )}
+                          </label>
+                        ) : null}
                         {group.rows.length === 0 ? (
                           <div className="settings-empty compact">No shortcut items.</div>
-                        ) : group.rows.map(renderShortcutRow)}
+                        ) : group.rows.map((action) => (
+                          group.segmented
+                            ? renderSegmentedShortcutRow(action, group)
+                            : renderShortcutRow(action)
+                        ))}
                       </section>
                     ))
                   )}

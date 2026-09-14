@@ -97,7 +97,7 @@ export default function AppShell() {
 
   useEffect(() => {
     const handleChordChange = (event) => {
-      setPendingChord(event.detail?.shortcut || null)
+      setPendingChord(event.detail?.shortcut ? event.detail : null)
     }
 
     window.addEventListener('shortcut-chord-change', handleChordChange)
@@ -257,7 +257,19 @@ export default function AppShell() {
       <AppTooltip />
       {pendingChord ? (
         <div className="shortcut-chord-hint">
-          Shortcut: {pendingChord} ...
+          <div className="shortcut-chord-title">{pendingChord.shortcut}</div>
+          <div className="shortcut-chord-options">
+            {(pendingChord.options || []).map((option) => (
+              <div className="shortcut-chord-option" key={`${option.key}-${option.actionId}`}>
+                <kbd>{option.key}</kbd>
+                <span>{option.label}</span>
+              </div>
+            ))}
+            <div className="shortcut-chord-option shortcut-chord-cancel">
+              <kbd>Esc</kbd>
+              <span>Cancel</span>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

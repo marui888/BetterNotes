@@ -92,6 +92,10 @@ const DEFAULT_APP_SETTINGS = {
       'video.appendMark': '',
       'video.appendQuickMark': 'Ctrl+S',
       'video.toggleControlMode': 'Alt+V',
+      'video.toggleControlModeChord': 'Alt+V V',
+      'video.toggleSubtitleHidden': 'Alt+V S',
+      'video.toggleVideoViewHidden': 'Alt+V D',
+      'video.toggleHvLayout': 'Alt+V G',
       'video.togglePlay': 'F6',
       'video.togglePlayAlt': 'Alt+P',
       'video.saveNotes': 'F9',
@@ -104,7 +108,7 @@ const DEFAULT_APP_SETTINGS = {
       'video.speedDown': 'Ctrl+ArrowDown',
       'video.volumeUp': 'ArrowUp',
       'video.volumeDown': 'ArrowDown',
-      'video.toggleView': 'Ctrl+F',
+      'video.toggleView': 'Alt+V F',
       'video.toggleVolume': '',
       'video.toggleLeftTab': 'Alt+F',
       'video.updateContent': 'Ctrl+Q',
@@ -182,6 +186,28 @@ function mergeShortcutBucket(scope, value) {
   delete merged['video.updateRange']
   delete merged['text.saveTo']
   delete merged['global.cycleMode']
+  if (scope === 'video') {
+    const prefix = String(merged['video.toggleControlMode'] || '').trim()
+    const segmentedActionIds = [
+      'video.toggleControlModeChord',
+      'video.toggleSubtitleHidden',
+      'video.toggleVideoViewHidden',
+      'video.toggleView',
+      'video.toggleHvLayout',
+    ]
+    segmentedActionIds.forEach((actionId) => {
+      const parts = String(merged[actionId] || '').trim().split(/\s+/).filter(Boolean)
+      const rawShortcut = String(value?.[actionId] || '').trim()
+      const legacyToggleView = actionId === 'video.toggleView' && rawShortcut && !rawShortcut.includes(' ')
+      const previousHvLayoutDefault = actionId === 'video.toggleHvLayout'
+        && parts.length > 1
+        && parts[parts.length - 1] === 'F'
+      const secondKey = legacyToggleView || previousHvLayoutDefault
+        ? actionId === 'video.toggleView' ? 'F' : 'G'
+        : parts.length > 1 ? parts[parts.length - 1] : parts[0] || ''
+      merged[actionId] = prefix && secondKey ? `${prefix} ${secondKey}` : ''
+    })
+  }
   return merged
 }
 
@@ -859,10 +885,24 @@ async function fileExists(filePath) {
 async function listMp4FilesInFolder(folderPath) {
   try {
     const entries = await fs.readdir(folderPath, { withFileTypes: true })
-    return entries
+    const mp4Entries = entries
       .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.mp4'))
-      .map((entry) => entry.name)
-      .sort((a, b) => a.localeCompare(b))
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    return Promise.all(mp4Entries.map(async (entry) => {
+      const filePath = path.join(folderPath, entry.name)
+      const jsonPath = getVideoNotePath(filePath)
+      const [mp4Stat, jsonStat] = await Promise.all([
+        fs.stat(filePath),
+        fs.stat(jsonPath).catch(() => null),
+      ])
+
+      return {
+        fileName: entry.name,
+        createdTime: mp4Stat.birthtimeMs,
+        jsonModifiedTime: jsonStat?.isFile() ? jsonStat.mtimeMs : null,
+      }
+    }))
   } catch (error) {
     console.error('list mp4 files failed:', error)
     return []
@@ -1679,7 +1719,8 @@ function registerIpcHandlers() {
   ipcMain.handle('video:saveNotes', async (_event, filePath, notes) => {
     const notePath = getVideoNotePath(filePath)
     await fs.writeFile(notePath, JSON.stringify(notes || [], null, 2), 'utf8')
-    return { ok: true, notePath }
+    const noteStat = await fs.stat(notePath)
+    return { ok: true, notePath, jsonModifiedTime: noteStat.mtimeMs }
   })
 
   ipcMain.handle('video:convertSrtSubtitle', async (_event, payload) => {

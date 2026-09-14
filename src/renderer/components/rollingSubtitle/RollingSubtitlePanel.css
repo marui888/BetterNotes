@@ -256,7 +256,8 @@
   visibility: hidden;
 }
 
-.rolling-subtitle-panel.subtitle-note-adding .rolling-subtitle-cue-check {
+.rolling-subtitle-panel.subtitle-note-adding .rolling-subtitle-cue-check,
+.rolling-subtitle-panel.checkbox-hot-zone-active .rolling-subtitle-cue-check {
   visibility: visible;
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { SHORTCUT_SCOPES, useSettingsStore } from '../../stores/settingsStore'
-import { runAction } from '../actions/actionRegistry'
+import { getRegisteredActions, runAction } from '../actions/actionRegistry'
 
 const CHORD_TIMEOUT_MS = 2000
 
@@ -47,6 +47,33 @@ function hasChordPrefix(shortcuts, scopes, shortcut) {
   ))
 }
 
+function getChordOptions(shortcuts, scopes, prefix, mode) {
+  const actionLabels = new Map(
+    getRegisteredActions().map((action) => [action.id, action.label || action.id])
+  )
+  const seenSecondKeys = new Set()
+  const options = []
+
+  scopes.forEach((scope) => {
+    getScopedShortcutEntries(shortcuts, scope).forEach(([actionId, value]) => {
+      const parts = value.trim().split(/\s+/)
+      if (parts.length < 2 || parts[0] !== prefix) return
+      const secondKey = parts.slice(1).join(' ')
+      if (!secondKey || seenSecondKeys.has(secondKey)) return
+      if (!isShortcutActionEnabled(actionId, mode)) return
+
+      seenSecondKeys.add(secondKey)
+      options.push({
+        actionId,
+        key: secondKey,
+        label: actionLabels.get(actionId) || actionId,
+      })
+    })
+  })
+
+  return options
+}
+
 const VIDEO_CONTROL_ACTIONS = new Set([
   'video.jumpBackShort',
   'video.jumpForwardShort',
@@ -78,11 +105,11 @@ export default function useShortcutManager(mode, disabled = false) {
     window.dispatchEvent(new CustomEvent('shortcut-chord-change', { detail: null }))
   }
 
-  const startPendingChord = (firstShortcut) => {
+  const startPendingChord = (firstShortcut, options) => {
     clearPendingChord()
     pendingChordRef.current = firstShortcut
     window.dispatchEvent(new CustomEvent('shortcut-chord-change', {
-      detail: { shortcut: firstShortcut },
+      detail: { shortcut: firstShortcut, options },
     }))
     chordTimerRef.current = setTimeout(clearPendingChord, CHORD_TIMEOUT_MS)
   }
@@ -122,7 +149,7 @@ export default function useShortcutManager(mode, disabled = false) {
       if (hasChordPrefix(shortcuts, scopes, shortcut)) {
         event.preventDefault()
         event.stopPropagation()
-        startPendingChord(shortcut)
+        startPendingChord(shortcut, getChordOptions(shortcuts, scopes, shortcut, mode))
         return
       }
 
