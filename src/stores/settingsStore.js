@@ -20,6 +20,7 @@ export const DEFAULT_APP_SETTINGS = {
     extraSubtitleFolder: '',
     subtitleDisplayMode: 'native',
     rollingSubtitleFontSize: 25,
+    pickSubAutoSelectCurrent: false,
     subtitleCenterViewBlurPx: 18,
     subtitleCenterViewDim: 0.65,
     videoNotesFontSize: 11,
@@ -188,6 +189,7 @@ export function normalizeAppSettings(value) {
   const rollingSubtitleFontSize = Number.isFinite(rawRollingSubtitleFontSize)
     ? Math.max(10, Math.min(48, Math.round(rawRollingSubtitleFontSize)))
     : DEFAULT_APP_SETTINGS.general.rollingSubtitleFontSize
+  const pickSubAutoSelectCurrent = value?.general?.pickSubAutoSelectCurrent === true
   const rawSubtitleCenterViewBlurPx = Number(value?.general?.subtitleCenterViewBlurPx)
   const subtitleCenterViewBlurPx = Number.isFinite(rawSubtitleCenterViewBlurPx)
     ? Math.max(0, Math.min(40, Math.round(rawSubtitleCenterViewBlurPx)))
@@ -249,6 +251,7 @@ export function normalizeAppSettings(value) {
       extraSubtitleFolder,
       subtitleDisplayMode,
       rollingSubtitleFontSize,
+      pickSubAutoSelectCurrent,
       subtitleCenterViewBlurPx,
       subtitleCenterViewDim,
       videoNotesFontSize,

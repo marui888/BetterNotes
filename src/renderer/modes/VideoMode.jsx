@@ -333,6 +333,7 @@ export default function VideoMode() {
   const extraSubtitleFolder = settings.general.extraSubtitleFolder
   const subtitleDisplayMode = settings.general.subtitleDisplayMode || 'native'
   const rollingSubtitleFontSize = settings.general.rollingSubtitleFontSize
+  const pickSubAutoSelectCurrent = settings.general.pickSubAutoSelectCurrent === true
   const subtitleCenterViewBlurPx = settings.general.subtitleCenterViewBlurPx ?? 18
   const videoNotesFontSize = settings.general.videoNotesFontSize || 11
   const videoNotesPoolFontSize = settings.general.videoNotesPoolFontSize || 11
@@ -646,7 +647,7 @@ export default function VideoMode() {
     if (!dialog) return undefined
 
     const onKeyDown = (event) => {
-      if (dialog.kind === 'subtitlePick') {
+      if (dialog.kind === 'subtitlePick' || dialog.kind === 'subtitleEdit') {
         if (event.key === 'Escape') {
           event.preventDefault()
           event.stopPropagation()
@@ -655,7 +656,7 @@ export default function VideoMode() {
           return
         }
 
-        if (dialog.shortcutChordActive && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
+        if (dialog.kind === 'subtitlePick' && dialog.shortcutChordActive && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
           const key = event.key?.toUpperCase?.() || ''
           const chordAction = SUBTITLE_PICK_CHORD_ACTIONS.find((action) => action.key === key)
           if (chordAction) {
@@ -1265,7 +1266,12 @@ export default function VideoMode() {
 
   const loadVideoInfo = async (info, options = {}) => {
     if (!info?.ok) {
-      showAutoMessage('No video file to save.')
+      const errorMessage = info?.reason === 'matching-mp4-not-found'
+        ? 'Matching MP4 file not found.'
+        : info?.reason === 'unsupported-video-source'
+          ? 'Only MP4 or JSON files are supported.'
+          : 'File not found.'
+      showAutoMessage(errorMessage, 'Open video', 1800)
       return
     }
 
@@ -1844,7 +1850,7 @@ export default function VideoMode() {
     writeVideoClipboardText(`{{ startTime: ${start} ; fileName: ${fileName} }}`, 'Copy Start+File')
   }
   const openFromClipboard = async () => {
-    if (!window.videoApi?.readClipboardText || !window.videoApi?.validateMp4Path) {
+    if (!window.videoApi?.readClipboardText || !window.videoApi?.resolveVideoPath) {
       showAutoMessage('No video file to save.')
       return
     }
@@ -1857,9 +1863,14 @@ export default function VideoMode() {
       return
     }
 
-    const result = await window.videoApi.validateMp4Path(clipboardText)
+    const result = await window.videoApi.resolveVideoPath(clipboardText)
     if (!result?.ok) {
-      showAutoMessage('Action message.', 'Message', 1200)
+      const errorMessage = result?.reason === 'matching-mp4-not-found'
+        ? 'Matching MP4 file not found.'
+        : result?.reason === 'unsupported-video-source'
+          ? 'Only MP4 or JSON files are supported.'
+          : 'File not found.'
+      showAutoMessage(errorMessage, 'GetClip', 1800)
       return
     }
 
@@ -1875,7 +1886,7 @@ export default function VideoMode() {
     const range = normalizeRange(buildCaptureRange())
     if (!range) return
 
-    addNote(createQuickNote(range))
+    addNote(createQuickNote(range, ''))
     setNotesFilterOn(false)
     setCurStart(range.start)
     setCurEnd(range.end)
@@ -1915,13 +1926,13 @@ export default function VideoMode() {
     showAutoMessage('Action message.', 'Message', 900)
   }
 
-  const createQuickNote = (range) => ({
+  const createQuickNote = (range, content = 'None') => ({
     id: `${videoFile?.filePath || 'video'}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     sourceVideoPath: videoFile?.filePath || '',
     sourceVideoName: videoFile?.fileName || '',
     start: range.start,
     end: range.end,
-    content: 'None',
+    content,
     raw: {},
   })
 
@@ -2396,7 +2407,7 @@ export default function VideoMode() {
   }
 
 
-  const getContextMenuItemCount = (type) => (type === 'externalNote' ? 4 : type === 'video' ? 11 : 12)
+  const getContextMenuItemCount = (type) => (type === 'subtitleCue' ? 1 : type === 'externalNote' ? 4 : type === 'video' ? 11 : 12)
 
   const openContextMenu = async (event, type, note = null) => {
     event.preventDefault()
@@ -2432,6 +2443,20 @@ export default function VideoMode() {
     })
   }
 
+  const openSubtitleCueContextMenu = (event, cue, options = {}) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const position = getContextMenuPosition(event, getContextMenuItemCount('subtitleCue'))
+    setContextMenu({
+      type: 'subtitleCue',
+      cue,
+      pickSubActive: options.pickSubActive === true,
+      x: position.x,
+      y: position.y,
+    })
+  }
+
   const moveSelectedNote = (direction) => {
     if (!selectedNoteId) {
       showAutoMessage('Action message.', 'Message', 900)
@@ -2459,6 +2484,14 @@ export default function VideoMode() {
   }
 
   const getContextMenuItems = () => {
+    if (contextMenu?.type === 'subtitleCue') {
+      return [{
+        label: 'Edit Sub',
+        disabled: !contextMenu.pickSubActive,
+        action: () => editSubtitleCue(contextMenu.cue),
+      }]
+    }
+
     if (contextMenu?.type === 'externalNote') {
       const externalNote = contextMenu.externalNote
       return [
@@ -2842,6 +2875,79 @@ export default function VideoMode() {
       }, SUBTITLE_PICK_CHORD_TIMEOUT_MS)
     }
   })
+
+  const showSubtitleEditDialog = (initialText) => new Promise((resolve) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = null
+    }
+
+    dialogResolveRef.current = resolve
+    setDialog({
+      kind: 'subtitleEdit',
+      title: 'Edit Subtitle',
+      subtitleText: initialText,
+      cancelValue: 'cancel',
+      actions: [
+        { label: 'Save', value: 'save', primary: true },
+        { label: 'Cancel', value: 'cancel' },
+      ],
+    })
+  })
+
+  const editSubtitleCue = async (cue) => {
+    const subtitlePath = String(selectedSubtitle?.filePath || '')
+    if (!subtitlePath.toLowerCase().endsWith('.vtt')) {
+      showAutoMessage('Only VTT subtitles can be edited.', 'Edit Subtitle', 1800)
+      return
+    }
+    if (!window.videoApi?.updateVttCueText) {
+      showAutoMessage('Subtitle editing is unavailable.', 'Edit Subtitle', 1800)
+      return
+    }
+
+    const dialogResult = await showSubtitleEditDialog(cue?.text || '')
+    if (dialogResult?.decision !== 'save') return
+
+    const nextText = String(dialogResult.text || '').replace(/[\r\n]+/g, ' ').trim()
+    if (!nextText) {
+      showAutoMessage('Subtitle text cannot be empty.', 'Edit Subtitle', 1800)
+      return
+    }
+
+    const result = await window.videoApi.updateVttCueText({
+      filePath: subtitlePath,
+      sourceRefs: cue?.sourceRefs || [],
+      text: nextText,
+    })
+    if (!result?.ok) {
+      const errorMessage = result?.reason === 'vtt-only'
+        ? 'Only VTT subtitles can be edited.'
+        : result?.reason === 'subtitle-file-changed'
+          ? 'Subtitle file changed. Reload it before editing.'
+          : result?.reason === 'invalid-subtitle-text'
+            ? 'Subtitle text is invalid.'
+            : 'Subtitle update failed.'
+      showAutoMessage(errorMessage, 'Edit Subtitle', 2200)
+      return
+    }
+
+    const updatedLineIndexes = new Set((result.sourceRefs || []).map((sourceRef) => sourceRef.lineIndex))
+    setRollingSubtitleCues((current) => current.map((currentCue) => (
+      currentCue.id === cue.id
+        ? {
+          ...currentCue,
+          text: result.text,
+          sourceRefs: (currentCue.sourceRefs || []).map((sourceRef) => (
+            updatedLineIndexes.has(sourceRef.lineIndex)
+              ? { ...sourceRef, sourceText: result.text }
+              : sourceRef
+          )),
+        }
+        : currentCue
+    )))
+    showAutoMessage('Subtitle updated.', 'Edit Subtitle', 1000)
+  }
 
   const confirmPickedSubtitleNote = async (cues = [], options = {}) => {
     if (!Array.isArray(cues) || cues.length === 0) return 'done'
@@ -3310,6 +3416,7 @@ export default function VideoMode() {
               subtitleHidden={fullscreenViewState.hideSub}
               videoViewHidden={fullscreenViewState.hideView}
               enableSubtitleNoteAdding
+              pickSubAutoSelectCurrent={pickSubAutoSelectCurrent}
               defaultFontSize={rollingSubtitleFontSize}
               fontSizeKey={rollingSubtitleFontSizeKey}
               getCurrentTime={() => playerRef.current?.currentTime?.()}
@@ -3321,6 +3428,7 @@ export default function VideoMode() {
               onToggleVideoViewHidden={() => runAction('video.toggleVideoViewHidden')}
               onSelectedSubtitlesChange={previewSelectedSubtitleNote}
               onCueClick={jumpToSubtitleCue}
+              onCueContextMenu={openSubtitleCueContextMenu}
             />
           ) : null}
           {titleOn && subtitleDisplayMode === 'rolling' && rollingSubtitleError ? (
@@ -3783,11 +3891,11 @@ export default function VideoMode() {
 
       {dialog && !dialog.autoClose ? (
         <div className={dialog.nonModal ? 'inline-dialog-layer non-modal' : 'inline-dialog-mask'}>
-          <div className={dialog.kind === 'subtitlePick' ? 'inline-dialog subtitle-pick-dialog' : 'inline-dialog'}>
+          <div className={['subtitlePick', 'subtitleEdit'].includes(dialog.kind) ? 'inline-dialog subtitle-pick-dialog' : 'inline-dialog'}>
             <div className="inline-dialog-title">{dialog.title}</div>
-            {dialog.kind === 'subtitlePick' ? (
+            {['subtitlePick', 'subtitleEdit'].includes(dialog.kind) ? (
               <label className="subtitle-pick-editor">
-                <span>Selected subtitles</span>
+                <span>{dialog.kind === 'subtitleEdit' ? 'Subtitle text' : 'Selected subtitles'}</span>
                 <textarea
                   autoFocus
                   onChange={(event) => setDialog((current) => ({ ...current, subtitleText: event.target.value }))}
@@ -3820,7 +3928,7 @@ export default function VideoMode() {
                     action.danger ? 'danger' : '',
                   ].filter(Boolean).join(' ')}
                   key={action.value}
-                  onClick={() => closeDialog(dialog.kind === 'subtitlePick' ? { decision: action.value, text: dialog.subtitleText || '' } : action.value)}
+                  onClick={() => closeDialog(['subtitlePick', 'subtitleEdit'].includes(dialog.kind) ? { decision: action.value, text: dialog.subtitleText || '' } : action.value)}
                   autoFocus={index === 0}
                   type="button"
                 >
@@ -3904,10 +4012,12 @@ export default function VideoMode() {
           {getContextMenuItems().map((item, index) => (
             <button
               className={item.separator ? 'context-menu-item separator' : 'context-menu-item'}
+              disabled={item.disabled}
               key={`${item.label}-${index}`}
               onMouseDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
+                if (item.disabled) return
                 runContextMenuAction(item.action)
               }}
               type="button"

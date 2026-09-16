@@ -58,6 +58,7 @@ export default function RollingSubtitlePanel({
   subtitleCenterViewDim = 0.65,
   enableSubtitleCenterLayout = false,
   enableSubtitleNoteAdding = false,
+  pickSubAutoSelectCurrent = false,
   hvLayout = 0,
   subtitleHidden = false,
   videoViewHidden = false,
@@ -72,6 +73,7 @@ export default function RollingSubtitlePanel({
   onToggleVideoViewHidden,
   onSelectedSubtitlesChange,
   onCueClick,
+  onCueContextMenu,
 }) {
   const listRef = useRef(null)
   const trackRef = useRef(null)
@@ -325,6 +327,11 @@ export default function RollingSubtitlePanel({
       const next = new Set([...current].filter((id) => validIds.has(id)))
       return next.size === current.size ? current : next
     })
+  }, [cues])
+
+  useEffect(() => {
+    if (selectedCueIds.size === 0) return
+    onSelectedSubtitlesChange?.(selectedCues)
   }, [cues])
 
   useEffect(() => {
@@ -736,13 +743,15 @@ export default function RollingSubtitlePanel({
   const pickSelectedSubtitles = async ({ fromShortcut = false } = {}) => {
     if (!subtitleNoteAdding) {
       if (addSubsDisabled) return
-      const currentIndex = activeIndexRef.current >= 0 ? activeIndexRef.current : activeIndex
-      const currentCue = currentIndex >= 0 ? cues[currentIndex] : null
-      if (currentCue) {
-        const next = new Set(selectedCueIds)
-        next.add(currentCue.id)
-        setSelectedCueIds(next)
-        onSelectedSubtitlesChange?.(getSelectedCuesByIds(next))
+      if (pickSubAutoSelectCurrent) {
+        const currentIndex = activeIndexRef.current >= 0 ? activeIndexRef.current : activeIndex
+        const currentCue = currentIndex >= 0 ? cues[currentIndex] : null
+        if (currentCue) {
+          const next = new Set(selectedCueIds)
+          next.add(currentCue.id)
+          setSelectedCueIds(next)
+          onSelectedSubtitlesChange?.(getSelectedCuesByIds(next))
+        }
       }
       setSubtitleNoteAdding(true)
       return
@@ -940,6 +949,11 @@ export default function RollingSubtitlePanel({
                 data-highlighted={highlighted ? 'true' : 'false'}
                 key={cue.id}
                 onClick={() => onCueClick?.(cue)}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onCueContextMenu?.(event, cue, { pickSubActive: subtitleNoteAddingActive })
+                }}
                 onKeyDown={(event) => {
                   if (event.key !== 'Enter' && event.key !== ' ') return
                   event.preventDefault()

@@ -3,9 +3,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('videoApi', {
   openVideoFile: (options) => ipcRenderer.invoke('video:openFile', options),
   getVideoFileInfo: (filePath, options) => ipcRenderer.invoke('video:getFileInfo', filePath, options),
-  validateMp4Path: (filePath) => ipcRenderer.invoke('video:validateMp4Path', filePath),
+  resolveVideoPath: (filePath) => ipcRenderer.invoke('video:resolveVideoPath', filePath),
   readNotes: (filePath) => ipcRenderer.invoke('video:readNotes', filePath),
   readSubtitleText: (filePath) => ipcRenderer.invoke('video:readSubtitleText', filePath),
+  updateVttCueText: (payload) => ipcRenderer.invoke('video:updateVttCueText', payload),
   openSubtitleExternal: (filePath) => ipcRenderer.invoke('video:openSubtitleExternal', filePath),
   selectLegacyNoteFiles: () => ipcRenderer.invoke('video:selectLegacyNoteFiles'),
   selectLegacyNoteFolder: () => ipcRenderer.invoke('video:selectLegacyNoteFolder'),

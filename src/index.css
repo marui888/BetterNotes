@@ -2952,9 +2952,14 @@ button:hover {
   border-top: 1px solid rgba(255, 255, 255, 0.14);
 }
 
-.context-menu-item:hover {
+.context-menu-item:hover:not(:disabled) {
   background: rgba(85, 85, 85, 0.72);
   border-color: transparent;
+}
+
+.context-menu-item:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .image-mode {

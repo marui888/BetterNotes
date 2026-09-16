@@ -63,6 +63,7 @@ const DEFAULT_APP_SETTINGS = {
     extraSubtitleFolder: '',
     subtitleDisplayMode: 'native',
     rollingSubtitleFontSize: 25,
+    pickSubAutoSelectCurrent: false,
     subtitleCenterViewBlurPx: 18,
     subtitleCenterViewDim: 0.65,
     videoNotesFontSize: 11,
@@ -253,6 +254,7 @@ function normalizeAppSettings(value) {
   const rollingSubtitleFontSize = Number.isFinite(rawRollingSubtitleFontSize)
     ? Math.max(10, Math.min(48, Math.round(rawRollingSubtitleFontSize)))
     : DEFAULT_APP_SETTINGS.general.rollingSubtitleFontSize
+  const pickSubAutoSelectCurrent = value?.general?.pickSubAutoSelectCurrent === true
   const rawSubtitleCenterViewBlurPx = Number(value?.general?.subtitleCenterViewBlurPx)
   const subtitleCenterViewBlurPx = Number.isFinite(rawSubtitleCenterViewBlurPx)
     ? Math.max(0, Math.min(40, Math.round(rawSubtitleCenterViewBlurPx)))
@@ -314,6 +316,7 @@ function normalizeAppSettings(value) {
       extraSubtitleFolder,
       subtitleDisplayMode,
       rollingSubtitleFontSize,
+      pickSubAutoSelectCurrent,
       subtitleCenterViewBlurPx,
       subtitleCenterViewDim,
       videoNotesFontSize,
@@ -813,6 +816,10 @@ function isMp4File(filePath) {
   return typeof filePath === 'string' && filePath.toLowerCase().endsWith('.mp4')
 }
 
+function isJsonFile(filePath) {
+  return typeof filePath === 'string' && filePath.toLowerCase().endsWith('.json')
+}
+
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'])
 
 function isImageFile(filePath) {
@@ -880,6 +887,94 @@ async function fileExists(filePath) {
   } catch {
     return false
   }
+}
+
+async function updateVttCueText(payload = {}) {
+  const subtitlePath = normalizeFilePath(payload.filePath)
+  if (path.extname(subtitlePath).toLowerCase() !== '.vtt') {
+    return { ok: false, reason: 'vtt-only', filePath: subtitlePath }
+  }
+  if (!(await fileExists(subtitlePath))) {
+    return { ok: false, reason: 'subtitle-file-not-found', filePath: subtitlePath }
+  }
+
+  const text = String(payload.text || '').replace(/[\r\n]+/g, ' ').trim()
+  if (!text || text.includes('-->')) {
+    return { ok: false, reason: 'invalid-subtitle-text', filePath: subtitlePath }
+  }
+
+  const sourceRefs = Array.isArray(payload.sourceRefs) ? payload.sourceRefs : []
+  const uniqueRefs = []
+  const seenLineIndexes = new Set()
+  sourceRefs.forEach((sourceRef) => {
+    const lineIndex = Number(sourceRef?.lineIndex)
+    if (!Number.isInteger(lineIndex) || lineIndex < 0 || seenLineIndexes.has(lineIndex)) return
+    seenLineIndexes.add(lineIndex)
+    uniqueRefs.push({
+      lineIndex,
+      sourceText: String(sourceRef?.sourceText ?? ''),
+    })
+  })
+  if (uniqueRefs.length === 0) {
+    return { ok: false, reason: 'subtitle-source-not-found', filePath: subtitlePath }
+  }
+
+  try {
+    const content = await fs.readFile(subtitlePath, 'utf8')
+    const lineEnding = content.includes('\r\n') ? '\r\n' : content.includes('\r') ? '\r' : '\n'
+    const lines = content.split(/\r\n|\n|\r/)
+    const hasConflict = uniqueRefs.some((sourceRef) => (
+      sourceRef.lineIndex >= lines.length
+      || lines[sourceRef.lineIndex] !== sourceRef.sourceText
+    ))
+    if (hasConflict) {
+      return { ok: false, reason: 'subtitle-file-changed', filePath: subtitlePath }
+    }
+
+    uniqueRefs.forEach((sourceRef) => {
+      lines[sourceRef.lineIndex] = text
+    })
+    await fs.writeFile(subtitlePath, lines.join(lineEnding), 'utf8')
+    return {
+      ok: true,
+      filePath: subtitlePath,
+      text,
+      sourceRefs: uniqueRefs.map((sourceRef) => ({ ...sourceRef, sourceText: text })),
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error.message || String(error),
+      filePath: subtitlePath,
+    }
+  }
+}
+
+async function resolveVideoSourcePath(filePath) {
+  const sourcePath = normalizeFilePath(filePath)
+  if (!sourcePath) {
+    return { ok: false, reason: 'file-not-found', sourcePath }
+  }
+
+  if (isMp4File(sourcePath)) {
+    return (await fileExists(sourcePath))
+      ? { ok: true, filePath: sourcePath, sourcePath }
+      : { ok: false, reason: 'file-not-found', sourcePath }
+  }
+
+  if (!isJsonFile(sourcePath)) {
+    return { ok: false, reason: 'unsupported-video-source', sourcePath }
+  }
+
+  if (!(await fileExists(sourcePath))) {
+    return { ok: false, reason: 'file-not-found', sourcePath }
+  }
+
+  const parsedPath = path.parse(sourcePath)
+  const expectedMp4Path = path.join(parsedPath.dir, `${parsedPath.name}.mp4`)
+  return (await fileExists(expectedMp4Path))
+    ? { ok: true, filePath: expectedMp4Path, sourcePath }
+    : { ok: false, reason: 'matching-mp4-not-found', sourcePath, expectedMp4Path }
 }
 
 async function listMp4FilesInFolder(folderPath) {
@@ -1122,11 +1217,10 @@ async function readJsonFile(filePath, fallbackValue) {
 }
 
 async function buildVideoFileInfo(filePath, options = {}) {
-  filePath = normalizeFilePath(filePath)
+  const resolvedSource = await resolveVideoSourcePath(filePath)
+  if (!resolvedSource.ok) return resolvedSource
 
-  if (!isMp4File(filePath) || !(await fileExists(filePath))) {
-    return { ok: false, reason: 'invalid-mp4-file' }
-  }
+  filePath = resolvedSource.filePath
 
   const folderPath = path.dirname(filePath)
   const fileName = path.basename(filePath)
@@ -1616,7 +1710,7 @@ function registerIpcHandlers() {
   ipcMain.handle('video:openFile', async (_event, options = {}) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
-      filters: [{ name: 'Video Files', extensions: ['mp4'] }],
+      filters: [{ name: 'Video and Note Files', extensions: ['mp4', 'json'] }],
     })
 
     if (result.canceled || result.filePaths.length === 0) {
@@ -1628,10 +1722,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('video:getFileInfo', async (_event, filePath, options = {}) => buildVideoFileInfo(filePath, options))
 
-  ipcMain.handle('video:validateMp4Path', async (_event, filePath) => ({
-    ok: isMp4File(normalizeFilePath(filePath)) && (await fileExists(normalizeFilePath(filePath))),
-    filePath: normalizeFilePath(filePath),
-  }))
+  ipcMain.handle('video:resolveVideoPath', async (_event, filePath) => resolveVideoSourcePath(filePath))
 
   ipcMain.handle('video:readClipboardText', async () => clipboard.readText() || '')
   ipcMain.handle('video:writeClipboardText', async (_event, text) => {
@@ -1700,6 +1791,8 @@ function registerIpcHandlers() {
       }
     }
   })
+
+  ipcMain.handle('video:updateVttCueText', async (_event, payload) => updateVttCueText(payload))
 
   ipcMain.handle('video:openSubtitleExternal', async (_event, filePath) => {
     const subtitlePath = normalizeFilePath(filePath)

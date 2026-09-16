@@ -29,8 +29,15 @@ function isSubtitleIndexLine(lines, index) {
 
 function normalizeCueText(lines = []) {
   return lines
-    .map((line) => normalizeSubtitleLine(line))
-    .filter(Boolean)
+    .map((line) => {
+      const sourceText = typeof line === 'object' ? String(line.text || '') : String(line || '')
+      return {
+        text: normalizeSubtitleLine(sourceText),
+        sourceLineIndex: typeof line === 'object' ? Number(line.lineIndex) : -1,
+        sourceText,
+      }
+    })
+    .filter((line) => line.text)
 }
 
 function mergeAdjacentDuplicateCues(cues = []) {
@@ -46,6 +53,7 @@ function mergeAdjacentDuplicateCues(cues = []) {
       previous.start = Math.min(previous.start, cue.start)
       previous.end = Math.max(previous.end, cue.end)
       previous.groupIds = [...new Set([...(previous.groupIds || [previous.groupId]), ...(cue.groupIds || [cue.groupId])].filter(Boolean))]
+      previous.sourceRefs = [...(previous.sourceRefs || []), ...(cue.sourceRefs || [])]
       previous.id = `${previous.start.toFixed(3)}-${previous.end.toFixed(3)}-${previous.text}`
       return
     }
@@ -106,7 +114,7 @@ export function parseSubtitleCues(rawText = '') {
       && !isSubtitleTimestampLine(lines[index])
       && !isSubtitleIndexLine(lines, index)
     ) {
-      textLines.push(lines[index])
+      textLines.push({ text: lines[index], lineIndex: index })
       index += 1
     }
 
@@ -116,16 +124,22 @@ export function parseSubtitleCues(rawText = '') {
       const groupSize = cueLines.length
       groupIndex += 1
 
-      cueLines.forEach((text, groupLineIndex) => {
+      cueLines.forEach((cueLine, groupLineIndex) => {
         cues.push({
-          id: `${groupId}-${groupLineIndex}-${text}`,
+          id: `${groupId}-${groupLineIndex}-${cueLine.text}`,
           groupId,
           groupIds: [groupId],
           groupLineIndex,
           groupSize,
           start,
           end,
-          text,
+          text: cueLine.text,
+          sourceRefs: [{
+            groupId,
+            groupLineIndex,
+            lineIndex: cueLine.sourceLineIndex,
+            sourceText: cueLine.sourceText,
+          }],
         })
       })
     }

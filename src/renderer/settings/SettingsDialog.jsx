@@ -632,6 +632,25 @@ export default function SettingsDialog({ onClose }) {
                         }))
                       }}
                     />
+                    <label htmlFor="settings-pick-sub-auto-select-current">Pick Sub Auto-select Current</label>
+                    <label className="settings-checkbox-row" htmlFor="settings-pick-sub-auto-select-current">
+                      <input
+                        checked={draft.general.pickSubAutoSelectCurrent === true}
+                        id="settings-pick-sub-auto-select-current"
+                        type="checkbox"
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              pickSubAutoSelectCurrent: event.target.checked,
+                            },
+                          }))
+                        }}
+                      />
+                      <span>Enabled</span>
+                    </label>
                     <label htmlFor="settings-subtitle-center-view-blur">Subtitle Center View Blur</label>
                     <input
                       id="settings-subtitle-center-view-blur"
