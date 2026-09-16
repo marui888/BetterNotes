@@ -22,18 +22,60 @@ const MAX_PLAYBACK_RATE = 2
 const VOLUME_STEP = 0.05
 const SUBTITLE_CENTER_VIEW_HIDDEN_DIM = 1
 const MAX_FILTER_HISTORY_ITEMS = 50
-const SUBTITLE_PICK_CHORD_TIMEOUT_MS = 2000
 const SUBTITLE_PICK_CHORD_ACTIONS = [
   { actionId: 'subtitlePick.copySave', key: 'Z', label: 'Copy&Save&Exit', decision: 'copySave' },
   { actionId: 'subtitlePick.copy', key: 'X', label: 'Copy&Exit', decision: 'copy' },
   { actionId: 'subtitlePick.save', key: 'C', label: 'Save&Exit', decision: 'save' },
   { actionId: 'subtitlePick.cancel', key: 'V', label: 'Cancel', decision: 'cancel' },
 ]
+const SUBTITLE_READING_CHORD_ACTIONS = SUBTITLE_PICK_CHORD_ACTIONS.map((action) => ({
+  ...action,
+  label: action.label.replace('&Exit', ''),
+}))
+const SUBTITLE_SPEAK_PADDING_SECONDS = 0
+const MAX_READING_POSITIONS = 30
+const ROLLING_PANEL_DOCK_POSITIONS = ['left', 'center', 'right']
 const MP4_SORT_OPTIONS = [
   { value: 'name', label: 'Name' },
   { value: 'createdTime', label: 'MP4 created' },
   { value: 'jsonModifiedTime', label: 'JSON modified' },
 ]
+const VIDEO_OPEN_SOURCES = ['default', 'pool']
+
+const createLoadedVideoState = () => ({
+  activeSource: 'default',
+  sources: {
+    default: { filePath: '', playbackTime: 0 },
+    pool: { filePath: '', playbackTime: 0 },
+  },
+})
+
+function normalizeLoadedVideoSlot(value) {
+  const playbackTime = Number(value?.playbackTime)
+  return {
+    filePath: typeof value?.filePath === 'string' ? value.filePath : '',
+    playbackTime: Number.isFinite(playbackTime) && playbackTime >= 0 ? playbackTime : 0,
+  }
+}
+
+function normalizeLoadedVideoState(value, legacySnapshot = null) {
+  const normalized = createLoadedVideoState()
+  const activeSource = VIDEO_OPEN_SOURCES.includes(value?.activeSource)
+    ? value.activeSource
+    : legacySnapshot?.videoOpenSource === 'pool' ? 'pool' : 'default'
+  normalized.activeSource = activeSource
+  normalized.sources.default = normalizeLoadedVideoSlot(value?.sources?.default)
+  normalized.sources.pool = normalizeLoadedVideoSlot(value?.sources?.pool)
+
+  if (!normalized.sources[activeSource].filePath && legacySnapshot?.currentFilePath) {
+    normalized.sources[activeSource] = normalizeLoadedVideoSlot({
+      filePath: legacySnapshot.currentFilePath,
+      playbackTime: legacySnapshot.playbackTime,
+    })
+  }
+
+  return normalized
+}
 const FULLSCREEN_LAYOUT_KEYS = {
   0: 'f0',
   3: 'f3',
@@ -51,6 +93,69 @@ const createFullscreenViewStates = () => ({
   f3: createFullscreenViewState(),
   f4: createFullscreenViewState(),
 })
+
+function normalizeFullscreenViewState(value) {
+  return {
+    hideSub: value?.hideSub === true,
+    hideView: value?.hideView === true,
+    hvLayout: Number(value?.hvLayout) === 1 ? 1 : 0,
+  }
+}
+
+function normalizeToggleViewSnapshot(value, legacyActiveState = 0) {
+  return {
+    activeState: Number(value?.activeState ?? legacyActiveState) === 4 ? 4 : 0,
+    states: {
+      f0: normalizeFullscreenViewState(value?.states?.f0),
+      f4: normalizeFullscreenViewState(value?.states?.f4),
+    },
+  }
+}
+
+function normalizeRollingPanelViewState(value, fallbackFontSize = null) {
+  const numberOrNull = (candidate) => (
+    candidate !== null && candidate !== undefined && candidate !== '' && Number.isFinite(Number(candidate))
+      ? Number(candidate)
+      : null
+  )
+  const dockPosition = ROLLING_PANEL_DOCK_POSITIONS.includes(value?.dockPosition)
+    ? value.dockPosition
+    : 'left'
+  const fontSize = Number(value?.fontSize ?? fallbackFontSize)
+  return {
+    x: numberOrNull(value?.x),
+    y: numberOrNull(value?.y),
+    width: numberOrNull(value?.width),
+    height: numberOrNull(value?.height),
+    fontSize: (value?.fontSize ?? fallbackFontSize) !== null
+      && (value?.fontSize ?? fallbackFontSize) !== undefined
+      && (value?.fontSize ?? fallbackFontSize) !== ''
+      && Number.isFinite(fontSize)
+      ? Math.max(10, Math.min(92, fontSize))
+      : null,
+    dockPosition,
+  }
+}
+
+function normalizeRollingPanelViewSnapshot(value, fallbackFontSize = null) {
+  return {
+    states: {
+      f0: normalizeRollingPanelViewState(value?.states?.f0, fallbackFontSize),
+      f4: normalizeRollingPanelViewState(value?.states?.f4, fallbackFontSize),
+    },
+  }
+}
+
+function normalizePlayingView(value, legacyPlaybackRate = 1) {
+  const playbackRate = Number(value?.playbackRate ?? legacyPlaybackRate)
+  const volume = Number(value?.volume)
+  return {
+    playbackRate: Number.isFinite(playbackRate)
+      ? Math.max(MIN_PLAYBACK_RATE, Math.min(MAX_PLAYBACK_RATE, playbackRate))
+      : 1,
+    volume: Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 1,
+  }
+}
 
 function normalizeFilterHistory(value) {
   const seen = new Set()
@@ -202,6 +307,25 @@ function isSameFilePath(firstPath, secondPath) {
   return Boolean(first && second && first === second)
 }
 
+function normalizeReadingPositions(value) {
+  const seen = new Set()
+  return (Array.isArray(value) ? value : [])
+    .map((entry) => ({
+      videoPath: String(entry?.videoPath || ''),
+      subtitlePath: String(entry?.subtitlePath || ''),
+      cueIndex: Number.isInteger(Number(entry?.cueIndex)) ? Number(entry.cueIndex) : -1,
+      cueStart: Number(entry?.cueStart),
+      updatedAt: String(entry?.updatedAt || ''),
+    }))
+    .filter((entry) => {
+      const key = entry.videoPath.replaceAll('/', '\\').toLowerCase()
+      if (!key || !Number.isFinite(entry.cueStart) || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .slice(0, MAX_READING_POSITIONS)
+}
+
 function removeFileExtension(fileName) {
   const dotIndex = String(fileName || '').lastIndexOf('.')
   return dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName
@@ -279,6 +403,15 @@ export default function VideoMode() {
   const dialogResolveRef = useRef(null)
   const toastTimerRef = useRef(null)
   const subtitlePickChordTimerRef = useRef(null)
+  const subtitleInteractionModeRef = useRef('follow')
+  const speakSubtitlePreviewRef = useRef(false)
+  const stopSpeakSubtitleRef = useRef(null)
+  const readingPositionsRef = useRef([])
+  const readingSessionRef = useRef(null)
+  const readingResumeHandledRef = useRef(false)
+  const playingViewRef = useRef(normalizePlayingView(null))
+  const videoOpenSourceRef = useRef('default')
+  const loadedVideoStateRef = useRef(createLoadedVideoState())
   const [leftTab, setLeftTab] = useState('notes')
   const [dialog, setDialog] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
@@ -305,6 +438,7 @@ export default function VideoMode() {
   const [videoStageRatio, setVideoStageRatio] = useState(0.74)
   const [fullscreenCycleState, setFullscreenCycleState] = useState(0)
   const [fullscreenViewStates, setFullscreenViewStates] = useState(createFullscreenViewStates)
+  const [rollingPanelView, setRollingPanelView] = useState(() => normalizeRollingPanelViewSnapshot(null))
   const [subtitleCenterSideRatio, setSubtitleCenterSideRatio] = useState(1 / 6)
   const [subtitleCenterInfoHeight, setSubtitleCenterInfoHeight] = useState(180)
   const [rollingSubtitleCenterLayoutRequest, setRollingSubtitleCenterLayoutRequest] = useState(0)
@@ -327,6 +461,9 @@ export default function VideoMode() {
   const [videoControlMode, setVideoControlMode] = useState(false)
   const [volume, setVolume] = useState(1)
   const [subtitleNotePreviewContent, setSubtitleNotePreviewContent] = useState(null)
+  const [subtitleInteractionMode, setSubtitleInteractionMode] = useState('follow')
+  const [subtitleReadingStatus, setSubtitleReadingStatus] = useState(null)
+  const [, setReadingPositions] = useState([])
 
   const settings = useSettingsStore((state) => state.settings)
   const saveSettings = useSettingsStore((state) => state.saveSettings)
@@ -334,6 +471,7 @@ export default function VideoMode() {
   const subtitleDisplayMode = settings.general.subtitleDisplayMode || 'native'
   const rollingSubtitleFontSize = settings.general.rollingSubtitleFontSize
   const pickSubAutoSelectCurrent = settings.general.pickSubAutoSelectCurrent === true
+  const segmentedShortcutWaitMs = settings.general.segmentedShortcutWaitSec * 1000
   const subtitleCenterViewBlurPx = settings.general.subtitleCenterViewBlurPx ?? 18
   const videoNotesFontSize = settings.general.videoNotesFontSize || 11
   const videoNotesPoolFontSize = settings.general.videoNotesPoolFontSize || 11
@@ -403,12 +541,167 @@ export default function VideoMode() {
   )
   const fullscreenLayoutKey = FULLSCREEN_LAYOUT_KEYS[fullscreenCycleState] || 'f0'
   const fullscreenViewState = fullscreenViewStates[fullscreenLayoutKey] || createFullscreenViewState()
+  const rollingPanelViewKey = fullscreenCycleState === 4 ? 'f4' : 'f0'
+  const currentRollingPanelView = rollingPanelView.states[rollingPanelViewKey]
   const videoViewDim = fullscreenViewState.hideView ? SUBTITLE_CENTER_VIEW_HIDDEN_DIM : 0
   const canPickRollingSubtitle = titleOn
     && subtitleDisplayMode === 'rolling'
     && Boolean(selectedSubtitle)
     && rollingSubtitleCues.length > 0
     && !fullscreenViewState.hideSub
+  const subtitleCapabilities = {
+    canManualPlay: subtitleInteractionMode !== 'reading',
+    canReadByWheel: subtitleInteractionMode === 'reading',
+    canEditSubtitle: subtitleInteractionMode === 'pick' || subtitleInteractionMode === 'reading',
+    canSpeakSubtitle: canPickRollingSubtitle,
+    canToggleReading: subtitleInteractionMode === 'pick' || subtitleInteractionMode === 'reading',
+  }
+
+  const mergeReadingPosition = (position, positions = readingPositionsRef.current) => normalizeReadingPositions([
+    position,
+    ...positions.filter((entry) => !isSameFilePath(entry.videoPath, position.videoPath)),
+  ])
+
+  const buildCurrentReadingPosition = () => {
+    const session = readingSessionRef.current
+    if (!session?.videoPath) return null
+    const cueStart = Number(session.cueStart)
+    if (!Number.isFinite(cueStart)) return null
+    return {
+      videoPath: session.videoPath,
+      subtitlePath: session.subtitlePath || '',
+      cueIndex: Number.isInteger(Number(session.cueIndex)) ? Number(session.cueIndex) : -1,
+      cueStart,
+      updatedAt: new Date().toISOString(),
+    }
+  }
+
+  const getReadingPositionsSnapshot = () => {
+    const currentPosition = buildCurrentReadingPosition()
+    return currentPosition ? mergeReadingPosition(currentPosition) : readingPositionsRef.current
+  }
+
+  const requestSessionStateSave = () => {
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('app-session-save-request'))
+    }, 0)
+  }
+
+  const saveCurrentReadingPosition = ({ persist = true } = {}) => {
+    const currentPosition = buildCurrentReadingPosition()
+    if (!currentPosition) return false
+    const nextPositions = mergeReadingPosition(currentPosition)
+    readingPositionsRef.current = nextPositions
+    setReadingPositions(nextPositions)
+    if (persist) requestSessionStateSave()
+    return true
+  }
+
+  const findCueIndexAtTime = (time) => {
+    if (rollingSubtitleCues.length === 0 || !Number.isFinite(Number(time))) return -1
+    const targetTime = Number(time)
+    const containingIndex = rollingSubtitleCues.findIndex((cue) => (
+      targetTime >= Number(cue.start) && targetTime <= Number(cue.end)
+    ))
+    if (containingIndex >= 0) return containingIndex
+    return rollingSubtitleCues.reduce((nearestIndex, cue, index) => (
+      Math.abs(Number(cue.start) - targetTime)
+        < Math.abs(Number(rollingSubtitleCues[nearestIndex]?.start) - targetTime)
+        ? index
+        : nearestIndex
+    ), 0)
+  }
+
+  useEffect(() => {
+    subtitleInteractionModeRef.current = subtitleInteractionMode
+  }, [subtitleInteractionMode])
+
+  useEffect(() => {
+    if (subtitleInteractionModeRef.current === 'reading') saveCurrentReadingPosition()
+    readingSessionRef.current = null
+    subtitleInteractionModeRef.current = 'follow'
+    setSubtitleInteractionMode('follow')
+    setSubtitleReadingStatus(null)
+    setSubtitleNotePreviewContent(null)
+    stopSpeakSubtitleRef.current?.()
+  }, [selectedSubtitle?.filePath, videoFile?.filePath])
+
+  const changeSubtitleInteractionMode = (nextMode) => {
+    const currentMode = subtitleInteractionModeRef.current
+    const allowed = (currentMode === 'follow' && nextMode === 'pick')
+      || (currentMode === 'pick' && ['follow', 'reading'].includes(nextMode))
+      || (currentMode === 'reading' && nextMode === 'pick')
+      || currentMode === nextMode
+    if (!allowed) return false
+
+    if (currentMode === 'reading' && nextMode !== 'reading') {
+      stopSpeakSubtitleRef.current?.()
+      saveCurrentReadingPosition()
+      readingSessionRef.current = null
+    }
+    if (nextMode === 'reading') playerRef.current?.pause?.()
+    if (nextMode !== 'reading') setSubtitleReadingStatus(null)
+    subtitleInteractionModeRef.current = nextMode
+    setSubtitleInteractionMode(nextMode)
+    return true
+  }
+
+  const toggleSubtitleReading = async () => {
+    if (subtitleInteractionModeRef.current === 'reading') {
+      changeSubtitleInteractionMode('pick')
+      return
+    }
+    if (subtitleInteractionModeRef.current !== 'pick' || !videoFile?.filePath) return
+
+    const shouldOfferResume = !readingResumeHandledRef.current
+    readingResumeHandledRef.current = true
+    const savedPosition = shouldOfferResume
+      ? readingPositionsRef.current.find((entry) => (
+        isSameFilePath(entry.videoPath, videoFile.filePath)
+      ))
+      : null
+    let targetTime = getPlayerTime()
+    let targetCueIndex = findCueIndexAtTime(targetTime)
+
+    if (savedPosition) {
+      const decision = await showActionDialog({
+        title: 'Resume subtitle reading?',
+        message: 'A saved reading position was found for this video.',
+        defaultValue: 'resume',
+        cancelValue: 'current',
+        actions: [
+          { label: 'Resume', value: 'resume', primary: true },
+          { label: 'Current Position', value: 'current' },
+        ],
+      })
+      if (decision === 'resume') {
+        targetTime = savedPosition.cueStart
+        targetCueIndex = findCueIndexAtTime(targetTime)
+        playerRef.current?.currentTime?.(targetTime)
+        setCurrentPlaybackTime(targetTime)
+        setPlayingTime(formatTime(targetTime))
+      }
+    }
+
+    readingSessionRef.current = {
+      videoPath: videoFile.filePath,
+      subtitlePath: selectedSubtitle?.filePath || '',
+      cueIndex: targetCueIndex,
+      cueStart: targetTime,
+    }
+    changeSubtitleInteractionMode('reading')
+  }
+
+  useEffect(() => {
+    if (canPickRollingSubtitle || subtitleInteractionModeRef.current === 'follow') return
+    if (subtitleInteractionModeRef.current === 'reading') saveCurrentReadingPosition()
+    readingSessionRef.current = null
+    stopSpeakSubtitleRef.current?.()
+    subtitleInteractionModeRef.current = 'follow'
+    setSubtitleInteractionMode('follow')
+    setSubtitleReadingStatus(null)
+    setSubtitleNotePreviewContent(null)
+  }, [canPickRollingSubtitle])
 
   const updateCurrentFullscreenViewState = (updater) => {
     setFullscreenViewStates((current) => {
@@ -485,6 +778,19 @@ export default function VideoMode() {
       setNotesFilterHistory(updateHistory)
     }
     showAutoMessage('Filter saved.', 'Filter', 900)
+  }
+
+  const updateCurrentRollingPanelView = (patch) => {
+    setRollingPanelView((current) => ({
+      ...current,
+      states: {
+        ...current.states,
+        [rollingPanelViewKey]: normalizeRollingPanelViewState({
+          ...current.states[rollingPanelViewKey],
+          ...patch,
+        }),
+      },
+    }))
   }
 
   const deleteFilterCondition = (scope, value) => {
@@ -641,6 +947,7 @@ export default function VideoMode() {
       clearTimeout(toastTimerRef.current)
     }
     clearSubtitlePickChord()
+    stopSpeakSubtitleRef.current?.()
   }, [])
 
   useEffect(() => {
@@ -724,6 +1031,48 @@ export default function VideoMode() {
   }, [subtitleMenuOpen])
 
   const getPlayerTime = () => playerRef.current?.currentTime() ?? 0
+
+  const getLoadedVideoStateSnapshot = () => {
+    const snapshot = normalizeLoadedVideoState(loadedVideoStateRef.current)
+    const activeSource = videoOpenSourceRef.current === 'pool' ? 'pool' : 'default'
+    const playbackTime = Number(getPlayerTime())
+    snapshot.activeSource = activeSource
+    if (snapshot.sources[activeSource].filePath) {
+      snapshot.sources[activeSource] = {
+        ...snapshot.sources[activeSource],
+        playbackTime: Number.isFinite(playbackTime) && playbackTime >= 0 ? playbackTime : 0,
+      }
+    }
+    return snapshot
+  }
+
+  const rememberCurrentLoadedVideo = () => {
+    loadedVideoStateRef.current = getLoadedVideoStateSnapshot()
+  }
+
+  const changeVideoOpenSource = (nextSource) => {
+    const normalizedSource = nextSource === 'pool' ? 'pool' : 'default'
+    const sourceChanged = videoOpenSourceRef.current !== normalizedSource
+    if (sourceChanged) {
+      rememberCurrentLoadedVideo()
+    }
+    const playbackTime = Number(getPlayerTime())
+    loadedVideoStateRef.current = {
+      ...loadedVideoStateRef.current,
+      activeSource: normalizedSource,
+      sources: sourceChanged && videoFile?.filePath
+        ? {
+          ...loadedVideoStateRef.current.sources,
+          [normalizedSource]: {
+            filePath: videoFile.filePath,
+            playbackTime: Number.isFinite(playbackTime) && playbackTime >= 0 ? playbackTime : 0,
+          },
+        }
+        : loadedVideoStateRef.current.sources,
+    }
+    videoOpenSourceRef.current = normalizedSource
+    setVideoOpenSource(normalizedSource)
+  }
 
   const getDuration = () => {
     const duration = playerRef.current?.duration?.()
@@ -832,22 +1181,43 @@ export default function VideoMode() {
     return range
   }
 
-  const playFromCurrentPosition = () => {
+  const requestVideoPlay = ({ source = 'manual', silent = false } = {}) => {
     const player = playerRef.current
-    if (!player?.play) return
+    if (!player?.play) return false
+
+    const speakPreview = source === 'speak-sub' && speakSubtitlePreviewRef.current
+    if (subtitleInteractionModeRef.current === 'reading' && !speakPreview) {
+      player.pause?.()
+      if (!silent) {
+        showAutoMessage('Exit Sub Reading before playback.', 'Subtitle Reading', 1400)
+      }
+      return false
+    }
+
+    const result = player.play()
+    if (result?.catch) {
+      result.catch(() => {
+        if (!silent) showAutoMessage('Action message.', 'Message', 1800)
+      })
+    }
+    return true
+  }
+
+  const playFromCurrentPosition = (options = {}) => {
+    const player = playerRef.current
+    if (!player?.play) return false
+    if (subtitleInteractionModeRef.current === 'reading' && options.source !== 'speak-sub') {
+      return requestVideoPlay(options)
+    }
 
     const tryPlay = () => {
-      const result = player.play()
-      if (result?.catch) {
-        result.catch(() => {
-          showAutoMessage('Action message.', 'Message', 1800)
-        })
-      }
+      requestVideoPlay(options)
     }
 
     tryPlay()
     player.one?.('seeked', tryPlay)
     setTimeout(tryPlay, 80)
+    return true
   }
 
   const togglePlayPause = () => {
@@ -864,7 +1234,13 @@ export default function VideoMode() {
 
   const selectNote = async (note) => {
     if (!note) return false
-    if (activeNoteSource === 'default' && note.id === selectedNoteId) return true
+    if (activeNoteSource === 'default' && note.id === selectedNoteId) {
+      setSubtitleNotePreviewContent(null)
+      setNoteDraft(note.content || '')
+      setSelectedStart(note.start || '')
+      setSelectedEnd(note.end || '')
+      return true
+    }
 
     const leaveResult = await confirmActiveNoteContentBeforeLeave()
     if (!leaveResult.canLeave) return false
@@ -874,7 +1250,7 @@ export default function VideoMode() {
     setNoteDraft(note.content)
     setSelectedStart(note.start)
     setSelectedEnd(note.end)
-    setVideoOpenSource('default')
+    changeVideoOpenSource('default')
     return true
   }
 
@@ -929,24 +1305,35 @@ export default function VideoMode() {
     if (!player?.playbackRate || !Number.isFinite(nextRate) || nextRate <= 0) return
 
     player.playbackRate(nextRate)
+    playingViewRef.current = { ...playingViewRef.current, playbackRate: nextRate }
     setPlaybackRate(nextRate)
+  }
+
+  const applyPlayingView = (playingView = playingViewRef.current) => {
+    const player = playerRef.current
+    if (!player) return
+    const normalized = normalizePlayingView(playingView)
+    playingViewRef.current = normalized
+    player.playbackRate?.(normalized.playbackRate)
+    player.volume?.(normalized.volume)
+    setPlaybackRate(normalized.playbackRate)
+    setVolume(normalized.volume)
   }
 
   const playAfterVideoSourceLoaded = (options = {}) => {
     const player = playerRef.current
     if (!player?.play) return
+    if (subtitleInteractionModeRef.current === 'reading') {
+      requestVideoPlay({ source: 'autoplay' })
+      return
+    }
 
     const tryPlay = () => {
       if (options.playbackRate) {
         applyPlaybackRate(options.playbackRate)
       }
 
-      const result = player.play()
-      if (result?.catch) {
-        result.catch(() => {
-          showAutoMessage('Action message.', 'Message', 1800)
-        })
-      }
+      requestVideoPlay({ source: 'autoplay' })
     }
 
     player.one?.('loadedmetadata', tryPlay)
@@ -1034,8 +1421,20 @@ export default function VideoMode() {
       rightToolTab,
       selectedNoteIndex: notes.findIndex((note) => note.id === selectedNoteId),
       playbackTime: getPlayerTime(),
-      playbackRate: getPlaybackRate(),
-      fullscreenCycleState: 0,
+      mainMiddleView: {
+        toggleView: {
+          activeState: fullscreenCycleState === 4 ? 4 : 0,
+          states: {
+            f0: normalizeFullscreenViewState(fullscreenViewStates.f0),
+            f4: normalizeFullscreenViewState(fullscreenViewStates.f4),
+          },
+        },
+        rollingPanelView: normalizeRollingPanelViewSnapshot(rollingPanelView, rollingSubtitleFontSize),
+        playingView: normalizePlayingView({
+          playbackRate: getPlaybackRate(),
+          volume: playerRef.current?.volume?.() ?? playingViewRef.current.volume,
+        }),
+      },
       filterHistory: {
         notes: notesFilterHistory,
         notesPool: externalNotesFilterHistory,
@@ -1044,8 +1443,10 @@ export default function VideoMode() {
         key: mp4SortKey,
         direction: mp4SortDirection,
       },
+      readingPositions: getReadingPositionsSnapshot(),
 
       videoOpenSource,
+      loadedVideoState: getLoadedVideoStateSnapshot(),
       notesPool: {
         notes: externalNotes,
         filterText: externalNotesFilterText,
@@ -1069,13 +1470,18 @@ export default function VideoMode() {
     externalNotesFilterText,
     externalNotesReverse,
     externalNotesShowFileName,
+    fullscreenCycleState,
+    fullscreenViewStates,
     leftTab,
     mp4SortDirection,
     mp4SortKey,
     notes,
     notesFilterHistory,
+    playbackRate,
     registerSessionProvider,
     rightToolTab,
+    rollingPanelView,
+    rollingSubtitleFontSize,
     selectedExternalNoteId,
     selectedNoteId,
     videoFile?.filePath,
@@ -1086,10 +1492,27 @@ export default function VideoMode() {
   useEffect(() => {
     const snapshot = restoreSessionState?.modes?.video
     if (!snapshot) return
+    let canceled = false
 
     if (snapshot.leftTab === 'notes' || snapshot.leftTab === 'files') setLeftTab(snapshot.leftTab)
     if (snapshot.rightToolTab === 'main' || snapshot.rightToolTab === 'notesPool') setRightToolTab(snapshot.rightToolTab)
-    setFullscreenCycleState(0)
+    const mainMiddleViewSnapshot = snapshot.mainMiddleView || {}
+    const restoredToggleView = normalizeToggleViewSnapshot(
+      mainMiddleViewSnapshot.toggleView || snapshot.toggleView,
+      snapshot.fullscreenCycleState,
+    )
+    const restoredRollingPanelView = normalizeRollingPanelViewSnapshot(mainMiddleViewSnapshot.rollingPanelView)
+    const restoredPlayingView = normalizePlayingView(mainMiddleViewSnapshot.playingView, snapshot.playbackRate)
+    setFullscreenCycleState(restoredToggleView.activeState)
+    setFullscreenViewStates((current) => ({
+      ...current,
+      f0: restoredToggleView.states.f0,
+      f4: restoredToggleView.states.f4,
+    }))
+    setRollingPanelView(restoredRollingPanelView)
+    playingViewRef.current = restoredPlayingView
+    setPlaybackRate(restoredPlayingView.playbackRate)
+    setVolume(restoredPlayingView.volume)
     setNotesFilterHistory(normalizeFilterHistory(snapshot.filterHistory?.notes))
     setExternalNotesFilterHistory(normalizeFilterHistory(snapshot.filterHistory?.notesPool))
     if (MP4_SORT_OPTIONS.some((option) => option.value === snapshot.mp4FileSort?.key)) {
@@ -1098,6 +1521,9 @@ export default function VideoMode() {
     if (snapshot.mp4FileSort?.direction === 'asc' || snapshot.mp4FileSort?.direction === 'desc') {
       setMp4SortDirection(snapshot.mp4FileSort.direction)
     }
+    const restoredReadingPositions = normalizeReadingPositions(snapshot.readingPositions)
+    readingPositionsRef.current = restoredReadingPositions
+    setReadingPositions(restoredReadingPositions)
 
     const notesPoolSnapshot = snapshot.notesPool || {}
     const restoredExternalNotes = Array.isArray(notesPoolSnapshot.notes) ? notesPoolSnapshot.notes : []
@@ -1117,15 +1543,62 @@ export default function VideoMode() {
     )
     setExternalNoteDraftContent(typeof notesPoolSnapshot.draftContent === 'string' ? notesPoolSnapshot.draftContent : '')
     setDirtyExternalNoteIds(() => new Set(Array.isArray(notesPoolSnapshot.dirtyNoteIds) ? notesPoolSnapshot.dirtyNoteIds : []))
-    setVideoOpenSource(snapshot.videoOpenSource === 'pool' && restoredExternalNoteId ? 'pool' : 'default')
-    if (snapshot.currentFilePath) {
-      openVideoFileFullPath(snapshot.currentFilePath, {
-        autoplay: false,
-        playbackRate: Number(snapshot.playbackRate) || 1,
-        selectedNoteIndex: snapshot.selectedNoteIndex,
-        seekTime: snapshot.playbackTime,
-        videoOpenSource: snapshot.videoOpenSource === 'pool' && restoredExternalNoteId ? 'pool' : 'default',
+
+    const restoredLoadedVideoState = normalizeLoadedVideoState(snapshot.loadedVideoState, snapshot)
+    const restoredVideoOpenSource = restoredLoadedVideoState.activeSource
+    const restoredActiveVideo = restoredLoadedVideoState.sources[restoredVideoOpenSource]
+    loadedVideoStateRef.current = restoredLoadedVideoState
+    videoOpenSourceRef.current = restoredVideoOpenSource
+    setVideoOpenSource(restoredVideoOpenSource)
+    if (
+      restoredVideoOpenSource === 'pool'
+      && restoredLoadedVideoState.sources.default.filePath
+      && window.videoApi?.readNotes
+    ) {
+      const defaultFilePath = restoredLoadedVideoState.sources.default.filePath
+      window.videoApi.readNotes(defaultFilePath).then((result) => {
+        if (canceled || !result?.ok) return
+        const restoredDefaultNotes = (Array.isArray(result.notes) ? result.notes : []).map((note, index) => ({
+          id: `${defaultFilePath}-${index}`,
+          noteIndex: index,
+          sourceVideoPath: defaultFilePath,
+          sourceVideoName: splitPath(defaultFilePath).fileName,
+          start: note.Start || note.start || '',
+          end: note.End || note.end || '',
+          content: note.Content || note.content || '',
+          raw: note,
+        }))
+        const restoredDefaultNoteIndex = Number.isInteger(Number(snapshot.selectedNoteIndex))
+          && Number(snapshot.selectedNoteIndex) >= 0
+          && Number(snapshot.selectedNoteIndex) < restoredDefaultNotes.length
+          ? Number(snapshot.selectedNoteIndex)
+          : -1
+        const restoredDefaultNote = restoredDefaultNoteIndex >= 0
+          ? restoredDefaultNotes[restoredDefaultNoteIndex]
+          : null
+
+        setNotes(restoredDefaultNotes)
+        setSelectedNoteId(restoredDefaultNote?.id || null)
+        setNoteDraft(restoredDefaultNote?.content || '')
+        setSelectedStart(restoredDefaultNote?.start || '')
+        setSelectedEnd(restoredDefaultNote?.end || '')
+        setDirty(APP_MODES.VIDEO, false)
+      }).catch((error) => {
+        window.debugApi?.log(`Default video notes restore failed: ${error?.message || error}`)
       })
+    }
+    if (restoredActiveVideo.filePath) {
+      openVideoFileFullPath(restoredActiveVideo.filePath, {
+        autoplay: false,
+        playbackRate: restoredPlayingView.playbackRate,
+        selectedNoteIndex: snapshot.selectedNoteIndex,
+        seekTime: restoredActiveVideo.playbackTime,
+        updateDirectoryMp4Files: restoredVideoOpenSource !== 'pool',
+        videoOpenSource: restoredVideoOpenSource,
+      })
+    }
+    return () => {
+      canceled = true
     }
   }, [restoreSessionState])
 
@@ -1276,7 +1749,8 @@ export default function VideoMode() {
     }
 
     if (
-      options.videoOpenSource !== 'pool'
+      options.allowPoolToDefault !== true
+      && options.videoOpenSource !== 'pool'
       && activeNoteSource === 'pool'
       && selectedExternalNote?.sourceVideoPath
       && isSameFilePath(info.filePath, selectedExternalNote.sourceVideoPath)
@@ -1298,8 +1772,26 @@ export default function VideoMode() {
       autoConvertSrt: subtitleOptions.playAllAuto || Boolean(subtitleLanguage),
     })
 
+    const nextVideoOpenSource = options.videoOpenSource === 'pool' ? 'pool' : 'default'
+    const restoredPlaybackTime = Number(options.seekTime)
+    rememberCurrentLoadedVideo()
+    loadedVideoStateRef.current = {
+      ...loadedVideoStateRef.current,
+      activeSource: nextVideoOpenSource,
+      sources: {
+        ...loadedVideoStateRef.current.sources,
+        [nextVideoOpenSource]: {
+          filePath: info.filePath,
+          playbackTime: Number.isFinite(restoredPlaybackTime) && restoredPlaybackTime >= 0
+            ? restoredPlaybackTime
+            : 0,
+        },
+      },
+    }
+    videoOpenSourceRef.current = nextVideoOpenSource
+    readingResumeHandledRef.current = false
     setVideoFile(info)
-    setVideoOpenSource(options.videoOpenSource === 'pool' ? 'pool' : 'default')
+    setVideoOpenSource(nextVideoOpenSource)
     setSubtitleLanguages(nextSubtitleLanguages)
     setSelectedSubtitleLanguageKey(selectedLanguageKey)
     setSelectedSubtitle(subtitle)
@@ -1310,35 +1802,42 @@ export default function VideoMode() {
     if (info.folderPath) {
       addRecentFolder(APP_MODES.VIDEO, info.folderPath)
     }
-  const loadedNotes = info.notes.map((note, index) => ({
-    id: `${info.filePath}-${index}`,
-    noteIndex: index,
-    sourceVideoPath: info.filePath,
-    sourceVideoName: info.fileName || '',
-    start: note.Start || note.start || '',
-    end: note.End || note.end || '',
-    content: note.Content || note.content || '',
-      raw: note,
-    }))
-    const restoredNoteIndex = Number.isFinite(Number(options.selectedNoteIndex))
-      ? Math.max(0, Math.min(Number(options.selectedNoteIndex), loadedNotes.length - 1))
-      : -1
-    const restoredNote = restoredNoteIndex >= 0 ? loadedNotes[restoredNoteIndex] : null
+    if (nextVideoOpenSource === 'default') {
+      const loadedNotes = (info.notes || []).map((note, index) => ({
+        id: `${info.filePath}-${index}`,
+        noteIndex: index,
+        sourceVideoPath: info.filePath,
+        sourceVideoName: info.fileName || '',
+        start: note.Start || note.start || '',
+        end: note.End || note.end || '',
+        content: note.Content || note.content || '',
+        raw: note,
+      }))
+      const restoredNoteIndex = Number.isFinite(Number(options.selectedNoteIndex))
+        ? Math.max(0, Math.min(Number(options.selectedNoteIndex), loadedNotes.length - 1))
+        : -1
+      const restoredNote = restoredNoteIndex >= 0 ? loadedNotes[restoredNoteIndex] : null
 
-    setNotes(loadedNotes)
-    setDirectoryMp4Files(info.mp4Files || [])
-    setSelectedDirectoryMp4Name(info.fileName || '')
-    setSelectedNoteId(restoredNote?.id || null)
-    setNoteDraft(restoredNote?.content || '')
-    setSelectedStart(restoredNote?.start || '')
-    setSelectedEnd(restoredNote?.end || '')
-    setCurStart('')
-    setCurEnd('')
-    setDirty(APP_MODES.VIDEO, false)
-
-    if (options.playbackRate) {
-      applyPlaybackRate(options.playbackRate)
+      setNotes(loadedNotes)
+      if (options.updateDirectoryMp4Files !== false) {
+        setDirectoryMp4Files(info.mp4Files || [])
+      }
+      setSelectedDirectoryMp4Name(info.fileName || '')
+      setSelectedNoteId(restoredNote?.id || null)
+      setNoteDraft(restoredNote?.content || '')
+      setSelectedStart(restoredNote?.start || '')
+      setSelectedEnd(restoredNote?.end || '')
+      setCurStart('')
+      setCurEnd('')
+      setDirty(APP_MODES.VIDEO, false)
     }
+
+    const nextPlayingView = normalizePlayingView({
+      ...playingViewRef.current,
+      playbackRate: options.playbackRate ?? playingViewRef.current.playbackRate,
+    })
+    playingViewRef.current = nextPlayingView
+    applyPlayingView(nextPlayingView)
 
     if (Number.isFinite(Number(options.seekTime))) {
       seekWhenReady(Number(options.seekTime))
@@ -1357,7 +1856,8 @@ export default function VideoMode() {
     if (!fullPath || !window.videoApi?.getVideoFileInfo) return
 
     if (
-      activeNoteSource === 'pool'
+      options.allowPoolToDefault !== true
+      && activeNoteSource === 'pool'
       && selectedExternalNote?.sourceVideoPath
       && isSameFilePath(fullPath, selectedExternalNote.sourceVideoPath)
       && options.videoOpenSource !== 'pool'
@@ -1371,13 +1871,46 @@ export default function VideoMode() {
       if (!canSwitch) return
     }
 
-    const info = await window.videoApi.getVideoFileInfo(fullPath, { extraSubtitleFolder })
+    const poolSource = options.videoOpenSource === 'pool'
+    const info = await window.videoApi.getVideoFileInfo(fullPath, {
+      extraSubtitleFolder,
+      loadDirectoryMp4Files: !poolSource && options.updateDirectoryMp4Files !== false,
+      loadNotes: !poolSource,
+    })
     await loadVideoInfo(info, options)
   }
 
   const openVideoFilePath = async (fileName) => {
     if (!videoFile?.folderPath) return
     openVideoFileFullPath(joinPath(videoFile.folderPath, fileName), { autoplay: true })
+  }
+
+  const openRecentVideoFile = async (fullPath) => {
+    const sameFileOpenFromPool = videoOpenSourceRef.current === 'pool'
+      && isSameFilePath(fullPath, videoFile?.filePath)
+
+    if (!sameFileOpenFromPool) {
+      await openVideoFileFullPath(fullPath, { autoplay: true })
+      return
+    }
+
+    const decision = await showActionDialog({
+      title: 'Switch video source',
+      message: 'This file is already open from Pool. Switch to Default mode?',
+      defaultValue: 'switch',
+      cancelValue: 'cancel',
+      actions: [
+        { label: 'Switch to Default', value: 'switch', primary: true },
+        { label: 'Cancel', value: 'cancel' },
+      ],
+    })
+    if (decision !== 'switch') return
+
+    await openVideoFileFullPath(fullPath, {
+      allowPoolToDefault: true,
+      autoplay: true,
+      videoOpenSource: 'default',
+    })
   }
 
   const confirmBeforePlayNextVideo = async () => {
@@ -1756,7 +2289,7 @@ export default function VideoMode() {
     const canSelect = await selectExternalNote(externalNote, { skipLeaveConfirm: true })
     if (!canSelect) return
 
-    setVideoOpenSource('pool')
+    changeVideoOpenSource('pool')
     setExternalNoteDraftContent(externalNote.content || '')
     setCurStart(externalNote.start || '')
     setCurEnd(externalNote.end || '')
@@ -1771,28 +2304,26 @@ export default function VideoMode() {
       return
     }
 
-    const info = await window.videoApi.getVideoFileInfo(externalNote.sourceVideoPath, { extraSubtitleFolder })
+    const info = await window.videoApi.getVideoFileInfo(externalNote.sourceVideoPath, {
+      extraSubtitleFolder,
+      loadDirectoryMp4Files: false,
+      loadNotes: false,
+    })
     if (!info?.ok) {
       showAutoMessage('Action message.', 'Message', 1400)
       return
     }
 
-    setVideoFile(info)
-    setVideoOpenSource('pool')
-    setSelectedDirectoryMp4Name(info.fileName || '')
-    setSubtitleLanguages([])
-    setSelectedSubtitleLanguageKey('')
-    setSelectedSubtitle(null)
-    setCurrentFile(info.filePath)
-    addRecentFile(APP_MODES.VIDEO, info.filePath)
-    if (info.folderPath) {
-      addRecentFolder(APP_MODES.VIDEO, info.folderPath)
-    }
-
-    if (Number.isFinite(startSeconds)) {
-      seekWhenReady(startSeconds)
-      setTimeout(() => playFromCurrentPosition(), 160)
-    }
+    await loadVideoInfo(info, {
+      autoplay: true,
+      seekTime: Number.isFinite(startSeconds) ? startSeconds : undefined,
+      updateDirectoryMp4Files: false,
+      videoOpenSource: 'pool',
+    })
+    changeVideoOpenSource('pool')
+    setExternalNoteDraftContent(externalNote.content || '')
+    setCurStart(externalNote.start || '')
+    setCurEnd(externalNote.end || '')
     showAutoMessage('Action message.', 'Message', 1200)
   }
 
@@ -2309,8 +2840,7 @@ export default function VideoMode() {
       Math.min(MAX_PLAYBACK_RATE, Math.round((currentRate + (step * PLAYBACK_RATE_STEP)) * 100) / 100),
     )
 
-    playerRef.current?.playbackRate?.(nextRate)
-    setPlaybackRate(nextRate)
+    applyPlaybackRate(nextRate)
   }
 
   const volumeByStep = (step) => {
@@ -2321,6 +2851,7 @@ export default function VideoMode() {
     const baseVolume = Number.isFinite(currentVolume) ? currentVolume : volume
     const nextVolume = Math.max(0, Math.min(1, baseVolume + step))
     player.volume(nextVolume)
+    playingViewRef.current = { ...playingViewRef.current, volume: nextVolume }
     setVolume(nextVolume)
   }
 
@@ -2337,6 +2868,7 @@ export default function VideoMode() {
         : 0
 
     player.volume(nextVolume)
+    playingViewRef.current = { ...playingViewRef.current, volume: nextVolume }
     setVolume(nextVolume)
   }
 
@@ -2407,7 +2939,7 @@ export default function VideoMode() {
   }
 
 
-  const getContextMenuItemCount = (type) => (type === 'subtitleCue' ? 1 : type === 'externalNote' ? 4 : type === 'video' ? 11 : 12)
+  const getContextMenuItemCount = (type) => (type === 'subtitleCue' ? 3 : type === 'externalNote' ? 4 : type === 'video' ? 11 : 12)
 
   const openContextMenu = async (event, type, note = null) => {
     event.preventDefault()
@@ -2451,7 +2983,8 @@ export default function VideoMode() {
     setContextMenu({
       type: 'subtitleCue',
       cue,
-      pickSubActive: options.pickSubActive === true,
+      subtitleInteractionMode: options.subtitleInteractionMode || 'follow',
+      playerPaused: playerRef.current?.paused?.() !== false,
       x: position.x,
       y: position.y,
     })
@@ -2485,11 +3018,23 @@ export default function VideoMode() {
 
   const getContextMenuItems = () => {
     if (contextMenu?.type === 'subtitleCue') {
-      return [{
-        label: 'Edit Sub',
-        disabled: !contextMenu.pickSubActive,
-        action: () => editSubtitleCue(contextMenu.cue),
-      }]
+      return [
+        {
+          label: 'Edit Sub',
+          disabled: !subtitleCapabilities.canEditSubtitle,
+          action: () => editSubtitleCue(contextMenu.cue),
+        },
+        {
+          label: 'Speak Sub',
+          disabled: !subtitleCapabilities.canSpeakSubtitle || !contextMenu.playerPaused,
+          action: () => speakSubtitleCue(contextMenu.cue),
+        },
+        {
+          label: subtitleInteractionModeRef.current === 'reading' ? 'Out of Reading' : 'Into Reading',
+          disabled: !subtitleCapabilities.canToggleReading,
+          action: toggleSubtitleReading,
+        },
+      ]
     }
 
     if (contextMenu?.type === 'externalNote') {
@@ -2752,19 +3297,35 @@ export default function VideoMode() {
     writeCurrentRangeToSelected,
   ])
 
+  const handlePlayerPlaybackRateChange = (nextRate) => {
+    const normalizedRate = normalizePlayingView({
+      ...playingViewRef.current,
+      playbackRate: nextRate,
+    }).playbackRate
+    playingViewRef.current = { ...playingViewRef.current, playbackRate: normalizedRate }
+    setPlaybackRate(normalizedRate)
+  }
+
+  const handlePlayerVolumeChange = (nextVolume) => {
+    const normalizedVolume = normalizePlayingView({
+      ...playingViewRef.current,
+      volume: nextVolume,
+    }).volume
+    playingViewRef.current = { ...playingViewRef.current, volume: normalizedVolume }
+    setVolume(normalizedVolume)
+  }
+
   const onPlayerReady = (player) => {
     playerRef.current = player
-    setPlaybackRate(player.playbackRate?.() || 1)
-    setVolume(player.volume?.() ?? 1)
+    applyPlayingView()
     refreshVideoDurationText()
-    player.on('ratechange', () => {
-      setPlaybackRate(player.playbackRate?.() || 1)
-    })
-    player.on('volumechange', () => {
-      setVolume(player.volume?.() ?? 1)
-    })
     player.on('loadedmetadata', refreshVideoDurationText)
     player.on('durationchange', refreshVideoDurationText)
+    player.on('play', () => {
+      if (subtitleInteractionModeRef.current !== 'reading' || speakSubtitlePreviewRef.current) return
+      player.pause?.()
+      showAutoMessage('Exit Sub Reading before playback.', 'Subtitle Reading', 1400)
+    })
   }
 
   const onTimeUpdate = (currentTime) => {
@@ -2778,6 +3339,43 @@ export default function VideoMode() {
     playerRef.current?.currentTime?.(cue.start)
   }
 
+  const handleSubtitleReadingScrollStart = () => {
+    if (subtitleInteractionModeRef.current !== 'reading') return
+    stopSpeakSubtitlePreview()
+    playerRef.current?.pause?.()
+  }
+
+  const handleSubtitleReadingAnchorChange = ({ cue, cueIndex } = {}) => {
+    if (subtitleInteractionModeRef.current !== 'reading' || !readingSessionRef.current) return
+    const cueStart = Number(cue?.start)
+    if (!Number.isFinite(cueStart)) return
+    readingSessionRef.current = {
+      ...readingSessionRef.current,
+      cueIndex: Number.isInteger(Number(cueIndex)) ? Number(cueIndex) : -1,
+      cueStart,
+    }
+  }
+
+  const handleSubtitleReadingViewportChange = (status) => {
+    if (!status) {
+      setSubtitleReadingStatus(null)
+      return
+    }
+    if (subtitleInteractionModeRef.current !== 'reading') return
+
+    setSubtitleReadingStatus({
+      total: Number(status.total) || 0,
+      startIndex: Number(status.startIndex) || 0,
+      endIndex: Number(status.endIndex) || 0,
+    })
+    const focusTime = Number(status.focusCue?.start)
+    if (!Number.isFinite(focusTime)) return
+    playerRef.current?.pause?.()
+    playerRef.current?.currentTime?.(focusTime)
+    setCurrentPlaybackTime(focusTime)
+    setPlayingTime(formatTime(focusTime))
+  }
+
   const buildSelectedSubtitlePlainText = (cues = []) => {
     const sortedCues = [...cues].sort((left, right) => left.start - right.start)
     return sortedCues.map((cue) => String(cue.text || '').trim()).filter(Boolean).join('\n')
@@ -2789,6 +3387,10 @@ export default function VideoMode() {
   }
 
   const previewSelectedSubtitleNote = (cues = []) => {
+    if (!Array.isArray(cues) || cues.length === 0) {
+      setSubtitleNotePreviewContent(null)
+      return
+    }
     const content = buildSelectedSubtitleNoteContent(cues)
     setSubtitleNotePreviewContent(content)
   }
@@ -2819,7 +3421,7 @@ export default function VideoMode() {
       },
     }
 
-    setVideoOpenSource('default')
+    changeVideoOpenSource('default')
     addNote(note)
     setSubtitleNotePreviewContent(null)
     setNotesFilterOn(false)
@@ -2840,20 +3442,22 @@ export default function VideoMode() {
 
     const shortcutPrefix = String(options.shortcutPrefix || '').trim()
     const shortcutChordActive = Boolean(shortcutPrefix)
+    const readingMode = options.readingMode === true
+    const chordActions = readingMode ? SUBTITLE_READING_CHORD_ACTIONS : SUBTITLE_PICK_CHORD_ACTIONS
 
     dialogResolveRef.current = resolve
     setDialog({
       kind: 'subtitlePick',
-      title: 'Pick Subtitles',
+      title: readingMode ? 'Pick Subtitles Reading' : 'Pick Subtitles',
       subtitleText: initialText,
       defaultValue: 'save',
       cancelValue: 'cancel',
       shortcutChordActive,
       shortcutPrefix,
       actions: [
-        { label: 'Copy&Save&Exit', value: 'copySave', shortcut: shortcutChordActive ? 'Z' : '', primary: true },
-        { label: 'Copy&Exit', value: 'copy', shortcut: shortcutChordActive ? 'X' : '' },
-        { label: 'Save&Exit', value: 'save', shortcut: shortcutChordActive ? 'C' : '' },
+        { label: readingMode ? 'Copy&Save' : 'Copy&Save&Exit', value: 'copySave', shortcut: shortcutChordActive ? 'Z' : '', primary: true },
+        { label: readingMode ? 'Copy' : 'Copy&Exit', value: 'copy', shortcut: shortcutChordActive ? 'X' : '' },
+        { label: readingMode ? 'Save' : 'Save&Exit', value: 'save', shortcut: shortcutChordActive ? 'C' : '' },
         { label: 'Cancel', value: 'cancel', shortcut: shortcutChordActive ? 'V' : '' },
         { label: 'Go Back', value: 'goBack', shortcut: '' },
       ],
@@ -2863,7 +3467,7 @@ export default function VideoMode() {
       window.dispatchEvent(new CustomEvent('shortcut-chord-change', {
         detail: {
           shortcut: shortcutPrefix,
-          options: SUBTITLE_PICK_CHORD_ACTIONS.map(({ actionId, key, label }) => ({ actionId, key, label })),
+          options: chordActions.map(({ actionId, key, label }) => ({ actionId, key, label })),
         },
       }))
       subtitlePickChordTimerRef.current = setTimeout(() => {
@@ -2872,7 +3476,7 @@ export default function VideoMode() {
         setDialog((current) => current?.kind === 'subtitlePick'
           ? { ...current, shortcutChordActive: false }
           : current)
-      }, SUBTITLE_PICK_CHORD_TIMEOUT_MS)
+      }, segmentedShortcutWaitMs)
     }
   })
 
@@ -2949,6 +3553,49 @@ export default function VideoMode() {
     showAutoMessage('Subtitle updated.', 'Edit Subtitle', 1000)
   }
 
+  const stopSpeakSubtitlePreview = () => {
+    stopSpeakSubtitleRef.current?.()
+  }
+
+  const speakSubtitleCue = (cue) => {
+    const player = playerRef.current
+    if (!player || player.paused?.() === false || !subtitleCapabilities.canSpeakSubtitle) return
+    if (!Number.isFinite(cue?.start) || !Number.isFinite(cue?.end)) return
+
+    stopSpeakSubtitlePreview()
+    const duration = getDuration()
+    const startTime = Math.max(0, cue.start - SUBTITLE_SPEAK_PADDING_SECONDS)
+    const endTime = Math.min(duration, Math.max(startTime, cue.end + SUBTITLE_SPEAK_PADDING_SECONDS))
+    let timeoutId = 0
+
+    const finishPreview = () => {
+      if (stopSpeakSubtitleRef.current !== finishPreview) return
+      stopSpeakSubtitleRef.current = null
+      window.clearTimeout(timeoutId)
+      player.off?.('timeupdate', handlePreviewTimeUpdate)
+      player.off?.('ended', finishPreview)
+      player.pause?.()
+      if (Number.isFinite(endTime)) player.currentTime?.(endTime)
+      speakSubtitlePreviewRef.current = false
+    }
+    const handlePreviewTimeUpdate = () => {
+      if (Number(player.currentTime?.()) >= endTime) finishPreview()
+    }
+
+    stopSpeakSubtitleRef.current = finishPreview
+    speakSubtitlePreviewRef.current = true
+    player.currentTime?.(startTime)
+    player.on?.('timeupdate', handlePreviewTimeUpdate)
+    player.on?.('ended', finishPreview)
+
+    const playbackRate = Math.max(0.1, Number(player.playbackRate?.()) || 1)
+    timeoutId = window.setTimeout(
+      finishPreview,
+      Math.max(1200, (((endTime - startTime) / playbackRate) * 1000) + 1500),
+    )
+    if (!requestVideoPlay({ source: 'speak-sub' })) finishPreview()
+  }
+
   const confirmPickedSubtitleNote = async (cues = [], options = {}) => {
     if (!Array.isArray(cues) || cues.length === 0) return 'done'
 
@@ -2959,6 +3606,7 @@ export default function VideoMode() {
     const pickSubShortcut = settings.shortcuts?.[APP_MODES.VIDEO]?.['video.pickSub'] || ''
     const result = await showSubtitlePickDialog(initialText, {
       shortcutPrefix: options.fromShortcut ? pickSubShortcut : '',
+      readingMode: options.readingMode === true,
     })
     const decision = result?.decision || result || 'cancel'
     const text = String(result?.text ?? initialText).trim()
@@ -2969,18 +3617,18 @@ export default function VideoMode() {
       if (text) await writeVideoClipboardText(text, 'Pick Sub')
       if (decision === 'copy') {
         setSubtitleNotePreviewContent(null)
-        return 'done'
+        return options.readingMode ? 'reading-clear' : 'done'
       }
     }
 
     if (decision === 'save' || decision === 'copySave') {
       if (!text) return 'goBack'
       const saved = await addSelectedSubtitleNote(sortedCues, `AUTO:\n${text}`)
-      return saved === false ? 'goBack' : 'done'
+      return saved === false ? 'goBack' : options.readingMode ? 'reading-clear' : 'done'
     }
 
     setSubtitleNotePreviewContent(null)
-    return 'done'
+    return options.readingMode ? 'reading-clear' : 'done'
   }
 
   const changeSubtitleDisplayMode = async (event) => {
@@ -3108,6 +3756,7 @@ export default function VideoMode() {
   const controlModeClass = videoControlMode ? 'video-control-mode' : ''
   const videoViewHiddenClass = fullscreenViewState.hideView ? 'video-view-hidden' : 'video-view-visible'
   const subtitleCenterLayoutClass = `subtitle-center-layout-${fullscreenViewState.hvLayout}`
+  const subtitleReadingClass = subtitleInteractionMode === 'reading' ? 'subtitle-reading-mode' : ''
   const rollingSubtitleFontSizeKey = fullscreenCycleState === 4
     ? 'subtitleCenter'
     : fullscreenCycleState === 3
@@ -3117,7 +3766,7 @@ export default function VideoMode() {
 
   return (
     <section
-      className={`video-mode ${fullscreenClass} ${controlModeClass} ${videoViewHiddenClass} ${subtitleCenterLayoutClass}`}
+      className={`video-mode ${fullscreenClass} ${controlModeClass} ${videoViewHiddenClass} ${subtitleCenterLayoutClass} ${subtitleReadingClass}`}
       style={{
         '--video-left-panel-width': `${videoLeftWidth}px`,
         '--video-right-panel-width': `${videoRightWidth}px`,
@@ -3293,7 +3942,7 @@ export default function VideoMode() {
                       <button
                         className={filePath === videoFile?.filePath ? 'mp4-list-row recent active' : 'mp4-list-row recent'}
                         key={filePath}
-                        onDoubleClick={() => openVideoFileFullPath(filePath, { autoplay: true })}
+                        onDoubleClick={() => openRecentVideoFile(filePath)}
                         title={filePath}
                         type="button"
                       >
@@ -3379,11 +4028,15 @@ export default function VideoMode() {
         >
           <VideoPlayer
             onEnded={playNextDirectoryVideo}
+            onPlaybackRateChange={handlePlayerPlaybackRateChange}
             onReady={onPlayerReady}
             onTimeUpdate={onTimeUpdate}
+            onVolumeChange={handlePlayerVolumeChange}
+            playbackRate={playbackRate}
             subtitle={nativeSubtitle}
             subtitleEnabled={Boolean(nativeSubtitle)}
             src={videoFile?.fileUrl}
+            volume={volume}
           />
           {fullscreenViewState.hideView && fullscreenCycleState !== 4 ? (
             <div className="video-hidden-seek">
@@ -3417,6 +4070,10 @@ export default function VideoMode() {
               videoViewHidden={fullscreenViewState.hideView}
               enableSubtitleNoteAdding
               pickSubAutoSelectCurrent={pickSubAutoSelectCurrent}
+              subtitleInteractionMode={subtitleInteractionMode}
+              readingStartCueIndex={readingSessionRef.current?.cueIndex ?? -1}
+              panelViewKey={rollingPanelViewKey}
+              panelViewState={currentRollingPanelView}
               defaultFontSize={rollingSubtitleFontSize}
               fontSizeKey={rollingSubtitleFontSizeKey}
               getCurrentTime={() => playerRef.current?.currentTime?.()}
@@ -3429,6 +4086,11 @@ export default function VideoMode() {
               onSelectedSubtitlesChange={previewSelectedSubtitleNote}
               onCueClick={jumpToSubtitleCue}
               onCueContextMenu={openSubtitleCueContextMenu}
+              onInteractionModeChange={changeSubtitleInteractionMode}
+              onPanelViewStateChange={updateCurrentRollingPanelView}
+              onReadingAnchorChange={handleSubtitleReadingAnchorChange}
+              onReadingScrollStart={handleSubtitleReadingScrollStart}
+              onReadingViewportChange={handleSubtitleReadingViewportChange}
             />
           ) : null}
           {titleOn && subtitleDisplayMode === 'rolling' && rollingSubtitleError ? (
@@ -3524,7 +4186,12 @@ export default function VideoMode() {
               </div>
             </div>
             <div className="video-mini-controls" aria-label="Video controls">
-              <button data-tooltip="Play / Pause" onClick={() => runAction('video.togglePlay')} type="button">
+              <button
+                data-tooltip={subtitleCapabilities.canManualPlay ? 'Play / Pause' : 'Exit Sub Reading before playback'}
+                disabled={!subtitleCapabilities.canManualPlay && playerRef.current?.paused?.() !== false}
+                onClick={() => runAction('video.togglePlay')}
+                type="button"
+              >
                 <i className={`fa-solid ${playerRef.current?.paused?.() === false ? 'fa-pause' : 'fa-play'}`} aria-hidden="true" />
               </button>
               <button data-tooltip="Long Back" onClick={() => runAction('video.jumpBackLong')} type="button">
@@ -3887,6 +4554,13 @@ export default function VideoMode() {
             <option value="rolling">Rolling</option>
           </select>
         </label>
+        {subtitleInteractionMode === 'reading' ? (
+          <span>
+            Sub-Mode: <strong className="subtitle-reading-status">Reading</strong>
+            {' | '}Total: {subtitleReadingStatus?.total || rollingSubtitleCues.length}
+            {' | '}Showing: {subtitleReadingStatus?.startIndex || '-'}–{subtitleReadingStatus?.endIndex || '-'}
+          </span>
+        ) : null}
       </footer>
 
       {dialog && !dialog.autoClose ? (

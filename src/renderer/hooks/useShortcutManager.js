@@ -2,8 +2,6 @@ import { useEffect, useRef } from 'react'
 import { SHORTCUT_SCOPES, useSettingsStore } from '../../stores/settingsStore'
 import { getRegisteredActions, runAction } from '../actions/actionRegistry'
 
-const CHORD_TIMEOUT_MS = 2000
-
 export function formatShortcutEvent(event) {
   const key = event.key === ' ' ? 'Space' : event.key
   if (!key || ['Control', 'Shift', 'Alt', 'Meta'].includes(key)) {
@@ -93,6 +91,7 @@ function isShortcutActionEnabled(actionId, mode) {
 
 export default function useShortcutManager(mode, disabled = false) {
   const settings = useSettingsStore((state) => state.settings)
+  const chordTimeoutMs = settings.general.segmentedShortcutWaitSec * 1000
   const pendingChordRef = useRef(null)
   const chordTimerRef = useRef(null)
 
@@ -111,7 +110,7 @@ export default function useShortcutManager(mode, disabled = false) {
     window.dispatchEvent(new CustomEvent('shortcut-chord-change', {
       detail: { shortcut: firstShortcut, options },
     }))
-    chordTimerRef.current = setTimeout(clearPendingChord, CHORD_TIMEOUT_MS)
+    chordTimerRef.current = setTimeout(clearPendingChord, chordTimeoutMs)
   }
 
   useEffect(() => {
@@ -168,5 +167,5 @@ export default function useShortcutManager(mode, disabled = false) {
       clearPendingChord()
       window.removeEventListener('keydown', handleKeyDown, true)
     }
-  }, [disabled, mode, settings.shortcuts])
+  }, [chordTimeoutMs, disabled, mode, settings.shortcuts])
 }

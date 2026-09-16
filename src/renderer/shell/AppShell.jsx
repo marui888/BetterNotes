@@ -35,6 +35,7 @@ export default function AppShell() {
   const textAutoPlayRunning = useAppStore((state) => state.textAutoPlayRunning)
   const initializeRecentState = useAppStore((state) => state.initializeRecentState)
   const initializeSettings = useSettingsStore((state) => state.initializeSettings)
+  const shortcutHintFontSize = useSettingsStore((state) => state.settings.general.shortcutHintFontSize)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [pendingChord, setPendingChord] = useState(null)
   const leaveGuardsRef = useRef(leaveGuards)
@@ -42,6 +43,7 @@ export default function AppShell() {
   const modeRef = useRef(mode)
   const previousModeRef = useRef(mode)
   const initialRestoreModeRef = useRef(null)
+  const sessionSavePromiseRef = useRef(Promise.resolve())
 
   useShortcutManager(mode, settingsOpen)
 
@@ -144,6 +146,20 @@ export default function AppShell() {
     }
     return true
   }
+
+  useEffect(() => {
+    const saveSessionState = () => {
+      sessionSavePromiseRef.current = sessionSavePromiseRef.current
+        .catch(() => {})
+        .then(() => window.appApi?.saveLastSessionState?.(collectSessionState()))
+        .catch((error) => {
+          window.debugApi?.log(`Last session save failed: ${error?.message || error}`)
+        })
+    }
+
+    window.addEventListener('app-session-save-request', saveSessionState)
+    return () => window.removeEventListener('app-session-save-request', saveSessionState)
+  }, [])
 
   useEffect(() => {
     if (!window.appApi?.onRequestClose) {
@@ -256,7 +272,7 @@ export default function AppShell() {
 
       <AppTooltip />
       {pendingChord ? (
-        <div className="shortcut-chord-hint">
+        <div className="shortcut-chord-hint" style={{ fontSize: `${shortcutHintFontSize}px` }}>
           <div className="shortcut-chord-title">{pendingChord.shortcut}</div>
           <div className="shortcut-chord-options">
             {(pendingChord.options || []).map((option) => (

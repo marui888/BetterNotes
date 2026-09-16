@@ -43,9 +43,17 @@ const MAX_FONT_SIZE = 92
 const DEFAULT_FONT_SIZE = 25
 const FONT_SIZE_PRESETS = [12, 14, 16, 18, 20, 22, 25, 28, 32, 36, 42, 48, 60, 72, 84, 92]
 const VISIBLE_HANDLE_SIZE = 24
+const CONTROL_HOT_ZONE_WIDTH = 120
 const MIN_TIMING_OFFSET = -5
 const MAX_TIMING_OFFSET = 5
 const DOCK_POSITIONS = ['left', 'center', 'right']
+
+const hasPanelRect = (value) => ['x', 'y', 'width', 'height'].every((key) => (
+  value?.[key] !== null
+  && value?.[key] !== undefined
+  && value?.[key] !== ''
+  && Number.isFinite(Number(value[key]))
+))
 
 export default function RollingSubtitlePanel({
   bottomPanelRef,
@@ -59,6 +67,10 @@ export default function RollingSubtitlePanel({
   enableSubtitleCenterLayout = false,
   enableSubtitleNoteAdding = false,
   pickSubAutoSelectCurrent = false,
+  subtitleInteractionMode = 'follow',
+  readingStartCueIndex = -1,
+  panelViewKey = 'f0',
+  panelViewState = null,
   hvLayout = 0,
   subtitleHidden = false,
   videoViewHidden = false,
@@ -74,11 +86,15 @@ export default function RollingSubtitlePanel({
   onSelectedSubtitlesChange,
   onCueClick,
   onCueContextMenu,
+  onInteractionModeChange,
+  onPanelViewStateChange,
+  onReadingAnchorChange,
+  onReadingViewportChange,
+  onReadingScrollStart,
 }) {
   const listRef = useRef(null)
   const trackRef = useRef(null)
   const dragRef = useRef(null)
-  const initializedRectRef = useRef(false)
   const activeIndexRef = useRef(-1)
   const renderWindowRef = useRef(buildRenderWindow(0, cues.length))
   const pendingWindowAnchorRef = useRef(null)
@@ -99,9 +115,11 @@ export default function RollingSubtitlePanel({
   const subtitleNoteAddingRef = useRef(false)
   const resumeScrollingRef = useRef(false)
   const resumeSettlingTimeRef = useRef(0)
-  const rectBeforeSubtitleCenterModeRef = useRef(null)
-  const subtitleCenterModeActiveRef = useRef(false)
   const subtitleCenterModeSessionSizeRef = useRef(null)
+  const readingAnchorIndexRef = useRef(-1)
+  const readingSettleTimerRef = useRef(null)
+  const readingFrameRef = useRef(0)
+  const readingWheelDeltaRef = useRef(0)
   const [rect, setRect] = useState(DEFAULT_RECT)
   const [fontSizeByView, setFontSizeByView] = useState(() => {
     const initialFontSize = clamp(Number(defaultFontSize) || DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE)
@@ -118,8 +136,8 @@ export default function RollingSubtitlePanel({
   const [localSubtitleHidden, setLocalSubtitleHidden] = useState(false)
   const scrollMode = 'float'
   const [dockPosition, setDockPosition] = useState('left')
-  const [subtitleNoteAdding, setSubtitleNoteAdding] = useState(false)
   const [checkboxHotZoneActive, setCheckboxHotZoneActive] = useState(false)
+  const [controlHotZoneActive, setControlHotZoneActive] = useState(false)
   const [selectedCueIds, setSelectedCueIds] = useState(() => new Set())
   const selectedCues = useMemo(() => (
     cues.filter((cue) => selectedCueIds.has(cue.id))
@@ -132,6 +150,9 @@ export default function RollingSubtitlePanel({
   const fontSize = clamp(Number(fontSizeByView[resolvedFontSizeKey]) || fallbackFontSize, MIN_FONT_SIZE, MAX_FONT_SIZE)
   const subtitleCenterViewDimNumber = Number(subtitleCenterViewDim)
   const subtitleCenterLayoutActive = enableSubtitleCenterLayout && subtitleCenterModeActive
+  const subtitleNoteAdding = subtitleInteractionMode === 'pick' || subtitleInteractionMode === 'reading'
+  const subtitlePickActive = enableSubtitleNoteAdding && subtitleInteractionMode === 'pick'
+  const subtitleReadingActive = enableSubtitleNoteAdding && subtitleInteractionMode === 'reading'
   const subtitleNoteAddingActive = enableSubtitleNoteAdding && subtitleNoteAdding
   const effectiveSubtitleHidden = typeof subtitleHidden === 'boolean' ? subtitleHidden : localSubtitleHidden
   const hvLayoutLabel = Number(hvLayout) === 1 ? 'V' : 'H'
@@ -201,11 +222,11 @@ export default function RollingSubtitlePanel({
 
       setVisualTrackOffset(anchor.screenCenter - layout.center)
       pendingWindowAnchorRef.current = null
-  }, [renderWindow, scrollMode])
+  }, [fontSize, renderWindow, scrollMode])
 
   useEffect(() => {
     if (enableSubtitleNoteAdding) return
-    setSubtitleNoteAdding(false)
+    onInteractionModeChange?.('follow')
     clearSelectedCues()
   }, [enableSubtitleNoteAdding])
 
@@ -236,6 +257,93 @@ export default function RollingSubtitlePanel({
     motionPlanRef.current = buildMotionPlan(cues, layouts, viewportHeight)
     visibleMetricsRef.current = getVisibleMetrics(containerRef?.current, list)
     floatCurveRef.current = buildFloatCurve(cues, layouts, visibleMetricsRef.current, viewportHeight)
+  }
+
+  const reportReadingViewport = () => {
+    if (!subtitleReadingActive) return
+    const list = listRef.current
+    const rows = [...(trackRef.current?.querySelectorAll('[data-cue-index]') || [])]
+    if (!list || rows.length === 0) return
+
+    const listBounds = list.getBoundingClientRect()
+    const viewportCenter = listBounds.top + (listBounds.height / 2)
+    const visibleRows = rows
+      .map((row) => ({ row, bounds: row.getBoundingClientRect() }))
+      .filter(({ bounds }) => (
+        bounds.bottom > listBounds.top && bounds.top < listBounds.bottom
+      ))
+      .map(({ row, bounds }) => ({
+        index: Number(row.dataset.cueIndex),
+        distanceFromCenter: Math.abs((bounds.top + (bounds.height / 2)) - viewportCenter),
+      }))
+      .filter(({ index }) => Number.isInteger(index))
+    if (visibleRows.length === 0) return
+
+    const visibleIndexes = visibleRows.map(({ index }) => index)
+    const focusIndex = visibleRows.reduce((nearest, current) => (
+      current.distanceFromCenter < nearest.distanceFromCenter ? current : nearest
+    )).index
+    readingAnchorIndexRef.current = focusIndex
+    onReadingViewportChange?.({
+      total: cues.length,
+      startIndex: Math.min(...visibleIndexes) + 1,
+      endIndex: Math.max(...visibleIndexes) + 1,
+      focusCue: cues[focusIndex] || null,
+    })
+  }
+
+  const scheduleReadingSettlement = (delay = 1000) => {
+    if (readingSettleTimerRef.current) window.clearTimeout(readingSettleTimerRef.current)
+    readingSettleTimerRef.current = window.setTimeout(() => {
+      readingSettleTimerRef.current = null
+      window.cancelAnimationFrame(readingFrameRef.current)
+      readingFrameRef.current = window.requestAnimationFrame(() => {
+        rebuildLayoutAndMotionPlan()
+        reportReadingViewport()
+      })
+    }, delay)
+  }
+
+  const centerReadingCue = (index) => {
+    if (!subtitleReadingActive || cues.length === 0) return
+    const safeIndex = clamp(Math.round(index), 0, cues.length - 1)
+    const list = listRef.current
+    if (!list) return
+
+    readingAnchorIndexRef.current = safeIndex
+    onReadingAnchorChange?.({
+      cue: cues[safeIndex] || null,
+      cueIndex: safeIndex,
+    })
+    const targetCenter = list.clientHeight / 2
+    const changedWindow = updateRenderWindowForIndex(safeIndex)
+    if (changedWindow) {
+      pendingWindowAnchorRef.current = { index: safeIndex, screenCenter: targetCenter }
+    } else {
+      rebuildLayoutAndMotionPlan()
+      const layout = cueLayoutsRef.current[safeIndex]
+      if (layout) setVisualTrackOffset(targetCenter - layout.center)
+      else pendingWindowAnchorRef.current = { index: safeIndex, screenCenter: targetCenter }
+    }
+  }
+
+  const handleReadingWheel = (event) => {
+    if (!subtitleReadingActive || cues.length === 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    onReadingScrollStart?.()
+
+    readingWheelDeltaRef.current += event.deltaY
+    const wheelSteps = Math.trunc(readingWheelDeltaRef.current / 60)
+    if (wheelSteps === 0) return
+    readingWheelDeltaRef.current -= wheelSteps * 60
+    const direction = wheelSteps > 0 ? 1 : -1
+    const step = clamp(Math.abs(wheelSteps), 1, 5)
+    const currentIndex = readingAnchorIndexRef.current >= 0
+      ? readingAnchorIndexRef.current
+      : Math.max(0, activeIndexRef.current)
+    centerReadingCue(currentIndex + (direction * step))
+    scheduleReadingSettlement()
   }
 
   const refreshVisibleMetrics = () => {
@@ -283,6 +391,33 @@ export default function RollingSubtitlePanel({
   }, [subtitleNoteAddingActive])
 
   useEffect(() => {
+    if (!subtitleReadingActive) {
+      if (readingSettleTimerRef.current) window.clearTimeout(readingSettleTimerRef.current)
+      readingSettleTimerRef.current = null
+      onReadingViewportChange?.(null)
+      return undefined
+    }
+
+    const requestedIndex = Number(readingStartCueIndex)
+    const initialIndex = Number.isInteger(requestedIndex) && requestedIndex >= 0 && requestedIndex < cues.length
+      ? requestedIndex
+      : activeIndexRef.current >= 0
+        ? activeIndexRef.current
+        : getActiveSubtitleCueIndex(cues, getEffectiveTime(currentTimeRef.current))
+    readingAnchorIndexRef.current = Math.max(0, initialIndex)
+    readingWheelDeltaRef.current = 0
+    readingFrameRef.current = window.requestAnimationFrame(() => {
+      centerReadingCue(readingAnchorIndexRef.current)
+      scheduleReadingSettlement(0)
+    })
+    return () => {
+      window.cancelAnimationFrame(readingFrameRef.current)
+      if (readingSettleTimerRef.current) window.clearTimeout(readingSettleTimerRef.current)
+      readingSettleTimerRef.current = null
+    }
+  }, [subtitleReadingActive])
+
+  useEffect(() => {
     const nextDefaultFontSize = clamp(Number(defaultFontSize) || DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE)
     setFontSizeByView((current) => {
       const next = { ...current }
@@ -304,10 +439,16 @@ export default function RollingSubtitlePanel({
 
   useEffect(() => {
     const nextActiveIndex = getActiveSubtitleCueIndex(cues, getEffectiveTime(currentTimeRef.current))
-    const nextWindow = buildRenderWindow(nextActiveIndex, cues.length)
+    const readingIndex = readingAnchorIndexRef.current >= 0
+      ? Math.min(readingAnchorIndexRef.current, Math.max(0, cues.length - 1))
+      : Math.max(0, nextActiveIndex)
+    const windowIndex = subtitleReadingActive ? readingIndex : nextActiveIndex
+    const nextWindow = buildRenderWindow(windowIndex, cues.length)
     activeIndexRef.current = -1
     resumeScrollingRef.current = false
-    pendingWindowAnchorRef.current = null
+    pendingWindowAnchorRef.current = subtitleReadingActive
+      ? { index: readingIndex, screenCenter: (listRef.current?.clientHeight || 0) / 2 }
+      : null
     renderWindowRef.current = nextWindow
     trackOffsetRef.current = 0
     displayOffsetRef.current = 0
@@ -318,6 +459,13 @@ export default function RollingSubtitlePanel({
     setRenderWindow(nextWindow)
     const track = trackRef.current
     if (track) track.style.transform = 'translate3d(0, 0, 0)'
+    if (subtitleReadingActive) {
+      window.cancelAnimationFrame(readingFrameRef.current)
+      readingFrameRef.current = window.requestAnimationFrame(() => {
+        centerReadingCue(readingIndex)
+        scheduleReadingSettlement()
+      })
+    }
   }, [cues, fontSize, timingOffset, scrollMode])
 
   useEffect(() => {
@@ -335,36 +483,63 @@ export default function RollingSubtitlePanel({
   }, [cues])
 
   useEffect(() => {
-    if (initializedRectRef.current) return
     const bounds = containerRef?.current?.getBoundingClientRect()
     if (!bounds?.width || !bounds?.height) return
 
-    initializedRectRef.current = true
-    setRect({
-      x: 0,
-      y: 0,
-      width: Math.max(MIN_WIDTH, Math.round(bounds.width / 2)),
-      height: Math.max(MIN_HEIGHT, Math.round(bounds.height * 0.95)),
-    })
-  }, [containerRef])
-
-  useEffect(() => {
-    if (!subtitleCenterModeActive && subtitleCenterModeActiveRef.current && rectBeforeSubtitleCenterModeRef.current) {
-      setRect(rectBeforeSubtitleCenterModeRef.current)
-      rectBeforeSubtitleCenterModeRef.current = null
-      window.requestAnimationFrame(rebuildLayoutAndMotionPlan)
+    const hasPersistedRect = hasPanelRect(panelViewState)
+    const width = clamp(
+      hasPersistedRect ? Number(panelViewState.width) : Math.round(bounds.width / 2),
+      MIN_WIDTH,
+      Math.max(MIN_WIDTH, Math.round(bounds.width)),
+    )
+    const height = clamp(
+      hasPersistedRect ? Number(panelViewState.height) : Math.round(bounds.height * 0.95),
+      MIN_HEIGHT,
+      Math.max(MIN_HEIGHT, Math.round(bounds.height)),
+    )
+    const nextRect = {
+      x: hasPersistedRect
+        ? clamp(Number(panelViewState.x), -width + VISIBLE_HANDLE_SIZE, bounds.width - VISIBLE_HANDLE_SIZE)
+        : 0,
+      y: hasPersistedRect
+        ? clamp(Number(panelViewState.y), 0, Math.max(0, bounds.height - VISIBLE_HANDLE_SIZE))
+        : 0,
+      width,
+      height,
     }
+    const nextDockPosition = DOCK_POSITIONS.includes(panelViewState?.dockPosition)
+      ? panelViewState.dockPosition
+      : 'left'
+    const nextFontSize = clamp(
+      Number(panelViewState?.fontSize) || fallbackFontSize,
+      MIN_FONT_SIZE,
+      MAX_FONT_SIZE,
+    )
 
-    subtitleCenterModeActiveRef.current = subtitleCenterModeActive
-  }, [subtitleCenterModeActive])
+    rectRef.current = nextRect
+    setRect(nextRect)
+    setDockPosition(nextDockPosition)
+    setFontSizeByView((current) => ({
+      ...current,
+      [resolvedFontSizeKey]: nextFontSize,
+    }))
+    if (!hasPersistedRect && !subtitleCenterModeActive) {
+      onPanelViewStateChange?.({ ...nextRect, fontSize: nextFontSize, dockPosition: nextDockPosition })
+    }
+    window.requestAnimationFrame(rebuildLayoutAndMotionPlan)
+  }, [containerRef, panelViewKey])
 
   useEffect(() => {
     if (!enableSubtitleCenterLayout || !subtitleCenterLayoutRequest) return
 
+    const hasPersistedRect = hasPanelRect(panelViewState)
+    if (hasPersistedRect) {
+      window.requestAnimationFrame(rebuildLayoutAndMotionPlan)
+      return
+    }
+
     const stageRect = containerRef?.current?.getBoundingClientRect()
     if (!stageRect?.width || !stageRect?.height) return
-
-    if (!rectBeforeSubtitleCenterModeRef.current) rectBeforeSubtitleCenterModeRef.current = rectRef.current
 
     const bottomRect = bottomPanelRef?.current?.getBoundingClientRect()
     const bottomTop = bottomRect ? bottomRect.top - stageRect.top : stageRect.height
@@ -379,11 +554,19 @@ export default function RollingSubtitlePanel({
       Math.min(Math.round(stageRect.height), Math.round(availableHeight)),
     )
 
-    setRect({
+    const nextRect = {
       x: Math.max(0, Math.round((stageRect.width - nextWidth) / 2)),
       y: 0,
       width: nextWidth,
       height: nextHeight,
+    }
+    rectRef.current = nextRect
+    setRect(nextRect)
+    setDockPosition('center')
+    onPanelViewStateChange?.({
+      ...nextRect,
+      fontSize: clamp(Number(panelViewState?.fontSize) || fallbackFontSize, MIN_FONT_SIZE, MAX_FONT_SIZE),
+      dockPosition: 'center',
     })
     window.requestAnimationFrame(rebuildLayoutAndMotionPlan)
   }, [bottomPanelRef, containerRef, subtitleCenterLayoutRequest, enableSubtitleCenterLayout])
@@ -604,11 +787,15 @@ export default function RollingSubtitlePanel({
       const dy = event.clientY - drag.startY
 
       if (drag.type === 'move') {
-        setRect((current) => ({
-          ...current,
-          x: clamp(drag.rect.x + dx, -current.width + VISIBLE_HANDLE_SIZE, maxWidth - VISIBLE_HANDLE_SIZE),
-          y: clamp(drag.rect.y + dy, 0, Math.max(0, maxHeight - VISIBLE_HANDLE_SIZE)),
-        }))
+        setRect((current) => {
+          const nextRect = {
+            ...current,
+            x: clamp(drag.rect.x + dx, -current.width + VISIBLE_HANDLE_SIZE, maxWidth - VISIBLE_HANDLE_SIZE),
+            y: clamp(drag.rect.y + dy, 0, Math.max(0, maxHeight - VISIBLE_HANDLE_SIZE)),
+          }
+          rectRef.current = nextRect
+          return nextRect
+        })
         window.requestAnimationFrame(refreshVisibleMetrics)
         return
       }
@@ -619,7 +806,9 @@ export default function RollingSubtitlePanel({
           const x = Math.max(0, Math.round((maxWidth - width) / 2))
           subtitleCenterModeSessionSizeRef.current = { width }
           window.requestAnimationFrame(refreshVisibleMetrics)
-          return { ...current, x, width, height: drag.rect.height }
+          const nextRect = { ...current, x, width, height: drag.rect.height }
+          rectRef.current = nextRect
+          return nextRect
         }
 
         if (drag.type === 'resize-ne') {
@@ -628,18 +817,32 @@ export default function RollingSubtitlePanel({
           const width = clamp(drag.rect.width + dx, MIN_WIDTH, maxWidth - current.x)
           const height = clamp(maxHeightFromTop - nextY, MIN_HEIGHT, maxHeight - nextY)
           window.requestAnimationFrame(refreshVisibleMetrics)
-          return { ...current, y: nextY, width, height }
+          const nextRect = { ...current, y: nextY, width, height }
+          rectRef.current = nextRect
+          return nextRect
         }
 
         const width = clamp(drag.rect.width + dx, MIN_WIDTH, maxWidth - current.x)
         const height = clamp(drag.rect.height + dy, MIN_HEIGHT, maxHeight - current.y)
         window.requestAnimationFrame(refreshVisibleMetrics)
-        return { ...current, width, height }
+        const nextRect = { ...current, width, height }
+        rectRef.current = nextRect
+        return nextRect
       })
     }
 
     const handlePointerUp = () => {
+      const hadActiveDrag = Boolean(dragRef.current)
       dragRef.current = null
+      if (hadActiveDrag) {
+        window.requestAnimationFrame(() => {
+          onPanelViewStateChange?.({
+            ...rectRef.current,
+            fontSize,
+            dockPosition,
+          })
+        })
+      }
     }
 
     window.addEventListener('pointermove', handlePointerMove)
@@ -648,7 +851,7 @@ export default function RollingSubtitlePanel({
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [containerRef, subtitleCenterModeActive])
+  }, [containerRef, dockPosition, fontSize, onPanelViewStateChange, subtitleCenterModeActive])
 
   const startDrag = (event, type) => {
     event.preventDefault()
@@ -674,7 +877,14 @@ export default function RollingSubtitlePanel({
         : Math.max(0, Math.round((bounds.width - width) / 2))
     const y = Math.max(0, Math.round((bounds.height - height) / 2))
 
-    setRect({ x, y, width, height })
+    const nextRect = { x, y, width, height }
+    rectRef.current = nextRect
+    setRect(nextRect)
+    onPanelViewStateChange?.({
+      ...nextRect,
+      fontSize,
+      dockPosition: position,
+    })
     window.requestAnimationFrame(syncTrackToCurrentCue)
   }
 
@@ -703,10 +913,16 @@ export default function RollingSubtitlePanel({
     event.stopPropagation()
     const nextFontSize = Number(event.target.value)
     if (!Number.isFinite(nextFontSize)) return
+    const resolvedNextFontSize = clamp(nextFontSize, MIN_FONT_SIZE, MAX_FONT_SIZE)
     setFontSizeByView((current) => ({
       ...current,
-      [resolvedFontSizeKey]: clamp(nextFontSize, MIN_FONT_SIZE, MAX_FONT_SIZE),
+      [resolvedFontSizeKey]: resolvedNextFontSize,
     }))
+    onPanelViewStateChange?.({
+      ...rectRef.current,
+      fontSize: resolvedNextFontSize,
+      dockPosition,
+    })
   }
 
 
@@ -719,7 +935,7 @@ export default function RollingSubtitlePanel({
       next.delete(cue.id)
     } else {
       next.add(cue.id)
-      setSubtitleNoteAdding(true)
+      if (!subtitleNoteAdding) onInteractionModeChange?.('pick')
     }
     setSelectedCueIds(next)
     onSelectedSubtitlesChange?.(getSelectedCuesByIds(next))
@@ -731,6 +947,15 @@ export default function RollingSubtitlePanel({
     const hotZoneActive = event.clientX >= trackBounds.left
       && event.clientX <= trackBounds.left + 38
     setCheckboxHotZoneActive((current) => (
+      current === hotZoneActive ? current : hotZoneActive
+    ))
+  }
+
+  const updateControlHotZone = (event) => {
+    const panelBounds = event.currentTarget.getBoundingClientRect()
+    const hotZoneActive = event.clientX >= panelBounds.right - CONTROL_HOT_ZONE_WIDTH
+      && event.clientX <= panelBounds.right
+    setControlHotZoneActive((current) => (
       current === hotZoneActive ? current : hotZoneActive
     ))
   }
@@ -753,23 +978,29 @@ export default function RollingSubtitlePanel({
           onSelectedSubtitlesChange?.(getSelectedCuesByIds(next))
         }
       }
-      setSubtitleNoteAdding(true)
+      onInteractionModeChange?.('pick')
       return
     }
 
     if (selectedCues.length === 0) {
-      setSubtitleNoteAdding(false)
+      if (subtitleReadingActive) return
+      onInteractionModeChange?.('follow')
       clearSelectedCues()
       return
     }
 
     const result = onPickSelectedSubtitles
-      ? await onPickSelectedSubtitles(selectedCues, { fromShortcut })
+      ? await onPickSelectedSubtitles(selectedCues, { fromShortcut, readingMode: subtitleReadingActive })
       : await onAddSelectedSubtitles?.(selectedCues)
 
     if (result === 'goBack') return
 
-    setSubtitleNoteAdding(false)
+    if (subtitleReadingActive) {
+      clearSelectedCues()
+      return
+    }
+
+    onInteractionModeChange?.('follow')
     clearSelectedCues()
   }
 
@@ -790,13 +1021,18 @@ export default function RollingSubtitlePanel({
         'rolling-subtitle-panel',
         subtitleCenterModeActive ? 'subtitle-center-mode' : '',
         subtitleNoteAdding ? 'subtitle-note-adding' : '',
+        subtitlePickActive ? 'subtitle-pick-active' : '',
+        subtitleReadingActive ? 'subtitle-reading' : '',
         checkboxHotZoneActive ? 'checkbox-hot-zone-active' : '',
+        controlHotZoneActive ? 'control-hot-zone-active' : '',
       ].filter(Boolean).join(' ')}
       style={{
         width: rect.width,
         height: rect.height,
         transform: `translate(${rect.x}px, ${rect.y}px)`,
       }}
+      onPointerLeave={() => setControlHotZoneActive(false)}
+      onPointerMove={updateControlHotZone}
     >
       <div
         className="rolling-subtitle-drag-handle"
@@ -862,7 +1098,7 @@ export default function RollingSubtitlePanel({
             event.preventDefault()
             event.stopPropagation()
             if (!effectiveSubtitleHidden && subtitleNoteAdding) {
-              setSubtitleNoteAdding(false)
+              onInteractionModeChange?.('follow')
               clearSelectedCues()
             }
             if (onToggleSubtitleHidden) {
@@ -925,6 +1161,7 @@ export default function RollingSubtitlePanel({
         className={effectiveSubtitleHidden ? 'rolling-subtitle-list hidden' : 'rolling-subtitle-list'}
         onPointerLeave={() => setCheckboxHotZoneActive(false)}
         onPointerMove={updateCheckboxHotZone}
+        onWheel={handleReadingWheel}
         ref={listRef}
       >
         <div className="rolling-subtitle-track" ref={trackRef}>
@@ -952,7 +1189,7 @@ export default function RollingSubtitlePanel({
                 onContextMenu={(event) => {
                   event.preventDefault()
                   event.stopPropagation()
-                  onCueContextMenu?.(event, cue, { pickSubActive: subtitleNoteAddingActive })
+                  onCueContextMenu?.(event, cue, { subtitleInteractionMode })
                 }}
                 onKeyDown={(event) => {
                   if (event.key !== 'Enter' && event.key !== ' ') return

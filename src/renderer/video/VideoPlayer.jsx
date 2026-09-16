@@ -2,7 +2,18 @@ import { useEffect, useRef } from 'react'
 import videojs from 'video.js'
 import 'video.js/dist/video-js.css'
 
-export default function VideoPlayer({ src, subtitle, subtitleEnabled = true, onReady, onTimeUpdate, onEnded }) {
+export default function VideoPlayer({
+  src,
+  subtitle,
+  subtitleEnabled = true,
+  playbackRate = 1,
+  volume = 1,
+  onReady,
+  onTimeUpdate,
+  onEnded,
+  onPlaybackRateChange,
+  onVolumeChange,
+}) {
   const videoRef = useRef(null)
   const playerRef = useRef(null)
   const remoteTextTrackRef = useRef(null)
@@ -10,13 +21,25 @@ export default function VideoPlayer({ src, subtitle, subtitleEnabled = true, onR
   const onReadyRef = useRef(onReady)
   const onTimeUpdateRef = useRef(onTimeUpdate)
   const onEndedRef = useRef(onEnded)
+  const playbackRateRef = useRef(playbackRate)
+  const volumeRef = useRef(volume)
+  const onPlaybackRateChangeRef = useRef(onPlaybackRateChange)
+  const onVolumeChangeRef = useRef(onVolumeChange)
+  const sourceLoadingRef = useRef(false)
 
   useEffect(() => {
     onReadyRef.current = onReady
     onTimeUpdateRef.current = onTimeUpdate
     onEndedRef.current = onEnded
+    onPlaybackRateChangeRef.current = onPlaybackRateChange
+    onVolumeChangeRef.current = onVolumeChange
     subtitleEnabledRef.current = subtitleEnabled
-  }, [onReady, onTimeUpdate, onEnded])
+  }, [onReady, onTimeUpdate, onEnded, onPlaybackRateChange, onVolumeChange])
+
+  useEffect(() => {
+    playbackRateRef.current = Number.isFinite(Number(playbackRate)) ? Number(playbackRate) : 1
+    volumeRef.current = Number.isFinite(Number(volume)) ? Math.max(0, Math.min(1, Number(volume))) : 1
+  }, [playbackRate, volume])
 
   useEffect(() => {
     subtitleEnabledRef.current = subtitleEnabled
@@ -42,6 +65,24 @@ export default function VideoPlayer({ src, subtitle, subtitleEnabled = true, onR
     player.on('ended', () => {
       onEndedRef.current?.()
     })
+    player.on('ratechange', () => {
+      const nextRate = Number(player.playbackRate?.()) || 1
+      const expectedRate = playbackRateRef.current
+      if (sourceLoadingRef.current && Math.abs(nextRate - expectedRate) > 0.001) {
+        player.playbackRate?.(expectedRate)
+        return
+      }
+      onPlaybackRateChangeRef.current?.(nextRate)
+    })
+    player.on('volumechange', () => {
+      const nextVolume = Number(player.volume?.())
+      const expectedVolume = volumeRef.current
+      if (sourceLoadingRef.current && Number.isFinite(nextVolume) && Math.abs(nextVolume - expectedVolume) > 0.001) {
+        player.volume?.(expectedVolume)
+        return
+      }
+      onVolumeChangeRef.current?.(Number.isFinite(nextVolume) ? nextVolume : 1)
+    })
     onReadyRef.current?.(player)
 
     return () => {
@@ -57,12 +98,45 @@ export default function VideoPlayer({ src, subtitle, subtitleEnabled = true, onR
   useEffect(() => {
     const player = playerRef.current
     if (!player || !src) {
-      return
+      return undefined
     }
 
+    let correctionTimeoutId = 0
+    let fallbackTimeoutId = 0
+    const applyPlayingView = () => {
+      player.playbackRate?.(playbackRateRef.current)
+      player.volume?.(volumeRef.current)
+    }
+    const finishSourceLoad = () => {
+      applyPlayingView()
+      sourceLoadingRef.current = false
+    }
+
+    sourceLoadingRef.current = true
+    player.one?.('loadedmetadata', finishSourceLoad)
     player.src({ src, type: 'video/mp4' })
     player.load()
+    applyPlayingView()
+    correctionTimeoutId = window.setTimeout(applyPlayingView, 180)
+    fallbackTimeoutId = window.setTimeout(finishSourceLoad, 5000)
+    return () => {
+      window.clearTimeout(correctionTimeoutId)
+      window.clearTimeout(fallbackTimeoutId)
+      player.off?.('loadedmetadata', finishSourceLoad)
+      sourceLoadingRef.current = false
+    }
   }, [src])
+
+  useEffect(() => {
+    const player = playerRef.current
+    if (!player) return
+    if (Math.abs(Number(player.playbackRate?.()) - playbackRateRef.current) > 0.001) {
+      player.playbackRate?.(playbackRateRef.current)
+    }
+    if (Math.abs(Number(player.volume?.()) - volumeRef.current) > 0.001) {
+      player.volume?.(volumeRef.current)
+    }
+  }, [playbackRate, volume])
 
   useEffect(() => {
     const player = playerRef.current

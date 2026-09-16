@@ -20,7 +20,7 @@
   border-color: rgba(255, 179, 71, 0.48);
 }
 
-.rolling-subtitle-panel.subtitle-note-adding {
+.rolling-subtitle-panel.subtitle-pick-active {
   border-color: rgba(255, 76, 76, 0.95);
   box-shadow: 0 0 0 2px rgba(255, 76, 76, 0.72), 0 8px 28px rgba(0, 0, 0, 0.16);
 }
@@ -52,7 +52,8 @@
 }
 
 .rolling-subtitle-drag-handle:hover,
-.rolling-subtitle-panel.subtitle-note-adding .rolling-subtitle-drag-handle,
+.rolling-subtitle-panel.subtitle-pick-active .rolling-subtitle-drag-handle,
+.rolling-subtitle-panel.control-hot-zone-active .rolling-subtitle-drag-handle,
 .rolling-subtitle-drag-handle:focus-within {
   opacity: 1;
 }
@@ -259,6 +260,14 @@
 .rolling-subtitle-panel.subtitle-note-adding .rolling-subtitle-cue-check,
 .rolling-subtitle-panel.checkbox-hot-zone-active .rolling-subtitle-cue-check {
   visibility: visible;
+}
+
+.rolling-subtitle-panel.subtitle-reading .rolling-subtitle-list {
+  cursor: ns-resize;
+}
+
+.rolling-subtitle-panel.subtitle-reading .rolling-subtitle-track {
+  transition: transform 90ms ease-out;
 }
 
 .rolling-subtitle-cue-check:checked {

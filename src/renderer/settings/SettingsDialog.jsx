@@ -568,6 +568,50 @@ export default function SettingsDialog({ onClose }) {
                 </section>
 
                 <section className="settings-section">
+                  <div className="settings-section-title">Common-Segmented Shortcut</div>
+                  <div className="settings-form-grid">
+                    <label htmlFor="settings-segmented-shortcut-wait">Waiting Time (sec)</label>
+                    <input
+                      id="settings-segmented-shortcut-wait"
+                      type="number"
+                      min="0.5"
+                      max="10"
+                      step="0.5"
+                      value={draft.general.segmentedShortcutWaitSec}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            segmentedShortcutWaitSec: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                    <label htmlFor="settings-shortcut-hint-font-size">Hint Font Size (px)</label>
+                    <input
+                      id="settings-shortcut-hint-font-size"
+                      type="number"
+                      min="9"
+                      max="32"
+                      step="1"
+                      value={draft.general.shortcutHintFontSize}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            shortcutHintFontSize: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                  </div>
+                </section>
+
+                <section className="settings-section">
                   <div className="settings-section-title">Video</div>
                   <div className="settings-form-grid">
                     <label htmlFor="settings-extra-subtitle-folder">Extra Subtitle Folder</label>

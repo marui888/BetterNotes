@@ -2,6 +2,8 @@
   "general": {
     "defaultMode": "text",
     "globalActivationShortcut": "Ctrl+Alt+F",
+    "segmentedShortcutWaitSec": 3,
+    "shortcutHintFontSize": 15,
     "monthlyNotesFolder": "",
     "specialTextFolder": "",
     "keywordFolder": "",
@@ -9,6 +11,7 @@
     "extraSubtitleFolder": "",
     "subtitleDisplayMode": "rolling",
     "rollingSubtitleFontSize": 30,
+    "pickSubAutoSelectCurrent": false,
     "subtitleCenterViewBlurPx": 18,
     "subtitleCenterViewDim": 0,
     "videoNotesFontSize": 12,

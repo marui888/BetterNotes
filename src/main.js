@@ -56,6 +56,8 @@ const DEFAULT_APP_SETTINGS = {
   general: {
     defaultMode: 'video',
     globalActivationShortcut: 'Ctrl+Alt+F',
+    segmentedShortcutWaitSec: 2,
+    shortcutHintFontSize: 12,
     monthlyNotesFolder: '',
     specialTextFolder: '',
     keywordFolder: '',
@@ -229,6 +231,14 @@ function normalizeAppSettings(value) {
   const globalActivationShortcut = typeof value?.general?.globalActivationShortcut === 'string'
     ? value.general.globalActivationShortcut
     : DEFAULT_APP_SETTINGS.general.globalActivationShortcut
+  const rawSegmentedShortcutWaitSec = Number(value?.general?.segmentedShortcutWaitSec)
+  const segmentedShortcutWaitSec = Number.isFinite(rawSegmentedShortcutWaitSec)
+    ? Math.max(0.5, Math.min(10, Math.round(rawSegmentedShortcutWaitSec * 2) / 2))
+    : DEFAULT_APP_SETTINGS.general.segmentedShortcutWaitSec
+  const rawShortcutHintFontSize = Number(value?.general?.shortcutHintFontSize)
+  const shortcutHintFontSize = Number.isFinite(rawShortcutHintFontSize)
+    ? Math.max(9, Math.min(32, Math.round(rawShortcutHintFontSize)))
+    : DEFAULT_APP_SETTINGS.general.shortcutHintFontSize
   const monthlyNotesFolder = typeof value?.general?.monthlyNotesFolder === 'string'
     ? normalizeFilePath(value.general.monthlyNotesFolder)
     : DEFAULT_APP_SETTINGS.general.monthlyNotesFolder
@@ -309,6 +319,8 @@ function normalizeAppSettings(value) {
     general: {
       defaultMode,
       globalActivationShortcut,
+      segmentedShortcutWaitSec,
+      shortcutHintFontSize,
       monthlyNotesFolder,
       specialTextFolder,
       keywordFolder,
@@ -1225,8 +1237,10 @@ async function buildVideoFileInfo(filePath, options = {}) {
   const folderPath = path.dirname(filePath)
   const fileName = path.basename(filePath)
   const notePath = getVideoNotePath(filePath)
-  const notes = await readJsonFile(notePath, [])
-  const mp4Files = await listMp4FilesInFolder(folderPath)
+  const notes = options.loadNotes === false ? [] : await readJsonFile(notePath, [])
+  const mp4Files = options.loadDirectoryMp4Files === false
+    ? []
+    : await listMp4FilesInFolder(folderPath)
   const subtitleInfo = await listVideoSubtitleLanguages(filePath, options.extraSubtitleFolder)
 
   return {
