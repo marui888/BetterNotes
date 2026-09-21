@@ -72,14 +72,67 @@ function getChordOptions(shortcuts, scopes, prefix, mode) {
   return options
 }
 
+const GLOBAL_MODE_ACTION_IDS = new Set([
+  'global.switchToVideo',
+  'global.switchToPicture',
+  'global.switchToText',
+  'global.switchToManagement',
+])
+
+function getGlobalModeChord(shortcuts, mode) {
+  const entries = getScopedShortcutEntries(shortcuts, SHORTCUT_SCOPES.GLOBAL)
+    .filter(([actionId]) => GLOBAL_MODE_ACTION_IDS.has(actionId))
+    .map(([actionId, value]) => ({ actionId, parts: value.trim().split(/\s+/) }))
+    .filter(({ parts }) => parts.length >= 2)
+  const prefix = entries[0]?.parts[0] || ''
+  if (!prefix) return null
+
+  const labels = new Map(
+    getRegisteredActions().map((action) => [action.id, action.label || action.id])
+  )
+  const options = entries
+    .filter(({ parts }) => parts[0] === prefix)
+    .map(({ actionId, parts }) => ({
+      actionId,
+      key: parts.slice(1).join(' '),
+      label: labels.get(actionId) || actionId,
+    }))
+    .filter(({ actionId, key }) => key && isShortcutActionEnabled(actionId, mode))
+
+  return options.length > 0 ? { prefix, options } : null
+}
+
 const VIDEO_CONTROL_ACTIONS = new Set([
   'video.jumpBackShort',
   'video.jumpForwardShort',
-  'video.speedUp',
-  'video.speedDown',
+  'video.volumeUp',
+  'video.volumeDown',
+  'video.rollingFontSizeUp',
+  'video.rollingFontSizeDown',
+  'video.videoOpacityDown',
+  'video.videoOpacityUp',
+])
+
+const NOTE_CONTENT_ARROW_ACTIONS = new Set([
+  'video.jumpBackShort',
+  'video.jumpForwardShort',
   'video.volumeUp',
   'video.volumeDown',
 ])
+
+const UNMODIFIED_ARROW_SHORTCUTS = new Set([
+  'ArrowLeft',
+  'ArrowRight',
+  'ArrowUp',
+  'ArrowDown',
+])
+
+function shouldLeaveArrowKeyForVideoNoteContent(actionId, mode, shortcut) {
+  if (mode !== SHORTCUT_SCOPES.VIDEO) return false
+  if (!NOTE_CONTENT_ARROW_ACTIONS.has(actionId)) return false
+  if (!UNMODIFIED_ARROW_SHORTCUTS.has(shortcut)) return false
+  return document.activeElement?.matches?.('.video-mode .note-editor') === true
+}
 
 function isShortcutActionEnabled(actionId, mode) {
   if (mode === SHORTCUT_SCOPES.VIDEO && VIDEO_CONTROL_ACTIONS.has(actionId)) {
@@ -93,10 +146,12 @@ export default function useShortcutManager(mode, disabled = false) {
   const settings = useSettingsStore((state) => state.settings)
   const chordTimeoutMs = settings.general.segmentedShortcutWaitSec * 1000
   const pendingChordRef = useRef(null)
+  const pendingChordScopesRef = useRef(null)
   const chordTimerRef = useRef(null)
 
   const clearPendingChord = () => {
     pendingChordRef.current = null
+    pendingChordScopesRef.current = null
     if (chordTimerRef.current) {
       clearTimeout(chordTimerRef.current)
       chordTimerRef.current = null
@@ -104,9 +159,10 @@ export default function useShortcutManager(mode, disabled = false) {
     window.dispatchEvent(new CustomEvent('shortcut-chord-change', { detail: null }))
   }
 
-  const startPendingChord = (firstShortcut, options) => {
+  const startPendingChord = (firstShortcut, options, scopes = null) => {
     clearPendingChord()
     pendingChordRef.current = firstShortcut
+    pendingChordScopesRef.current = scopes
     window.dispatchEvent(new CustomEvent('shortcut-chord-change', {
       detail: { shortcut: firstShortcut, options },
     }))
@@ -114,11 +170,10 @@ export default function useShortcutManager(mode, disabled = false) {
   }
 
   useEffect(() => {
-    if (disabled) return undefined
-
     const handleKeyDown = (event) => {
       if (event.repeat) return
-      if (document.querySelector('.subtitle-pick-dialog')) return
+      if (disabled && !pendingChordRef.current) return
+      if (document.querySelector('.subtitle-pick-dialog') && !pendingChordRef.current) return
 
       const shortcut = formatShortcutEvent(event)
       if (!shortcut) return
@@ -136,8 +191,9 @@ export default function useShortcutManager(mode, disabled = false) {
         }
 
         const chordShortcut = `${pendingChordRef.current} ${shortcut}`
+        const pendingScopes = pendingChordScopesRef.current || scopes
         clearPendingChord()
-        const chordActionId = findActionByShortcutInScopes(shortcuts, scopes, chordShortcut)
+        const chordActionId = findActionByShortcutInScopes(shortcuts, pendingScopes, chordShortcut)
         if (!chordActionId) return
         if (!isShortcutActionEnabled(chordActionId, mode)) return
 
@@ -155,6 +211,7 @@ export default function useShortcutManager(mode, disabled = false) {
       const actionId = findActionByShortcutInScopes(shortcuts, scopes, shortcut)
 
       if (!actionId) return
+      if (shouldLeaveArrowKeyForVideoNoteContent(actionId, mode, shortcut)) return
       if (!isShortcutActionEnabled(actionId, mode)) return
 
       event.preventDefault()
@@ -162,10 +219,30 @@ export default function useShortcutManager(mode, disabled = false) {
       runAction(actionId)
     }
 
+    const handleChordCancel = () => clearPendingChord()
+    const handleGlobalActivationChanged = ({ active } = {}) => {
+      window.dispatchEvent(new CustomEvent('shortcut-chord-cancel'))
+      if (!active) return
+
+      const globalModeChord = getGlobalModeChord(settings.shortcuts || {}, mode)
+      if (!globalModeChord) return
+      startPendingChord(
+        globalModeChord.prefix,
+        globalModeChord.options,
+        [SHORTCUT_SCOPES.GLOBAL]
+      )
+    }
+
     window.addEventListener('keydown', handleKeyDown, true)
+    window.addEventListener('shortcut-chord-cancel', handleChordCancel)
+    const removeGlobalActivationListener = window.appApi?.onGlobalActivationChanged?.(
+      handleGlobalActivationChanged
+    )
     return () => {
       clearPendingChord()
       window.removeEventListener('keydown', handleKeyDown, true)
+      window.removeEventListener('shortcut-chord-cancel', handleChordCancel)
+      removeGlobalActivationListener?.()
     }
   }, [chordTimeoutMs, disabled, mode, settings.shortcuts])
 }

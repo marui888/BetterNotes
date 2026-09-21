@@ -27,6 +27,8 @@ export const DEFAULT_APP_SETTINGS = {
     subtitleCenterViewDim: 0.65,
     videoNotesFontSize: 11,
     videoNotesPoolFontSize: 11,
+    locateNotePastLimitSec: 100,
+    locateNoteFutureLimitSec: 10,
     playAllSubtitleSuffix: '.en.vtt',
     subtitleConvertPromptTimeoutSec: 5,
     imageAutoLoadDelayMs: 500,
@@ -49,8 +51,10 @@ export const DEFAULT_APP_SETTINGS = {
       'video.setEnd': 'F3',
       'video.jumpForward': 'F4',
       'video.intoEditingFocus': 'Alt+E',
-      'video.appendMark': '',
-      'video.appendQuickMark': 'Ctrl+S',
+      'video.appendMark': 'Ctrl+S F',
+      'video.appendQuickMark': 'Ctrl+S A',
+      'video.insertQuickBefore': 'Ctrl+S D',
+      'video.insertQuickAfter': 'Ctrl+S S',
       'video.toggleControlMode': 'Alt+V',
       'video.toggleControlModeChord': 'Alt+V V',
       'video.toggleSubtitleHidden': 'Alt+V S',
@@ -68,6 +72,10 @@ export const DEFAULT_APP_SETTINGS = {
       'video.speedDown': 'Ctrl+ArrowDown',
       'video.volumeUp': 'ArrowUp',
       'video.volumeDown': 'ArrowDown',
+      'video.rollingFontSizeUp': 'Shift+ArrowUp',
+      'video.rollingFontSizeDown': 'Shift+ArrowDown',
+      'video.videoOpacityDown': 'Shift+ArrowLeft',
+      'video.videoOpacityUp': 'Shift+ArrowRight',
       'video.toggleView': 'Alt+V F',
       'video.toggleVolume': '',
       'video.pickSub': '',
@@ -145,6 +153,32 @@ function mergeShortcutBucket(scope, value) {
         : parts.length > 1 ? parts[parts.length - 1] : parts[0] || ''
       merged[actionId] = prefix && secondKey ? `${prefix} ${secondKey}` : ''
     })
+
+    const noteSegmentedDefaults = {
+      'video.appendMark': 'F',
+      'video.appendQuickMark': 'A',
+      'video.insertQuickBefore': 'D',
+      'video.insertQuickAfter': 'S',
+    }
+    const noteSegmentedActionIds = Object.keys(noteSegmentedDefaults)
+    const hasNoteSegmentedSchema = Object.prototype.hasOwnProperty.call(value || {}, 'video.insertQuickBefore')
+      || Object.prototype.hasOwnProperty.call(value || {}, 'video.insertQuickAfter')
+    const notePrefix = noteSegmentedActionIds
+      .map((actionId) => String(value?.[actionId] || '').trim().split(/\s+/).filter(Boolean))
+      .find((parts) => parts.length > 1)?.[0] || 'Ctrl+S'
+
+    noteSegmentedActionIds.forEach((actionId) => {
+      const rawShortcut = String(value?.[actionId] || '').trim()
+      if (hasNoteSegmentedSchema && !rawShortcut) {
+        merged[actionId] = ''
+        return
+      }
+      const parts = rawShortcut.split(/\s+/).filter(Boolean)
+      const secondKey = hasNoteSegmentedSchema && parts.length > 1
+        ? parts.slice(1).join(' ')
+        : noteSegmentedDefaults[actionId]
+      merged[actionId] = notePrefix && secondKey ? `${notePrefix} ${secondKey}` : ''
+    })
   }
   return merged
 }
@@ -221,6 +255,14 @@ export function normalizeAppSettings(value) {
   const videoNotesPoolFontSize = Number.isFinite(rawVideoNotesPoolFontSize)
     ? Math.max(9, Math.min(18, Math.round(rawVideoNotesPoolFontSize)))
     : DEFAULT_APP_SETTINGS.general.videoNotesPoolFontSize
+  const rawLocateNotePastLimitSec = Number(value?.general?.locateNotePastLimitSec)
+  const locateNotePastLimitSec = Number.isFinite(rawLocateNotePastLimitSec)
+    ? Math.max(0, Math.min(3600, Math.round(rawLocateNotePastLimitSec)))
+    : DEFAULT_APP_SETTINGS.general.locateNotePastLimitSec
+  const rawLocateNoteFutureLimitSec = Number(value?.general?.locateNoteFutureLimitSec)
+  const locateNoteFutureLimitSec = Number.isFinite(rawLocateNoteFutureLimitSec)
+    ? Math.max(0, Math.min(3600, Math.round(rawLocateNoteFutureLimitSec)))
+    : DEFAULT_APP_SETTINGS.general.locateNoteFutureLimitSec
   const rawSubtitleConvertPromptTimeoutSec = Number(value?.general?.subtitleConvertPromptTimeoutSec)
   const subtitleConvertPromptTimeoutSec = Number.isFinite(rawSubtitleConvertPromptTimeoutSec)
     ? Math.max(1, Math.min(60, Math.round(rawSubtitleConvertPromptTimeoutSec)))
@@ -268,6 +310,8 @@ export function normalizeAppSettings(value) {
       subtitleCenterViewDim,
       videoNotesFontSize,
       videoNotesPoolFontSize,
+      locateNotePastLimitSec,
+      locateNoteFutureLimitSec,
       playAllSubtitleSuffix,
       subtitleConvertPromptTimeoutSec,
       imageAutoLoadDelayMs,

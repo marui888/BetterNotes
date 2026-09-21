@@ -24,12 +24,19 @@ const shortcutTabs = [
   { id: SHORTCUT_SCOPES.GLOBAL, label: 'GLOBAL' },
 ]
 
-const VIDEO_SEGMENTED_ACTION_IDS = [
+const VIDEO_CONTROL_SEGMENTED_ACTION_IDS = [
   'video.toggleControlModeChord',
   'video.toggleSubtitleHidden',
   'video.toggleVideoViewHidden',
   'video.toggleView',
   'video.toggleHvLayout',
+]
+
+const VIDEO_NOTE_SEGMENTED_ACTION_IDS = [
+  'video.appendMark',
+  'video.appendQuickMark',
+  'video.insertQuickBefore',
+  'video.insertQuickAfter',
 ]
 
 function splitSegmentedShortcut(shortcut) {
@@ -153,9 +160,15 @@ export default function SettingsDialog({ onClose }) {
 
   const shortcutGroups = useMemo(() => {
     if (shortcutTab === SHORTCUT_SCOPES.VIDEO) {
-      const segmentedRows = VIDEO_SEGMENTED_ACTION_IDS
+      const controlSegmentedRows = VIDEO_CONTROL_SEGMENTED_ACTION_IDS
         .map((actionId) => shortcutRows.find((action) => action.id === actionId))
         .filter(Boolean)
+      const noteSegmentedRows = VIDEO_NOTE_SEGMENTED_ACTION_IDS
+        .map((actionId) => shortcutRows.find((action) => action.id === actionId))
+        .filter(Boolean)
+      const noteFirstKey = noteSegmentedRows
+        .map((action) => splitSegmentedShortcut(action.shortcut).firstKey)
+        .find(Boolean) || 'Ctrl+S'
       return [
         {
           key: 'video-normal',
@@ -163,11 +176,19 @@ export default function SettingsDialog({ onClose }) {
           rows: shortcutRows.filter((action) => !action.segmentedShortcut),
         },
         {
-          key: 'video-segmented',
+          key: 'video-control-segmented',
           title: '分段快捷键',
           firstKey: draft.shortcuts?.[SHORTCUT_SCOPES.VIDEO]?.['video.toggleControlMode'] || '',
           firstKeyReadOnly: true,
-          rows: segmentedRows,
+          rows: controlSegmentedRows,
+          segmented: true,
+        },
+        {
+          key: 'video-note-segmented',
+          title: 'Note Actions Segmented Shortcut',
+          firstKey: noteFirstKey,
+          firstKeyReadOnly: false,
+          rows: noteSegmentedRows,
           segmented: true,
         },
       ]
@@ -209,7 +230,7 @@ export default function SettingsDialog({ onClose }) {
       }
 
       if (scope === SHORTCUT_SCOPES.VIDEO && actionId === 'video.toggleControlMode') {
-        VIDEO_SEGMENTED_ACTION_IDS.forEach((segmentedActionId) => {
+        VIDEO_CONTROL_SEGMENTED_ACTION_IDS.forEach((segmentedActionId) => {
           const { secondKey } = splitSegmentedShortcut(currentBucket[segmentedActionId])
           nextBucket[segmentedActionId] = buildSegmentedShortcut(shortcut, secondKey)
         })
@@ -767,6 +788,46 @@ export default function SettingsDialog({ onClose }) {
                           general: {
                             ...current.general,
                             videoNotesPoolFontSize: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                    <label htmlFor="settings-locate-note-past-limit">Locate Note Past Limit (sec)</label>
+                    <input
+                      id="settings-locate-note-past-limit"
+                      min="0"
+                      max="3600"
+                      step="1"
+                      title="Maximum seconds to search before the current playback position"
+                      type="number"
+                      value={draft.general.locateNotePastLimitSec}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            locateNotePastLimitSec: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                    <label htmlFor="settings-locate-note-future-limit">Locate Note Future Limit (sec)</label>
+                    <input
+                      id="settings-locate-note-future-limit"
+                      min="0"
+                      max="3600"
+                      step="1"
+                      title="Maximum seconds to search after the current playback position"
+                      type="number"
+                      value={draft.general.locateNoteFutureLimitSec}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            locateNoteFutureLimitSec: event.target.value,
                           },
                         }))
                       }}

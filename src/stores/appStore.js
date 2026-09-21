@@ -9,6 +9,9 @@ export const APP_MODES = {
 
 const RECENT_FILES_STORAGE_KEY = 'recentFilesByMode'
 const RECENT_FOLDERS_STORAGE_KEY = 'recentFoldersByMode'
+const DEFAULT_RECENT_ITEM_LIMIT = 20
+const RECENT_FILE_LIMITS = { video: 80 }
+const RECENT_FOLDER_LIMITS = { video: 50 }
 const EMPTY_RECENT_FILES = {
   video: [],
   image: [],
@@ -38,12 +41,20 @@ function normalizeRecentState(recentState) {
   }
 }
 
-function mergeRecentBuckets(primary, fallback) {
+function getRecentItemLimit(limits, mode) {
+  return limits[mode] || DEFAULT_RECENT_ITEM_LIMIT
+}
+
+function mergeRecentBuckets(primary, fallback, limits) {
   return {
-    video: [...new Set([...(primary.video || []), ...(fallback.video || [])])].slice(0, 20),
-    image: [...new Set([...(primary.image || []), ...(fallback.image || [])])].slice(0, 20),
-    text: [...new Set([...(primary.text || []), ...(fallback.text || [])])].slice(0, 20),
-    search: [...new Set([...(primary.search || []), ...(fallback.search || [])])].slice(0, 20),
+    video: [...new Set([...(primary.video || []), ...(fallback.video || [])])]
+      .slice(0, getRecentItemLimit(limits, 'video')),
+    image: [...new Set([...(primary.image || []), ...(fallback.image || [])])]
+      .slice(0, getRecentItemLimit(limits, 'image')),
+    text: [...new Set([...(primary.text || []), ...(fallback.text || [])])]
+      .slice(0, getRecentItemLimit(limits, 'text')),
+    search: [...new Set([...(primary.search || []), ...(fallback.search || [])])]
+      .slice(0, getRecentItemLimit(limits, 'search')),
   }
 }
 
@@ -132,8 +143,8 @@ export const useAppStore = create((set) => ({
 
       const hostRecentState = normalizeRecentState(result.recentState)
       const recentState = {
-        recentFiles: mergeRecentBuckets(hostRecentState.recentFiles, initialRecentFiles),
-        recentFolders: mergeRecentBuckets(hostRecentState.recentFolders, initialRecentFolders),
+        recentFiles: mergeRecentBuckets(hostRecentState.recentFiles, initialRecentFiles, RECENT_FILE_LIMITS),
+        recentFolders: mergeRecentBuckets(hostRecentState.recentFolders, initialRecentFolders, RECENT_FOLDER_LIMITS),
       }
       saveRecentFilesToLocalStorage(recentState.recentFiles)
       saveRecentFoldersToLocalStorage(recentState.recentFolders)
@@ -202,7 +213,35 @@ export const useAppStore = create((set) => ({
       const nextList = [
         filePath,
         ...currentList.filter((item) => item !== filePath),
-      ].slice(0, 20)
+      ].slice(0, getRecentItemLimit(RECENT_FILE_LIMITS, mode))
+      const recentFiles = {
+        ...state.recentFiles,
+        [mode]: nextList,
+      }
+
+      saveRecentState(recentFiles, state.recentFolders)
+      return { recentFiles }
+    }),
+  replaceRecentFile: (mode, previousPath, nextPath) =>
+    set((state) => {
+      if (!mode || !previousPath || !nextPath) return state
+
+      const currentList = Array.isArray(state.recentFiles[mode])
+        ? state.recentFiles[mode]
+        : []
+      const previousKey = previousPath.replaceAll('/', '\\').toLowerCase()
+      const seenPaths = new Set()
+      const nextList = currentList
+        .map((item) => (
+          item.replaceAll('/', '\\').toLowerCase() === previousKey ? nextPath : item
+        ))
+        .filter((item) => {
+          const itemKey = item.replaceAll('/', '\\').toLowerCase()
+          if (seenPaths.has(itemKey)) return false
+          seenPaths.add(itemKey)
+          return true
+        })
+        .slice(0, getRecentItemLimit(RECENT_FILE_LIMITS, mode))
       const recentFiles = {
         ...state.recentFiles,
         [mode]: nextList,
@@ -223,7 +262,7 @@ export const useAppStore = create((set) => ({
       const nextList = [
         folderPath,
         ...currentList.filter((item) => item !== folderPath),
-      ].slice(0, 20)
+      ].slice(0, getRecentItemLimit(RECENT_FOLDER_LIMITS, mode))
       const recentFolders = {
         ...state.recentFolders,
         [mode]: nextList,

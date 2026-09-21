@@ -97,7 +97,21 @@ export default function VideoPlayer({
 
   useEffect(() => {
     const player = playerRef.current
-    if (!player || !src) {
+    if (!player) {
+      return undefined
+    }
+
+    if (!src) {
+      sourceLoadingRef.current = true
+      player.pause?.()
+      if (remoteTextTrackRef.current) {
+        player.removeRemoteTextTrack(remoteTextTrackRef.current.track || remoteTextTrackRef.current)
+        remoteTextTrackRef.current = null
+      }
+      player.reset?.()
+      player.playbackRate?.(playbackRateRef.current)
+      player.volume?.(volumeRef.current)
+      sourceLoadingRef.current = false
       return undefined
     }
 

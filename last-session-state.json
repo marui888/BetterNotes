@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "savedAt": "2026-09-16T21:05:39.439Z",
+  "savedAt": "2026-09-21T02:22:08.567Z",
   "window": {
-    "displayId": 42028334,
+    "displayId": 833458951,
     "displayBounds": {
       "x": 0,
       "y": 0,
@@ -10,8 +10,8 @@
       "height": 1080
     },
     "bounds": {
-      "x": -127,
-      "y": 245,
+      "x": 218,
+      "y": 153,
       "width": 1920,
       "height": 1032
     },
@@ -36,51 +36,53 @@
       "specialFolderPath": ""
     },
     "video": {
-      "currentFilePath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-      "folderPath": "C:\\youtubeDL",
-      "leftTab": "notes",
+      "currentFilePath": "F:\\__视频 解题 初中数学 中考数学\\up主 一数-初中 中考\\一数-初中版\\中考压轴·瓜豆原理\\1.瓜豆4.25 11点30定稿发布(Av116460017945147,P1).mp4",
+      "folderPath": "F:\\__视频 解题 初中数学 中考数学\\up主 一数-初中 中考\\一数-初中版\\中考压轴·瓜豆原理",
+      "leftTab": "files",
       "rightToolTab": "notesPool",
-      "selectedNoteIndex": 13,
-      "playbackTime": 82.717514,
+      "selectedNoteIndex": 9,
+      "playbackTime": 976.753506,
       "mainMiddleView": {
         "toggleView": {
-          "activeState": 4,
+          "activeState": 0,
           "states": {
             "f0": {
               "hideSub": false,
               "hideView": false,
-              "hvLayout": 1
+              "hvLayout": 0,
+              "videoOpacity": 1
             },
             "f4": {
               "hideSub": false,
-              "hideView": true,
-              "hvLayout": 1
+              "hideView": false,
+              "hvLayout": 1,
+              "videoOpacity": 1
             }
           }
         },
         "rollingPanelView": {
           "states": {
             "f0": {
-              "x": 90,
-              "y": 4,
-              "width": 788,
-              "height": 705.65625,
-              "fontSize": 32,
+              "x": 0,
+              "y": 0,
+              "width": 1012,
+              "height": 930,
+              "fontSize": 30,
               "dockPosition": "left"
             },
             "f4": {
-              "x": 145,
-              "y": 0,
-              "width": 1304,
-              "height": 959,
-              "fontSize": 36,
+              "x": 156,
+              "y": 24,
+              "width": 1123,
+              "height": 935,
+              "fontSize": 42,
               "dockPosition": "center"
             }
           }
         },
         "playingView": {
-          "playbackRate": 1,
-          "volume": 0.35
+          "playbackRate": 0.6,
+          "volume": 0.6000000000000001
         }
       },
       "filterHistory": {
@@ -88,15 +90,23 @@
           "二级 || 小结 || 模型"
         ],
         "notesPool": [
+          "基友",
           "不对称",
           "二级 || 小结 || 模型"
         ]
       },
       "mp4FileSort": {
-        "key": "jsonModifiedTime",
+        "key": "createdTime",
         "direction": "desc"
       },
       "readingPositions": [
+        {
+          "videoPath": "C:\\youtubeDL\\Clean Your Diarty Mind ✨ ｜｜ Learn English Through Motivation 🔥 ｜｜ Graded Reader ｜｜ Level 3 English ✅ [w9IsOO_XzuQ].mp4",
+          "subtitlePath": "C:\\youtubeDL\\Clean Your Diarty Mind ✨ ｜｜ Learn English Through Motivation 🔥 ｜｜ Graded Reader ｜｜ Level 3 English ✅ [w9IsOO_XzuQ].en.vtt",
+          "cueIndex": 492,
+          "cueStart": 1448.32,
+          "updatedAt": "2026-09-19T18:13:09.131Z"
+        },
         {
           "videoPath": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].mp4",
           "subtitlePath": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].en.vtt",
@@ -105,455 +115,33 @@
           "updatedAt": "2026-09-16T21:02:36.941Z"
         }
       ],
-      "videoOpenSource": "pool",
+      "videoOpenSource": "default",
       "loadedVideoState": {
-        "activeSource": "pool",
+        "activeSource": "default",
+        "activeLoaded": true,
         "sources": {
           "default": {
-            "filePath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中数学  高考数学\\一数 高考数学 最后十课2025\\高考最后十课-2025-立体几何.mp4",
-            "playbackTime": 5222.921668
+            "filePath": "F:\\__视频 解题 初中数学 中考数学\\up主 一数-初中 中考\\一数-初中版\\中考压轴·瓜豆原理\\1.瓜豆4.25 11点30定稿发布(Av116460017945147,P1).mp4",
+            "playbackTime": 976.753506
           },
           "pool": {
-            "filePath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "playbackTime": 82.717514
+            "filePath": "D:\\解题 高中数学\\解题 夏老师\\【夏老师直播带你刷高考真题】2020全国一卷理科数学\\2.2020全国一卷理科数学全卷详解(Av371374802,P2).mp4",
+            "playbackTime": 1171.50747
           }
         }
       },
       "notesPool": {
-        "notes": [
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#0",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 0,
-            "start": "00:00:00.0",
-            "end": "00:00:11.0",
-            "content": "AUTO:\nIf you told me a rusted F-150 and a\nbusted tailgate would lead me to a\nboardroom overlooking the city skyline,\nI'd have called you a liar. 虚拟语气 错综 不对称",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:00:00.0",
-              "End": "00:00:11.0",
-              "Content": "AUTO:\nIf you told me a rusted F-150 and a\nbusted tailgate would lead me to a\nboardroom overlooking the city skyline,\nI'd have called you a liar. 虚拟语气 错综 不对称"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#1",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 1,
-            "start": "00:00:13.0",
-            "end": "00:00:35.0",
-            "content": "AUTO:\nThe\nrain in Chicago that Tuesday wasn't a\nstorm.\nIt was an annoyance.\nThe kind of cold, persistent drizzle\nthat slicks the roads in a film of oil\nand makes your joints ache just looking\nout the window.  非谓语 形合意合。look you的逻辑主语是your所指代的you。",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:00:13.0",
-              "End": "00:00:35.0",
-              "Content": "AUTO:\nThe\nrain in Chicago that Tuesday wasn't a\nstorm.\nIt was an annoyance.\nThe kind of cold, persistent drizzle\nthat slicks the roads in a film of oil\nand makes your joints ache just looking\nout the window.  非谓语 形合意合。look you的逻辑主语是your所指代的you。"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#2",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 2,
-            "start": "00:00:32.0",
-            "end": "00:00:47.0",
-            "content": "AUTO:\nI was 29, running my own independent\ncontracting business, which was a polite\nway of saying I drove a van full of\ndrywall dust and drank too much gas\nstation coffee.",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:00:32.0",
-              "End": "00:00:47.0",
-              "Content": "AUTO:\nI was 29, running my own independent\ncontracting business, which was a polite\nway of saying I drove a van full of\ndrywall dust and drank too much gas\nstation coffee."
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#3",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 3,
-            "start": "00:00:54.0",
-            "end": "00:01:07.0",
-            "content": "AUTO:\nMy mood was foul.\nA client had shorted me on a bathroom\nremodel claiming the tile grout wasn't\nthe exact shade of eggshell she'd\nenvisioned.",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:00:54.0",
-              "End": "00:01:07.0",
-              "Content": "AUTO:\nMy mood was foul.\nA client had shorted me on a bathroom\nremodel claiming the tile grout wasn't\nthe exact shade of eggshell she'd\nenvisioned."
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#4",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 4,
-            "start": "00:01:05.0",
-            "end": "00:01:21.0",
-            "content": "AUTO:\nI pushed my cart out into the gray\nafternoon, head down against the mist.\nThat's when I saw him. He was parked in\nthe far corner of the lot away from the\ncontractor bays. when的用法",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:01:05.0",
-              "End": "00:01:21.0",
-              "Content": "AUTO:\nI pushed my cart out into the gray\nafternoon, head down against the mist.\nThat's when I saw him. He was parked in\nthe far corner of the lot away from the\ncontractor bays. when的用法"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#5",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 5,
-            "start": "00:01:42.0",
-            "end": "00:01:50.0",
-            "content": "AUTO:\nAt his feet, sitting on a heavy wooden\npallet, was a cast iron table saw.",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:01:42.0",
-              "End": "00:01:50.0",
-              "Content": "AUTO:\nAt his feet, sitting on a heavy wooden\npallet, was a cast iron table saw."
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#6",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 6,
-            "start": "00:02:00.0",
-            "end": "00:02:06.0",
-            "content": "AUTO:\nThe saw lifted maybe an inch.  //mr!!! 句型句式",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:02:00.0",
-              "End": "00:02:06.0",
-              "Content": "AUTO:\nThe saw lifted maybe an inch.  //mr!!! 句型句式"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#7",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 7,
-            "start": "00:05:50.0",
-            "end": "00:06:18.0",
-            "content": "AUTO:\n\"Hates the saw, too. She bought me a\nfancy electric one. Plastic parts. Broke\nin a month. This iron here?\"\nHe patted the saw.\n\"Outlive us both.\"\n\"They don't make them like they used\nto,\" I offered, taking a sip of the\ncoffee. Arthur snorted.\n\"They don't make anything like they used\nto, including people.\"",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:05:50.0",
-              "End": "00:06:18.0",
-              "Content": "AUTO:\n\"Hates the saw, too. She bought me a\nfancy electric one. Plastic parts. Broke\nin a month. This iron here?\"\nHe patted the saw.\n\"Outlive us both.\"\n\"They don't make them like they used\nto,\" I offered, taking a sip of the\ncoffee. Arthur snorted.\n\"They don't make anything like they used\nto, including people.\""
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#8",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 8,
-            "start": "00:08:00.0",
-            "end": "00:08:22.0",
-            "content": "AUTO:\nThe rain stopped, replaced by a biting\ncold front that froze the puddles solid.\nI was elbow-deep in fiberglass\ninsulation at a residential job\nwhen my phone buzzed in my pocket.\nI ignored it until my break.   froze the puddles solid SVC结构",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:08:00.0",
-              "End": "00:08:22.0",
-              "Content": "AUTO:\nThe rain stopped, replaced by a biting\ncold front that froze the puddles solid.\nI was elbow-deep in fiberglass\ninsulation at a residential job\nwhen my phone buzzed in my pocket.\nI ignored it until my break.   froze the puddles solid SVC结构"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#9",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 9,
-            "start": "00:08:22.0",
-            "end": "00:08:44.0",
-            "content": "AUTO:\nJack,\nit's Arthur from the hardware store.\nI want to buy you lunch to say thank\nyou. Tomorrow,\n1:00 p.m. 450 N Michigan Ave,\nthe Oak Room.",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:08:22.0",
-              "End": "00:08:44.0",
-              "Content": "AUTO:\nJack,\nit's Arthur from the hardware store.\nI want to buy you lunch to say thank\nyou. Tomorrow,\n1:00 p.m. 450 N Michigan Ave,\nthe Oak Room."
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#10",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 10,
-            "start": "00:10:32.0",
-            "end": "00:10:44.0",
-            "content": "AUTO:\nThe woman behind it looked me up and\ndown.\nHer expression didn't change, but her\neyes did the math on my outfit and found\nthe total lacking.",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:10:32.0",
-              "End": "00:10:44.0",
-              "Content": "AUTO:\nThe woman behind it looked me up and\ndown.\nHer expression didn't change, but her\neyes did the math on my outfit and found\nthe total lacking."
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#11",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 11,
-            "start": "00:10:46.0",
-            "end": "00:10:52.0",
-            "content": "AUTO:\n\"I'm meeting someone.\" I said. 进行时",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:10:46.0",
-              "End": "00:10:52.0",
-              "Content": "AUTO:\n\"I'm meeting someone.\" I said. 进行时"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#12",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 12,
-            "start": "00:12:52.0",
-            "end": "00:13:02.0",
-            "content": "AUTO:\nstared at me. \"Can I get you started\nwith still or sparkling water?\" A waiter\nmaterialized instantly.",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:12:52.0",
-              "End": "00:13:02.0",
-              "Content": "AUTO:\nstared at me. \"Can I get you started\nwith still or sparkling water?\" A waiter\nmaterialized instantly."
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#13",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 13,
-            "start": "00:15:13.0",
-            "end": "00:15:38.0",
-            "content": "AUTO:\nElla said, completely unapologetic.\n\"He is the founder and former majority\nshareholder of Hayes Logistics.\nHe is worth over $800 million.\nI am the current CEO.\nYou expect me to believe you just\nhappened to help him with a table saw,\nand [snorts] he just happened to invite\nyou to a four-star restaurant? I sat",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:15:13.0",
-              "End": "00:15:38.0",
-              "Content": "AUTO:\nElla said, completely unapologetic.\n\"He is the founder and former majority\nshareholder of Hayes Logistics.\nHe is worth over $800 million.\nI am the current CEO.\nYou expect me to believe you just\nhappened to help him with a table saw,\nand [snorts] he just happened to invite\nyou to a four-star restaurant? I sat"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#14",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 14,
-            "start": "00:19:13.0",
-            "end": "00:19:21.0",
-            "content": "AUTO:\nThe check is yours. Keep it. You need it\nmore than I do. \"Excuse me?\" she",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:19:13.0",
-              "End": "00:19:21.0",
-              "Content": "AUTO:\nThe check is yours. Keep it. You need it\nmore than I do. \"Excuse me?\" she"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#15",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 15,
-            "start": "00:19:43.0",
-            "end": "00:19:58.0",
-            "content": "AUTO:\nI thought he was just being an\noverprotective father. I slowly shook my\nhead.\n\"He was wrong.\nYou're not just distrustful, you're\nmiserable.",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:19:43.0",
-              "End": "00:19:58.0",
-              "Content": "AUTO:\nI thought he was just being an\noverprotective father. I slowly shook my\nhead.\n\"He was wrong.\nYou're not just distrustful, you're\nmiserable."
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#16",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 16,
-            "start": "00:21:51.0",
-            "end": "00:22:03.0",
-            "content": "AUTO:\nBut he wasn't alone. Standing a few feet\nbehind him, looking entirely out of\nplace in my building's peeling hallway,\nwas Ella.",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:21:51.0",
-              "End": "00:22:03.0",
-              "Content": "AUTO:\nBut he wasn't alone. Standing a few feet\nbehind him, looking entirely out of\nplace in my building's peeling hallway,\nwas Ella."
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#17",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 17,
-            "start": "00:22:00.0",
-            "end": "00:22:15.0",
-            "content": "AUTO:\nShe wasn't wearing a suit this time.\nShe wore a heavy wool coat, her hands\nshoved deep into her pockets.\nShe looked small.\nShe looked nervous.",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:22:00.0",
-              "End": "00:22:15.0",
-              "Content": "AUTO:\nShe wasn't wearing a suit this time.\nShe wore a heavy wool coat, her hands\nshoved deep into her pockets.\nShe looked small.\nShe looked nervous."
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#18",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 18,
-            "start": "00:22:38.0",
-            "end": "00:22:50.0",
-            "content": "AUTO:\nArthur turned slowly and glared at Ella.\nHe didn't say a word, just stared at her\nuntil she shifted her weight\nuncomfortably.",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:22:38.0",
-              "End": "00:22:50.0",
-              "Content": "AUTO:\nArthur turned slowly and glared at Ella.\nHe didn't say a word, just stared at her\nuntil she shifted her weight\nuncomfortably."
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#19",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 19,
-            "start": "00:27:33.0",
-            "end": "00:27:44.0",
-            "content": "AUTO:\nShe didn't. She just sat there waiting\nfor my verdict. Why'd you do it, Ella? I\nasked, keeping my voice level. would的用法",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:27:33.0",
-              "End": "00:27:44.0",
-              "Content": "AUTO:\nShe didn't. She just sat there waiting\nfor my verdict. Why'd you do it, Ella? I\nasked, keeping my voice level. would的用法"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json#20",
-            "sourceJsonPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoPath": "C:\\youtubeDL\\I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "sourceJsonName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].json",
-            "sourceVideoName": "I Helped an Elderly Man Load His Truck… Then He Introduced Me to His Daughter [W-xnkwk7JQI].mp4",
-            "noteIndex": 20,
-            "start": "00:28:42.0",
-            "end": "00:29:11.0",
-            "content": "AUTO:\nMy dad, being who he is, didn't just\ngive him a loan.\nHe gave him an open line of credit.\nHe brought him into our home.\nTreated him like a son.\nI knew where this was going.\nI felt the tension in my own jaw loosen.\nThe guy bled him for nearly two million\ndollars, Ella said, her voice dropping\nto a harsh whisper. 非谓语 形合意合 状语补语 being的用法",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:28:42.0",
-              "End": "00:29:11.0",
-              "Content": "AUTO:\nMy dad, being who he is, didn't just\ngive him a loan.\nHe gave him an open line of credit.\nHe brought him into our home.\nTreated him like a son.\nI knew where this was going.\nI felt the tension in my own jaw loosen.\nThe guy bled him for nearly two million\ndollars, Ella said, her voice dropping\nto a harsh whisper. 非谓语 形合意合 状语补语 being的用法"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json#0",
-            "sourceJsonPath": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json",
-            "sourceVideoPath": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].mp4",
-            "sourceJsonName": "The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json",
-            "sourceVideoName": "The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].mp4",
-            "noteIndex": 0,
-            "start": "00:34:31.0",
-            "end": "00:34:43.0",
-            "content": "AUTO:\nA tree does not become tall because you\nwatched it for one week. A skill does\nnot become excellent because you\npracticed for 3 days.  //mr!! En 时态匹配  时态不对称。",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:34:31.0",
-              "End": "00:34:43.0",
-              "Content": "AUTO:\nA tree does not become tall because you\nwatched it for one week. A skill does\nnot become excellent because you\npracticed for 3 days.  //mr!! En 时态匹配  时态不对称。"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json#1",
-            "sourceJsonPath": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json",
-            "sourceVideoPath": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].mp4",
-            "sourceJsonName": "The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json",
-            "sourceVideoName": "The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].mp4",
-            "noteIndex": 1,
-            "start": "00:34:25.0",
-            "end": "00:34:54.0",
-            "content": "AUTO:\nBut sometimes the\nresult is simply taking longer than\nexpected.\nA tree does not become tall because you\nwatched it for one week. A skill does\nnot become excellent because you\npracticed for 3 days.\nA business does not become successful\nbecause you worked hard for one month.\nA new life cannot always be built\nquickly.",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:34:25.0",
-              "End": "00:34:54.0",
-              "Content": "AUTO:\nBut sometimes the\nresult is simply taking longer than\nexpected.\nA tree does not become tall because you\nwatched it for one week. A skill does\nnot become excellent because you\npracticed for 3 days.\nA business does not become successful\nbecause you worked hard for one month.\nA new life cannot always be built\nquickly."
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json#2",
-            "sourceJsonPath": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json",
-            "sourceVideoPath": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].mp4",
-            "sourceJsonName": "The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json",
-            "sourceVideoName": "The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].mp4",
-            "noteIndex": 2,
-            "start": "00:35:02.0",
-            "end": "00:35:06.0",
-            "content": "AUTO:\nWinners learn to respect time. They",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:35:02.0",
-              "End": "00:35:06.0",
-              "Content": "AUTO:\nWinners learn to respect time. They"
-            }
-          },
-          {
-            "id": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json#3",
-            "sourceJsonPath": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json",
-            "sourceVideoPath": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].mp4",
-            "sourceJsonName": "The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json",
-            "sourceVideoName": "The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].mp4",
-            "noteIndex": 3,
-            "start": "00:35:15.0",
-            "end": "00:35:25.0",
-            "content": "AUTO:\nIn the same way, your effort may be\ncreating knowledge, discipline,\nexperience, confidence, and strength",
-            "raw": {
-              "createdBy": "rolling-subtitles",
-              "Start": "00:35:15.0",
-              "End": "00:35:25.0",
-              "Content": "AUTO:\nIn the same way, your effort may be\ncreating knowledge, discipline,\nexperience, confidence, and strength"
-            }
-          }
-        ],
-        "filterText": "不对称",
-        "filterOn": true,
+        "notes": [],
+        "filterText": "基友",
+        "filterOn": false,
         "reverse": false,
-        "showFileName": true,
-        "selectedNoteId": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json#0",
-        "expandedNoteId": "C:\\youtubeDL\\The Dark Mind of a Winner 🔥 ｜ 14 Powerful Secrets of Winners Who Never Give Up ｜ Graded Reader [Np8geKsWRK8].json#0",
-        "draftContent": "AUTO:\nA tree does not become tall because you\nwatched it for one week. A skill does\nnot become excellent because you\npracticed for 3 days.  //mr!! En 时态匹配  时态不对称。",
+        "showFileName": false,
+        "folderSearchDepth": 1,
+        "sources": [],
+        "loadedSources": [],
+        "selectedNoteId": "",
+        "expandedNoteId": "",
+        "draftContent": "",
         "dirtyNoteIds": []
       }
     }

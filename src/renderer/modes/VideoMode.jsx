@@ -20,8 +20,12 @@ const PLAYBACK_RATE_STEP = 0.05
 const MIN_PLAYBACK_RATE = 0.1
 const MAX_PLAYBACK_RATE = 2
 const VOLUME_STEP = 0.05
+const VIDEO_OPACITY_STEP = 0.1
+const VIDEO_VERTICAL_SPLITTER_WIDTH = 6
 const SUBTITLE_CENTER_VIEW_HIDDEN_DIM = 1
 const MAX_FILTER_HISTORY_ITEMS = 50
+const MAX_NOTES_POOL_FOLDER_DEPTH = 4
+const MAX_NOTES_POOL_SOURCES = 50
 const SUBTITLE_PICK_CHORD_ACTIONS = [
   { actionId: 'subtitlePick.copySave', key: 'Z', label: 'Copy&Save&Exit', decision: 'copySave' },
   { actionId: 'subtitlePick.copy', key: 'X', label: 'Copy&Exit', decision: 'copy' },
@@ -44,6 +48,7 @@ const VIDEO_OPEN_SOURCES = ['default', 'pool']
 
 const createLoadedVideoState = () => ({
   activeSource: 'default',
+  activeLoaded: false,
   sources: {
     default: { filePath: '', playbackTime: 0 },
     pool: { filePath: '', playbackTime: 0 },
@@ -64,6 +69,9 @@ function normalizeLoadedVideoState(value, legacySnapshot = null) {
     ? value.activeSource
     : legacySnapshot?.videoOpenSource === 'pool' ? 'pool' : 'default'
   normalized.activeSource = activeSource
+  normalized.activeLoaded = typeof value?.activeLoaded === 'boolean'
+    ? value.activeLoaded
+    : Boolean(value?.sources?.[activeSource]?.filePath || legacySnapshot?.currentFilePath)
   normalized.sources.default = normalizeLoadedVideoSlot(value?.sources?.default)
   normalized.sources.pool = normalizeLoadedVideoSlot(value?.sources?.pool)
 
@@ -86,6 +94,7 @@ const createFullscreenViewState = () => ({
   hideSub: false,
   hideView: false,
   hvLayout: 0,
+  videoOpacity: 1,
 })
 
 const createFullscreenViewStates = () => ({
@@ -95,10 +104,19 @@ const createFullscreenViewStates = () => ({
 })
 
 function normalizeFullscreenViewState(value) {
+  const rawVideoOpacity = value?.videoOpacity
+  const hasVideoOpacity = rawVideoOpacity !== null
+    && rawVideoOpacity !== undefined
+    && rawVideoOpacity !== ''
+    && Number.isFinite(Number(rawVideoOpacity))
+  const videoOpacity = hasVideoOpacity
+    ? Math.max(0, Math.min(1, Math.round(Number(rawVideoOpacity) * 10) / 10))
+    : value?.hideView === true ? 0 : 1
   return {
     hideSub: value?.hideSub === true,
-    hideView: value?.hideView === true,
+    hideView: videoOpacity === 0,
     hvLayout: Number(value?.hvLayout) === 1 ? 1 : 0,
+    videoOpacity,
   }
 }
 
@@ -301,10 +319,156 @@ function joinPath(folderPath, fileName) {
   return `${folderPath}${separator}${fileName}`
 }
 
+function createNumericJid() {
+  const digits = []
+  const values = new Uint32Array(10)
+  const largestEvenDigitRange = 4294967290
+
+  while (digits.length < 10) {
+    window.crypto.getRandomValues(values)
+    values.forEach((value) => {
+      if (digits.length < 10 && value < largestEvenDigitRange) {
+        digits.push(String(value % 10))
+      }
+    })
+  }
+
+  return digits.join('')
+}
+
+function splitRenameFileName(fileName) {
+  const value = String(fileName || '')
+  const extensionIndex = value.lastIndexOf('.')
+  const hasExtension = extensionIndex > 0
+  return {
+    baseName: hasExtension ? value.slice(0, extensionIndex) : value,
+    extension: hasExtension ? value.slice(extensionIndex) : '',
+  }
+}
+
+function getRenameSuffixState(fileName) {
+  const { baseName } = splitRenameFileName(fileName)
+  return {
+    hasJid: /(?:_JID_\d{8}| \(Jid_\d{10}\))(?=_JOM$|$)/i.test(baseName),
+    hasJom: /_JOM$/i.test(baseName),
+  }
+}
+
+function setNumericJidSuffix(fileName, enabled) {
+  const { baseName, extension } = splitRenameFileName(fileName)
+  const existingJidPattern = /(?:_JID_\d{8}| \(Jid_\d{10}\))(?=_JOM$|$)/i
+
+  if (!enabled) return `${baseName.replace(existingJidPattern, '')}${extension}`
+  if (existingJidPattern.test(baseName)) return `${baseName}${extension}`
+
+  const jidSuffix = ` (Jid_${createNumericJid()})`
+  const nextBaseName = /_JOM$/i.test(baseName)
+    ? `${baseName.slice(0, -4)}${jidSuffix}_JOM`
+    : `${baseName}${jidSuffix}`
+  return `${nextBaseName}${extension}`
+}
+
+function setJomSuffix(fileName, enabled) {
+  const { baseName, extension } = splitRenameFileName(fileName)
+  const baseNameWithoutJom = baseName.replace(/_JOM$/i, '')
+  return `${baseNameWithoutJom}${enabled ? '_JOM' : ''}${extension}`
+}
+
+function regenerateNumericJid(fileName) {
+  const { baseName, extension } = splitRenameFileName(fileName)
+  const nextBaseName = baseName.replace(
+    / \(Jid_\d{10}\)(?=_JOM$|$)/i,
+    ` (Jid_${createNumericJid()})`,
+  )
+
+  return `${nextBaseName}${extension}`
+}
+
 function isSameFilePath(firstPath, secondPath) {
   const first = String(firstPath || '').replaceAll('/', '\\').toLowerCase()
   const second = String(secondPath || '').replaceAll('/', '\\').toLowerCase()
   return Boolean(first && second && first === second)
+}
+
+function getNotesPoolSourceId(type, sourcePath) {
+  const normalizedPath = String(sourcePath || '').replaceAll('/', '\\').replace(/\\+$/, '').toLowerCase()
+  return normalizedPath ? `${type === 'folder' ? 'folder' : 'file'}:${normalizedPath}` : ''
+}
+
+function normalizeNotesPoolSource(source) {
+  const type = source?.type === 'folder' ? 'folder' : 'file'
+  const sourcePath = String(source?.path || '')
+  const id = getNotesPoolSourceId(type, sourcePath)
+  if (!id) return null
+
+  return {
+    id,
+    type,
+    path: sourcePath,
+    depth: type === 'folder'
+      ? Math.max(0, Math.min(MAX_NOTES_POOL_FOLDER_DEPTH, Math.trunc(Number(source?.depth) || 0)))
+      : 0,
+    selected: source?.selected === true,
+    lastUsedAt: Number(source?.lastUsedAt) || Date.now(),
+    error: typeof source?.error === 'string' ? source.error : '',
+  }
+}
+
+function normalizeNotesPoolSources(value) {
+  const byId = new Map()
+  ;(Array.isArray(value) ? value : []).forEach((source) => {
+    const normalized = normalizeNotesPoolSource(source)
+    if (normalized && !byId.has(normalized.id)) byId.set(normalized.id, normalized)
+  })
+  return [...byId.values()]
+}
+
+function limitNotesPoolSources(value, loadedSources = []) {
+  const records = normalizeNotesPoolSources(value)
+    .sort((left, right) => right.lastUsedAt - left.lastUsedAt)
+  const protectedIds = new Set([
+    ...records.filter((source) => source.selected).map((source) => source.id),
+    ...normalizeNotesPoolSources(loadedSources).map((source) => source.id),
+  ])
+  const protectedRecords = records.filter((source) => protectedIds.has(source.id))
+  const recentRecords = records.filter((source) => !protectedIds.has(source.id))
+  return [
+    ...protectedRecords,
+    ...recentRecords.slice(0, Math.max(0, MAX_NOTES_POOL_SOURCES - protectedRecords.length)),
+  ]
+}
+
+function getNotesPoolSourceConfigKey(source) {
+  const normalized = normalizeNotesPoolSource(source)
+  if (!normalized) return ''
+  return normalized.type === 'folder'
+    ? `${normalized.id}:d${normalized.depth}`
+    : normalized.id
+}
+
+function areNotesPoolSourceConfigsEqual(first, second) {
+  const firstKeys = (Array.isArray(first) ? first : []).map(getNotesPoolSourceConfigKey).filter(Boolean).sort()
+  const secondKeys = (Array.isArray(second) ? second : []).map(getNotesPoolSourceConfigKey).filter(Boolean).sort()
+  return firstKeys.length === secondKeys.length && firstKeys.every((key, index) => key === secondKeys[index])
+}
+
+function getNotesPoolSourceLabel(source) {
+  const cleanPath = String(source?.path || '').replace(/[\\/]+$/, '')
+  const { fileName } = splitPath(cleanPath)
+  return fileName || cleanPath || '-'
+}
+
+function describeNotesPoolSourceError(reason) {
+  const messages = {
+    'folder-not-found': 'Folder not found',
+    'file-not-found': 'File not found',
+    'access-denied': 'Access denied',
+    'invalid-json-file': 'Invalid JSON',
+    'invalid-note-json': 'Invalid JSON',
+    'missing-video-file': 'Matching MP4 not found',
+    'unsupported-source': 'Unsupported source',
+  }
+  return messages[reason] || String(reason || 'Unable to load source')
 }
 
 function normalizeReadingPositions(value) {
@@ -397,6 +561,10 @@ export default function VideoMode() {
   const videoStageRef = useRef(null)
   const videoBottomPanelRef = useRef(null)
   const notesListRef = useRef(null)
+  const notesPoolListRef = useRef(null)
+  const notesPoolSourceButtonRef = useRef(null)
+  const notesPoolSourceMenuRef = useRef(null)
+  const externalNoteEditorRef = useRef(null)
   const directoryListRef = useRef(null)
   const noteEditorRef = useRef(null)
   const leaveGuardHandlerRef = useRef(null)
@@ -411,6 +579,8 @@ export default function VideoMode() {
   const readingResumeHandledRef = useRef(false)
   const playingViewRef = useRef(normalizePlayingView(null))
   const videoOpenSourceRef = useRef('default')
+  const activeVideoPathRef = useRef('')
+  const activeVideoGenerationRef = useRef(0)
   const loadedVideoStateRef = useRef(createLoadedVideoState())
   const [leftTab, setLeftTab] = useState('notes')
   const [dialog, setDialog] = useState(null)
@@ -428,6 +598,12 @@ export default function VideoMode() {
   const [externalNotesFilterOn, setExternalNotesFilterOn] = useState(false)
   const [externalNotesReverse, setExternalNotesReverse] = useState(false)
   const [externalNotesShowFileName, setExternalNotesShowFileName] = useState(true)
+  const [externalNotesFolderDepth, setExternalNotesFolderDepth] = useState(0)
+  const [externalNoteSources, setExternalNoteSources] = useState([])
+  const [externalNoteLoadedSources, setExternalNoteLoadedSources] = useState([])
+  const [externalNoteSourcesOpen, setExternalNoteSourcesOpen] = useState(false)
+  const [externalNoteSourcesPosition, setExternalNoteSourcesPosition] = useState({ left: 8, top: 8 })
+  const [externalNotesReloading, setExternalNotesReloading] = useState(false)
   const [selectedExternalNoteId, setSelectedExternalNoteId] = useState('')
   const [expandedExternalNoteId, setExpandedExternalNoteId] = useState('')
   const [externalNoteDraftContent, setExternalNoteDraftContent] = useState('')
@@ -443,9 +619,15 @@ export default function VideoMode() {
   const [subtitleCenterInfoHeight, setSubtitleCenterInfoHeight] = useState(180)
   const [rollingSubtitleCenterLayoutRequest, setRollingSubtitleCenterLayoutRequest] = useState(0)
   const [rollingSubtitlePickRequest, setRollingSubtitlePickRequest] = useState(0)
+  const [rollingSubtitleFontStepRequest, setRollingSubtitleFontStepRequest] = useState(() => ({
+    sequence: 0,
+    direction: 0,
+  }))
   const [selectedDirectoryMp4Name, setSelectedDirectoryMp4Name] = useState('')
+  const [directoryFolderPath, setDirectoryFolderPath] = useState('')
   const [mp4SortKey, setMp4SortKey] = useState('name')
   const [mp4SortDirection, setMp4SortDirection] = useState('asc')
+  const [mp4RecentSectionRatio, setMp4RecentSectionRatio] = useState(0.39)
   const [playAll, setPlayAll] = useState(true)
   const [titleOn, setTitleOn] = useState(true)
   const [subtitleLanguages, setSubtitleLanguages] = useState([])
@@ -475,6 +657,8 @@ export default function VideoMode() {
   const subtitleCenterViewBlurPx = settings.general.subtitleCenterViewBlurPx ?? 18
   const videoNotesFontSize = settings.general.videoNotesFontSize || 11
   const videoNotesPoolFontSize = settings.general.videoNotesPoolFontSize || 11
+  const locateNotePastLimitSec = settings.general.locateNotePastLimitSec ?? 100
+  const locateNoteFutureLimitSec = settings.general.locateNoteFutureLimitSec ?? 10
   const playAllSubtitleSuffix = useSettingsStore((state) => state.settings.general.playAllSubtitleSuffix)
   const subtitleConvertPromptTimeoutSec = useSettingsStore((state) => state.settings.general.subtitleConvertPromptTimeoutSec)
   const mode = useAppStore((state) => state.mode)
@@ -484,6 +668,7 @@ export default function VideoMode() {
   const setDirty = useAppStore((state) => state.setDirty)
   const setCurrentFile = useAppStore((state) => state.setCurrentFile)
   const addRecentFile = useAppStore((state) => state.addRecentFile)
+  const replaceRecentFile = useAppStore((state) => state.replaceRecentFile)
   const addRecentFolder = useAppStore((state) => state.addRecentFolder)
   const setLeaveGuard = useAppStore((state) => state.setLeaveGuard)
   const registerSessionProvider = useAppStore((state) => state.registerSessionProvider)
@@ -539,10 +724,19 @@ export default function VideoMode() {
     () => sortMp4Files(directoryMp4Files, mp4SortKey, mp4SortDirection),
     [directoryMp4Files, mp4SortDirection, mp4SortKey]
   )
+  const directoryJsonFileCount = useMemo(
+    () => directoryMp4Files.reduce((count, entry) => (
+      Number.isFinite(normalizeMp4FileEntry(entry).jsonModifiedTime) ? count + 1 : count
+    ), 0),
+    [directoryMp4Files]
+  )
   const fullscreenLayoutKey = FULLSCREEN_LAYOUT_KEYS[fullscreenCycleState] || 'f0'
   const fullscreenViewState = fullscreenViewStates[fullscreenLayoutKey] || createFullscreenViewState()
   const rollingPanelViewKey = fullscreenCycleState === 4 ? 'f4' : 'f0'
   const currentRollingPanelView = rollingPanelView.states[rollingPanelViewKey]
+  const currentRollingFontSize = Number.isFinite(Number(currentRollingPanelView?.fontSize))
+    ? Number(currentRollingPanelView.fontSize)
+    : rollingSubtitleFontSize
   const videoViewDim = fullscreenViewState.hideView ? SUBTITLE_CENTER_VIEW_HIDDEN_DIM : 0
   const canPickRollingSubtitle = titleOn
     && subtitleDisplayMode === 'rolling'
@@ -550,7 +744,7 @@ export default function VideoMode() {
     && rollingSubtitleCues.length > 0
     && !fullscreenViewState.hideSub
   const subtitleCapabilities = {
-    canManualPlay: subtitleInteractionMode !== 'reading',
+    canManualPlay: Boolean(videoFile?.filePath) && subtitleInteractionMode !== 'reading',
     canReadByWheel: subtitleInteractionMode === 'reading',
     canEditSubtitle: subtitleInteractionMode === 'pick' || subtitleInteractionMode === 'reading',
     canSpeakSubtitle: canPickRollingSubtitle,
@@ -722,7 +916,37 @@ export default function VideoMode() {
   }
 
   const toggleCurrentVideoHidden = () => {
-    updateCurrentFullscreenViewState((state) => ({ hideView: !state.hideView }))
+    updateCurrentFullscreenViewState((state) => {
+      const hideView = !state.hideView
+      return {
+        hideView,
+        videoOpacity: hideView ? 0 : 1,
+      }
+    })
+  }
+
+  const changeCurrentVideoOpacity = (direction) => {
+    updateCurrentFullscreenViewState((state) => {
+      const currentOpacity = Number.isFinite(Number(state.videoOpacity))
+        ? Number(state.videoOpacity)
+        : state.hideView ? 0 : 1
+      const videoOpacity = Math.max(
+        0,
+        Math.min(1, Math.round((currentOpacity + (direction * VIDEO_OPACITY_STEP)) * 10) / 10),
+      )
+      return {
+        hideView: videoOpacity === 0,
+        videoOpacity,
+      }
+    })
+  }
+
+  const changeRollingSubtitleFontSize = (direction) => {
+    if (!titleOn || subtitleDisplayMode !== 'rolling' || !selectedSubtitle) return
+    setRollingSubtitleFontStepRequest((current) => ({
+      sequence: current.sequence + 1,
+      direction: direction < 0 ? -1 : 1,
+    }))
   }
 
   const toggleCurrentHvLayout = () => {
@@ -752,6 +976,30 @@ export default function VideoMode() {
     () => new Set(externalNotes.map((note) => note.sourceJsonPath).filter(Boolean)).size,
     [externalNotes]
   )
+  const selectedExternalNoteSources = useMemo(
+    () => externalNoteSources.filter((source) => source.selected),
+    [externalNoteSources]
+  )
+  const externalNoteSourceLoadFailures = useMemo(
+    () => externalNoteSources.filter((source) => source.selected && source.error),
+    [externalNoteSources]
+  )
+  const externalNoteSourcesNeedReload = useMemo(
+    () => !areNotesPoolSourceConfigsEqual(selectedExternalNoteSources, externalNoteLoadedSources),
+    [externalNoteLoadedSources, selectedExternalNoteSources]
+  )
+  const sortedExternalNoteSources = useMemo(() => {
+    const loadedIds = new Set(externalNoteLoadedSources.map((source) => source.id))
+    return [...externalNoteSources].sort((left, right) => {
+      const loadedDifference = Number(loadedIds.has(right.id)) - Number(loadedIds.has(left.id))
+      if (loadedDifference) return loadedDifference
+      return (Number(right.lastUsedAt) || 0) - (Number(left.lastUsedAt) || 0)
+    })
+  }, [externalNoteLoadedSources, externalNoteSources])
+  const cleanableExternalNoteSourceCount = useMemo(() => {
+    const loadedIds = new Set(externalNoteLoadedSources.map((source) => source.id))
+    return externalNoteSources.filter((source) => !loadedIds.has(source.id)).length
+  }, [externalNoteLoadedSources, externalNoteSources])
   const visibleExternalNotes = useMemo(() => {
     const rows = externalNotes
       .map((note, index) => ({ note, index }))
@@ -762,6 +1010,60 @@ export default function VideoMode() {
 
     return externalNotesReverse ? rows.reverse() : rows
   }, [externalNotes, externalNotesFilterExpression, externalNotesFilterOn, externalNotesReverse])
+
+  const resizeExternalNoteEditor = () => {
+    const textarea = externalNoteEditorRef.current
+    const list = notesPoolListRef.current
+    const row = textarea?.closest?.('.notes-pool-row')
+    if (!textarea || !list || !row || list.clientHeight <= 0) return
+
+    const minimumHeight = Math.max(52, Number.parseFloat(window.getComputedStyle(textarea).minHeight) || 0)
+    textarea.style.height = `${minimumHeight}px`
+    textarea.style.overflowY = 'hidden'
+
+    const reservedHeight = Math.max(0, row.scrollHeight - textarea.offsetHeight)
+    const maximumHeight = Math.max(minimumHeight, list.clientHeight - reservedHeight)
+    const contentHeight = Math.max(minimumHeight, textarea.scrollHeight)
+    textarea.style.height = `${Math.min(contentHeight, maximumHeight)}px`
+    textarea.style.overflowY = contentHeight > maximumHeight ? 'auto' : 'hidden'
+  }
+
+  useEffect(() => {
+    if (!expandedExternalNoteId || rightToolTab !== 'notesPool') return undefined
+
+    const frameId = window.requestAnimationFrame(resizeExternalNoteEditor)
+    const list = notesPoolListRef.current
+    const ResizeObserverClass = window.ResizeObserver
+    const observer = typeof ResizeObserverClass === 'function'
+      ? new ResizeObserverClass(() => window.requestAnimationFrame(resizeExternalNoteEditor))
+      : null
+    if (list) observer?.observe(list)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      observer?.disconnect()
+    }
+  }, [expandedExternalNoteId, externalNoteDraftContent, rightToolTab, videoNotesPoolFontSize])
+
+  useEffect(() => {
+    if (!externalNoteSourcesOpen) return undefined
+
+    const closeOnOutsidePointer = (event) => {
+      if (notesPoolSourceMenuRef.current?.contains(event.target)) return
+      if (notesPoolSourceButtonRef.current?.contains(event.target)) return
+      setExternalNoteSourcesOpen(false)
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setExternalNoteSourcesOpen(false)
+    }
+
+    window.addEventListener('pointerdown', closeOnOutsidePointer)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeOnOutsidePointer)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [externalNoteSourcesOpen])
 
   const saveFilterCondition = (scope) => {
     const filterText = scope === 'pool' ? externalNotesFilterText : notesFilterText
@@ -873,6 +1175,20 @@ export default function VideoMode() {
     }
   }
 
+  useEffect(() => {
+    const handleChordCancel = () => {
+      clearSubtitlePickChord()
+      setDialog((current) => (
+        current?.kind === 'subtitlePick' && current.shortcutChordActive
+          ? { ...current, shortcutChordActive: false }
+          : current
+      ))
+    }
+
+    window.addEventListener('shortcut-chord-cancel', handleChordCancel)
+    return () => window.removeEventListener('shortcut-chord-cancel', handleChordCancel)
+  }, [])
+
   const closeDialog = (decision) => {
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current)
@@ -954,6 +1270,36 @@ export default function VideoMode() {
     if (!dialog) return undefined
 
     const onKeyDown = (event) => {
+      if (dialog.kind === 'videoRename') {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          closeDialog({ decision: 'cancel', text: dialog.fileName || '', jidGenerated: dialog.jidGenerated === true })
+          return
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          event.stopPropagation()
+          closeDialog({ decision: 'ok', text: dialog.fileName || '', jidGenerated: dialog.jidGenerated === true })
+        }
+        return
+      }
+
+      if (dialog.kind === 'videoRenameConfirm') {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          closeDialog('back')
+          return
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          event.stopPropagation()
+          closeDialog('confirm')
+        }
+        return
+      }
+
       if (dialog.kind === 'subtitlePick' || dialog.kind === 'subtitleEdit') {
         if (event.key === 'Escape') {
           event.preventDefault()
@@ -1037,7 +1383,8 @@ export default function VideoMode() {
     const activeSource = videoOpenSourceRef.current === 'pool' ? 'pool' : 'default'
     const playbackTime = Number(getPlayerTime())
     snapshot.activeSource = activeSource
-    if (snapshot.sources[activeSource].filePath) {
+    snapshot.activeLoaded = Boolean(videoFile?.filePath)
+    if (videoFile?.filePath && snapshot.sources[activeSource].filePath) {
       snapshot.sources[activeSource] = {
         ...snapshot.sources[activeSource],
         playbackTime: Number.isFinite(playbackTime) && playbackTime >= 0 ? playbackTime : 0,
@@ -1060,6 +1407,7 @@ export default function VideoMode() {
     loadedVideoStateRef.current = {
       ...loadedVideoStateRef.current,
       activeSource: normalizedSource,
+      activeLoaded: Boolean(videoFile?.filePath),
       sources: sourceChanged && videoFile?.filePath
         ? {
           ...loadedVideoStateRef.current.sources,
@@ -1130,8 +1478,10 @@ export default function VideoMode() {
     const player = playerRef.current
     const targetTime = Number(seconds)
     if (!player || !Number.isFinite(targetTime)) return
+    const videoGeneration = activeVideoGenerationRef.current
 
     const applySeek = () => {
+      if (videoGeneration !== activeVideoGenerationRef.current) return
       const duration = getDuration()
       const nextTime = Math.min(duration, Math.max(0, targetTime))
       player.currentTime(nextTime)
@@ -1183,7 +1533,7 @@ export default function VideoMode() {
 
   const requestVideoPlay = ({ source = 'manual', silent = false } = {}) => {
     const player = playerRef.current
-    if (!player?.play) return false
+    if (!activeVideoPathRef.current || !player?.play) return false
 
     const speakPreview = source === 'speak-sub' && speakSubtitlePreviewRef.current
     if (subtitleInteractionModeRef.current === 'reading' && !speakPreview) {
@@ -1323,12 +1673,14 @@ export default function VideoMode() {
   const playAfterVideoSourceLoaded = (options = {}) => {
     const player = playerRef.current
     if (!player?.play) return
+    const videoGeneration = activeVideoGenerationRef.current
     if (subtitleInteractionModeRef.current === 'reading') {
       requestVideoPlay({ source: 'autoplay' })
       return
     }
 
     const tryPlay = () => {
+      if (videoGeneration !== activeVideoGenerationRef.current) return
       if (options.playbackRate) {
         applyPlaybackRate(options.playbackRate)
       }
@@ -1406,6 +1758,55 @@ export default function VideoMode() {
     return false
   }
 
+  const closeCurrentVideo = async () => {
+    if (!videoFile?.filePath) return
+
+    const canClose = await confirmBeforeSwitchVideo()
+    if (!canClose) return
+
+    playerRef.current?.pause?.()
+    rememberCurrentLoadedVideo()
+    loadedVideoStateRef.current = {
+      ...loadedVideoStateRef.current,
+      activeLoaded: false,
+    }
+    if (subtitleInteractionModeRef.current === 'reading') {
+      saveCurrentReadingPosition()
+    }
+    readingSessionRef.current = null
+    subtitleInteractionModeRef.current = 'follow'
+    setSubtitleInteractionMode('follow')
+    setSubtitleReadingStatus(null)
+    setSubtitleNotePreviewContent(null)
+    stopSpeakSubtitleRef.current?.()
+    clearSubtitlePickChord()
+    setSubtitleLanguages([])
+    setSelectedSubtitleLanguageKey('')
+    setSelectedSubtitle(null)
+    setSubtitleMenuOpen(false)
+    setRollingSubtitleCues([])
+    setRollingSubtitleError('')
+    activeVideoGenerationRef.current += 1
+    activeVideoPathRef.current = ''
+    setVideoFile(null)
+    setCurrentFile('')
+    setCurrentPlaybackTime(0)
+    setVideoDurationSeconds(0)
+    setVideoDurationText('--:--:--.-')
+    setPlayingTime('00:00:00.0')
+    setCurStart('')
+    setCurEnd('')
+
+    if (videoOpenSourceRef.current === 'default') {
+      setNotes([])
+      setSelectedNoteId(null)
+      setNoteDraft('')
+      setSelectedStart('')
+      setSelectedEnd('')
+      setDirty(APP_MODES.VIDEO, false)
+    }
+  }
+
   leaveGuardHandlerRef.current = confirmBeforeSwitchVideo
 
   useEffect(() => {
@@ -1416,7 +1817,7 @@ export default function VideoMode() {
   useEffect(() => {
     registerSessionProvider(APP_MODES.VIDEO, () => ({
       currentFilePath: videoFile?.filePath || '',
-      folderPath: videoFile?.folderPath || '',
+      folderPath: directoryFolderPath,
       leftTab,
       rightToolTab,
       selectedNoteIndex: notes.findIndex((note) => note.id === selectedNoteId),
@@ -1453,6 +1854,9 @@ export default function VideoMode() {
         filterOn: externalNotesFilterOn,
         reverse: externalNotesReverse,
         showFileName: externalNotesShowFileName,
+        folderSearchDepth: externalNotesFolderDepth,
+        sources: externalNoteSources,
+        loadedSources: externalNoteLoadedSources,
         selectedNoteId: selectedExternalNoteId,
         expandedNoteId: expandedExternalNoteId,
         draftContent: externalNoteDraftContent,
@@ -1462,12 +1866,16 @@ export default function VideoMode() {
     return () => registerSessionProvider(APP_MODES.VIDEO, null)
   }, [
     dirtyExternalNoteIds,
+    directoryFolderPath,
     expandedExternalNoteId,
     externalNoteDraftContent,
     externalNotes,
     externalNotesFilterHistory,
     externalNotesFilterOn,
     externalNotesFilterText,
+    externalNotesFolderDepth,
+    externalNoteLoadedSources,
+    externalNoteSources,
     externalNotesReverse,
     externalNotesShowFileName,
     fullscreenCycleState,
@@ -1532,6 +1940,28 @@ export default function VideoMode() {
     setExternalNotesFilterOn(notesPoolSnapshot.filterOn === true)
     setExternalNotesReverse(notesPoolSnapshot.reverse === true)
     setExternalNotesShowFileName(notesPoolSnapshot.showFileName !== false)
+    setExternalNotesFolderDepth(Math.max(
+      0,
+      Math.min(MAX_NOTES_POOL_FOLDER_DEPTH, Math.trunc(Number(notesPoolSnapshot.folderSearchDepth) || 0))
+    ))
+    const legacySourcePaths = [...new Set(restoredExternalNotes.map((note) => note.sourceJsonPath).filter(Boolean))]
+    const restoredSources = normalizeNotesPoolSources(
+      Array.isArray(notesPoolSnapshot.sources)
+        ? notesPoolSnapshot.sources
+        : legacySourcePaths.map((sourcePath, index) => ({
+            type: 'file',
+            path: sourcePath,
+            selected: true,
+            lastUsedAt: Date.now() - index,
+          }))
+    )
+    const restoredLoadedSources = normalizeNotesPoolSources(
+      Array.isArray(notesPoolSnapshot.loadedSources)
+        ? notesPoolSnapshot.loadedSources
+        : restoredSources.filter((source) => source.selected)
+    ).map((source) => ({ ...source, selected: true, error: '' }))
+    setExternalNoteSources(limitNotesPoolSources(restoredSources, restoredLoadedSources))
+    setExternalNoteLoadedSources(restoredLoadedSources)
     const restoredExternalNoteId = restoredExternalNotes.some((note) => note.id === notesPoolSnapshot.selectedNoteId)
       ? notesPoolSnapshot.selectedNoteId
       : ''
@@ -1550,6 +1980,19 @@ export default function VideoMode() {
     loadedVideoStateRef.current = restoredLoadedVideoState
     videoOpenSourceRef.current = restoredVideoOpenSource
     setVideoOpenSource(restoredVideoOpenSource)
+    const restoredDirectoryFolder = typeof snapshot.folderPath === 'string' && snapshot.folderPath
+      ? snapshot.folderPath
+      : splitPath(restoredActiveVideo.filePath).folderPath
+    setDirectoryFolderPath(restoredDirectoryFolder)
+    if (!restoredLoadedVideoState.activeLoaded && restoredDirectoryFolder && window.videoApi?.listMp4Files) {
+      window.videoApi.listMp4Files(restoredDirectoryFolder).then((result) => {
+        if (canceled || !result?.ok) return
+        setDirectoryMp4Files((result.mp4Files || []).map(normalizeMp4FileEntry))
+        setSelectedDirectoryMp4Name(splitPath(restoredActiveVideo.filePath).fileName)
+      }).catch((error) => {
+        window.debugApi?.log(`Closed video folder restore failed: ${error?.message || error}`)
+      })
+    }
     if (
       restoredVideoOpenSource === 'pool'
       && restoredLoadedVideoState.sources.default.filePath
@@ -1587,7 +2030,7 @@ export default function VideoMode() {
         window.debugApi?.log(`Default video notes restore failed: ${error?.message || error}`)
       })
     }
-    if (restoredActiveVideo.filePath) {
+    if (restoredLoadedVideoState.activeLoaded && restoredActiveVideo.filePath) {
       openVideoFileFullPath(restoredActiveVideo.filePath, {
         autoplay: false,
         playbackRate: restoredPlayingView.playbackRate,
@@ -1759,6 +2202,14 @@ export default function VideoMode() {
       return
     }
 
+    const rememberedClosedSlot = !loadedVideoStateRef.current.activeLoaded && options.seekTime == null
+      ? Object.values(loadedVideoStateRef.current.sources).find((slot) => (
+          isSameFilePath(slot.filePath, info.filePath)
+        ))
+      : null
+    const restoredSeekTime = rememberedClosedSlot?.playbackTime ?? options.seekTime
+    const restoreClosedVideo = Boolean(rememberedClosedSlot)
+
     const nextSubtitleLanguages = normalizeSubtitleLanguages(info)
     const subtitleOptions = {
       ...options,
@@ -1773,11 +2224,12 @@ export default function VideoMode() {
     })
 
     const nextVideoOpenSource = options.videoOpenSource === 'pool' ? 'pool' : 'default'
-    const restoredPlaybackTime = Number(options.seekTime)
+    const restoredPlaybackTime = Number(restoredSeekTime)
     rememberCurrentLoadedVideo()
     loadedVideoStateRef.current = {
       ...loadedVideoStateRef.current,
       activeSource: nextVideoOpenSource,
+      activeLoaded: true,
       sources: {
         ...loadedVideoStateRef.current.sources,
         [nextVideoOpenSource]: {
@@ -1789,6 +2241,8 @@ export default function VideoMode() {
       },
     }
     videoOpenSourceRef.current = nextVideoOpenSource
+    activeVideoGenerationRef.current += 1
+    activeVideoPathRef.current = info.filePath
     readingResumeHandledRef.current = false
     setVideoFile(info)
     setVideoOpenSource(nextVideoOpenSource)
@@ -1796,6 +2250,9 @@ export default function VideoMode() {
     setSelectedSubtitleLanguageKey(selectedLanguageKey)
     setSelectedSubtitle(subtitle)
     setCurrentFile(info.filePath)
+    if (nextVideoOpenSource === 'default' && info.folderPath) {
+      setDirectoryFolderPath(info.folderPath)
+    }
     setVideoDurationSeconds(0)
     setVideoDurationText('--:--:--.-')
     addRecentFile(APP_MODES.VIDEO, info.filePath)
@@ -1839,11 +2296,11 @@ export default function VideoMode() {
     playingViewRef.current = nextPlayingView
     applyPlayingView(nextPlayingView)
 
-    if (Number.isFinite(Number(options.seekTime))) {
-      seekWhenReady(Number(options.seekTime))
+    if (Number.isFinite(Number(restoredSeekTime))) {
+      seekWhenReady(Number(restoredSeekTime))
     }
 
-    if (options.autoplay) {
+    if (options.autoplay && !restoreClosedVideo) {
       playAfterVideoSourceLoaded({ playbackRate: options.playbackRate })
     }
 
@@ -1855,34 +2312,47 @@ export default function VideoMode() {
   const openVideoFileFullPath = async (fullPath, options = {}) => {
     if (!fullPath || !window.videoApi?.getVideoFileInfo) return
 
+    const rememberedClosedSlot = !loadedVideoStateRef.current.activeLoaded
+      ? Object.values(loadedVideoStateRef.current.sources).find((slot) => (
+          isSameFilePath(slot.filePath, fullPath)
+        ))
+      : null
+    const openOptions = rememberedClosedSlot && options.seekTime == null
+      ? {
+          ...options,
+          autoplay: false,
+          seekTime: rememberedClosedSlot.playbackTime,
+        }
+      : options
+
     if (
-      options.allowPoolToDefault !== true
+      openOptions.allowPoolToDefault !== true
       && activeNoteSource === 'pool'
       && selectedExternalNote?.sourceVideoPath
       && isSameFilePath(fullPath, selectedExternalNote.sourceVideoPath)
-      && options.videoOpenSource !== 'pool'
+      && openOptions.videoOpenSource !== 'pool'
     ) {
       showAutoMessage('Action message.', 'Message', 1800)
       return
     }
 
-    if (!options.skipSwitchConfirm) {
+    if (!openOptions.skipSwitchConfirm) {
       const canSwitch = await confirmBeforeSwitchVideo()
       if (!canSwitch) return
     }
 
-    const poolSource = options.videoOpenSource === 'pool'
+    const poolSource = openOptions.videoOpenSource === 'pool'
     const info = await window.videoApi.getVideoFileInfo(fullPath, {
       extraSubtitleFolder,
-      loadDirectoryMp4Files: !poolSource && options.updateDirectoryMp4Files !== false,
+      loadDirectoryMp4Files: !poolSource && openOptions.updateDirectoryMp4Files !== false,
       loadNotes: !poolSource,
     })
-    await loadVideoInfo(info, options)
+    await loadVideoInfo(info, openOptions)
   }
 
   const openVideoFilePath = async (fileName) => {
-    if (!videoFile?.folderPath) return
-    openVideoFileFullPath(joinPath(videoFile.folderPath, fileName), { autoplay: true })
+    if (!directoryFolderPath) return
+    openVideoFileFullPath(joinPath(directoryFolderPath, fileName), { autoplay: true })
   }
 
   const openRecentVideoFile = async (fullPath) => {
@@ -1911,6 +2381,124 @@ export default function VideoMode() {
       autoplay: true,
       videoOpenSource: 'default',
     })
+  }
+
+  const copyMp4FileName = async (filePath) => {
+    const { fileName } = splitPath(filePath)
+    if (!fileName || !window.videoApi?.writeClipboardText) return
+    await window.videoApi.writeClipboardText(fileName)
+    showAutoMessage('Filename copied.', 'MP4 File', 900)
+  }
+
+  const openMp4Folder = async (filePath) => {
+    const result = await window.videoApi?.showFileInFolder?.(filePath)
+    if (!result?.ok) {
+      showAutoMessage('Unable to open the file folder.', 'MP4 File', 1600)
+    }
+  }
+
+  const renameMp4File = async (filePath) => {
+    if (!filePath || isSameFilePath(filePath, videoFile?.filePath)) return
+
+    const { folderPath, fileName } = splitPath(filePath)
+    let draftFileName = fileName
+    let draftJidGenerated = false
+    let collisionRegenerated = false
+    let result = null
+
+    while (true) {
+      const suffixState = getRenameSuffixState(draftFileName)
+      const response = await showActionDialog({
+        kind: 'videoRename',
+        title: collisionRegenerated ? 'Rename MP4 File - JID collision' : 'Rename MP4 File',
+        originalFileName: fileName,
+        fileName: draftFileName,
+        jidChecked: suffixState.hasJid,
+        jomChecked: suffixState.hasJom,
+        jidGenerated: draftJidGenerated,
+        defaultValue: 'ok',
+        cancelValue: 'cancel',
+        actions: [
+          { label: 'OK', value: 'ok', primary: true },
+          { label: 'Cancel', value: 'cancel' },
+        ],
+      })
+      if (response?.decision !== 'ok') return
+
+      const nextFileName = String(response.text || '').trim()
+      if (nextFileName === fileName) return
+
+      const confirmDecision = await showActionDialog({
+        kind: 'videoRenameConfirm',
+        title: 'Confirm Rename',
+        originalFileName: fileName,
+        fileName: nextFileName,
+        defaultValue: 'confirm',
+        cancelValue: 'back',
+        actions: [
+          { label: 'Confirm', value: 'confirm', primary: true },
+          { label: 'Back', value: 'back' },
+        ],
+      })
+      if (confirmDecision !== 'confirm') {
+        draftFileName = nextFileName
+        draftJidGenerated = response.jidGenerated === true
+        collisionRegenerated = false
+        continue
+      }
+
+      result = await window.videoApi?.renameFile?.({ filePath, fileName: nextFileName })
+      if (result?.ok || result?.reason !== 'target-file-exists' || !response.jidGenerated) break
+
+      draftFileName = regenerateNumericJid(nextFileName)
+      draftJidGenerated = true
+      collisionRegenerated = true
+    }
+
+    if (!result?.ok) {
+      const message = result?.reason === 'target-file-exists'
+        ? 'A file with the new name already exists.'
+        : result?.reason === 'invalid-file-name'
+          ? 'Enter a valid MP4 filename.'
+          : result?.reason === 'file-not-found'
+            ? 'The MP4 file was not found.'
+            : `Rename failed${result?.reason ? `: ${result.reason}` : '.'}`
+      showAutoMessage(message, 'Rename MP4 File', 1800)
+      return
+    }
+
+    replaceRecentFile(APP_MODES.VIDEO, filePath, result.filePath)
+    if (isSameFilePath(folderPath, directoryFolderPath)) {
+      setDirectoryMp4Files(result.mp4Files || [])
+      if (selectedDirectoryMp4Name === fileName) {
+        setSelectedDirectoryMp4Name(result.fileName)
+      }
+    }
+    loadedVideoStateRef.current = {
+      ...loadedVideoStateRef.current,
+      sources: Object.fromEntries(Object.entries(loadedVideoStateRef.current.sources).map(([source, state]) => [
+        source,
+        isSameFilePath(state.filePath, filePath) ? { ...state, filePath: result.filePath } : state,
+      ])),
+    }
+    const renamedPathMap = new Map((result.renamedFiles || []).map((entry) => [
+      String(entry.from || '').replaceAll('/', '\\').toLowerCase(),
+      entry.to,
+    ]))
+    readingPositionsRef.current = readingPositionsRef.current.map((entry) => ({
+      ...entry,
+      videoPath: isSameFilePath(entry.videoPath, filePath) ? result.filePath : entry.videoPath,
+      subtitlePath: renamedPathMap.get(String(entry.subtitlePath || '').replaceAll('/', '\\').toLowerCase())
+        || entry.subtitlePath,
+    }))
+    if (notes.some((note) => isSameFilePath(note.sourceVideoPath, filePath))) {
+      setNotes(notes.map((note) => (
+        isSameFilePath(note.sourceVideoPath, filePath)
+          ? { ...note, sourceVideoPath: result.filePath, sourceVideoName: result.fileName }
+          : note
+      )))
+    }
+    showAutoMessage('File renamed.', 'Rename MP4 File', 1100)
   }
 
   const confirmBeforePlayNextVideo = async () => {
@@ -2002,6 +2590,7 @@ export default function VideoMode() {
     const mp4Files = (result.mp4Files || []).map(normalizeMp4FileEntry)
     const sortedMp4Files = sortMp4Files(mp4Files, mp4SortKey, mp4SortDirection)
     const firstFileName = sortedMp4Files[0]?.fileName || ''
+    setDirectoryFolderPath(folderPath)
     setDirectoryMp4Files(mp4Files)
     setSelectedDirectoryMp4Name(firstFileName)
 
@@ -2034,11 +2623,16 @@ export default function VideoMode() {
       return
     }
 
+    if (result?.canceled) return
+
     const loadedNotes = Array.isArray(result?.notes) ? result.notes : []
-    if (loadedNotes.length === 0) {
-      showAutoMessage('Action message.', 'Message', 1400)
-      return
-    }
+    const sourceResults = Array.isArray(result?.sourceResults) ? result.sourceResults : []
+    const loadedSourceRecords = sourceResults
+      .filter((source) => source.ok)
+      .map((source) => normalizeNotesPoolSource({ ...source, selected: true, error: '' }))
+      .filter(Boolean)
+    const loadedSourceIds = new Set(loadedSourceRecords.map((source) => source.id))
+    const now = Date.now()
 
     setExternalNotes((current) => {
       const byId = new Map(current.map((note) => [note.id, note]))
@@ -2050,9 +2644,187 @@ export default function VideoMode() {
       loadedNotes.forEach((note) => next.delete(note.id))
       return next
     })
+    setExternalNoteLoadedSources((current) => {
+      const byId = new Map(current.map((source) => [source.id, source]))
+      loadedSourceRecords.forEach((source) => {
+        const previous = byId.get(source.id)
+        if (source.type === 'folder' && previous?.type === 'folder' && source.depth < previous.depth) {
+          return
+        }
+        byId.set(source.id, source)
+      })
+      return [...byId.values()]
+    })
+    setExternalNoteSources((current) => {
+      const byId = new Map(current.map((source) => [source.id, source]))
+      sourceResults.forEach((source, index) => {
+        const normalized = normalizeNotesPoolSource({
+          ...source,
+          selected: true,
+          lastUsedAt: now - index,
+          error: source.ok ? '' : describeNotesPoolSourceError(source.reason),
+        })
+        if (normalized) byId.set(normalized.id, normalized)
+      })
+      const records = [...byId.values()].sort((left, right) => right.lastUsedAt - left.lastUsedAt)
+      const protectedIds = new Set([
+        ...externalNoteLoadedSources.map((source) => source.id),
+        ...loadedSourceIds,
+        ...records.filter((source) => source.selected).map((source) => source.id),
+      ])
+      const protectedRecords = records.filter((source) => protectedIds.has(source.id))
+      const recentRecords = records.filter((source) => !protectedIds.has(source.id))
+      return [...protectedRecords, ...recentRecords.slice(0, Math.max(0, MAX_NOTES_POOL_SOURCES - protectedRecords.length))]
+    })
     setRightToolTab('notesPool')
     const skippedCount = Array.isArray(result?.skippedFiles) ? result.skippedFiles.length : 0
-    showAutoMessage('Loaded ' + loadedNotes.length + ' legacy video notes' + (skippedCount ? ', skipped ' + skippedCount + ' JSON files' : '') + '.', 'Notes Pool', 1600)
+    const failedCount = sourceResults.filter((source) => !source.ok).length
+    showAutoMessage(
+      'Loaded ' + loadedNotes.length + ' legacy video notes'
+        + (skippedCount ? ', skipped ' + skippedCount + ' JSON files' : '')
+        + (failedCount ? ', ' + failedCount + ' source failed' : '')
+        + '.',
+      'Notes Pool',
+      1800
+    )
+  }
+
+  const toggleExternalNoteSource = (sourceId) => {
+    setExternalNoteSources((current) => current.map((source) => (
+      source.id === sourceId
+        ? { ...source, selected: !source.selected, error: '' }
+        : source
+    )))
+  }
+
+  const toggleExternalNoteSourcesMenu = () => {
+    if (externalNoteSourcesOpen) {
+      setExternalNoteSourcesOpen(false)
+      return
+    }
+
+    const bounds = notesPoolSourceButtonRef.current?.getBoundingClientRect()
+    const menuWidth = Math.min(340, Math.max(220, window.innerWidth - 16))
+    const menuTop = Math.min(window.innerHeight - 48, (bounds?.bottom || 8) + 4)
+    setExternalNoteSourcesPosition({
+      left: Math.max(8, Math.min(window.innerWidth - menuWidth - 8, (bounds?.right || window.innerWidth) - menuWidth)),
+      top: menuTop,
+      width: menuWidth,
+      maxHeight: Math.max(40, window.innerHeight - menuTop - 8),
+    })
+    setExternalNoteSourcesOpen(true)
+  }
+
+  const cleanRecentExternalNoteSources = async () => {
+    if (cleanableExternalNoteSourceCount === 0) return
+    setExternalNoteSourcesOpen(false)
+    const decision = await showActionDialog({
+      title: 'Clean sources',
+      message: 'Remove all sources that are not currently loaded?',
+      actions: [
+        { label: 'Clean', value: 'clean', primary: true },
+        { label: 'Cancel', value: 'cancel' },
+      ],
+      defaultValue: 'cancel',
+      cancelValue: 'cancel',
+    })
+    if (decision !== 'clean') return
+
+    const loadedIds = new Set(externalNoteLoadedSources.map((source) => source.id))
+    setExternalNoteSources((current) => current.filter((source) => loadedIds.has(source.id)))
+  }
+
+  const removeRecentExternalNoteSource = async (source) => {
+    const isLoaded = externalNoteLoadedSources.some((loadedSource) => loadedSource.id === source?.id)
+    if (!source || source.selected || isLoaded) return
+
+    setExternalNoteSourcesOpen(false)
+    const decision = await showActionDialog({
+      title: 'Remove source',
+      message: 'Remove this source from recent sources?',
+      actions: [
+        { label: 'Remove', value: 'remove', danger: true },
+        { label: 'Cancel', value: 'cancel' },
+      ],
+      defaultValue: 'cancel',
+      cancelValue: 'cancel',
+    })
+    if (decision !== 'remove') return
+
+    setExternalNoteSources((current) => current.filter((item) => item.id !== source.id))
+  }
+
+  const reloadExternalNoteSources = async () => {
+    if (selectedExternalNoteSources.length === 0 || externalNotesReloading) return
+    if (!window.videoApi?.loadLegacyNoteSources) {
+      showAutoMessage('Action message.', 'Message', 1400)
+      return
+    }
+
+    const canLeave = await confirmExternalNoteDirtyBeforeLeave()
+    if (!canLeave) return
+
+    setExternalNotesReloading(true)
+    try {
+      const result = await window.videoApi.loadLegacyNoteSources(selectedExternalNoteSources.map((source) => ({
+        type: source.type,
+        path: source.path,
+        depth: source.depth,
+      })))
+      if (!result?.ok) {
+        showAutoMessage('Reload failed.', 'Notes Pool', 1800)
+        return
+      }
+
+      const loadedNotes = Array.isArray(result.notes) ? result.notes : []
+      const sourceResults = Array.isArray(result.sourceResults) ? result.sourceResults : []
+      const successfulSources = sourceResults
+        .filter((source) => source.ok)
+        .map((source) => normalizeNotesPoolSource({ ...source, selected: true, error: '' }))
+        .filter(Boolean)
+      const resultById = new Map(sourceResults.map((source) => [
+        getNotesPoolSourceId(source.type, source.path),
+        source,
+      ]))
+
+      setExternalNotes(loadedNotes)
+      setExternalNoteLoadedSources(successfulSources)
+      const reloadTime = Date.now()
+      setExternalNoteSources((current) => limitNotesPoolSources(current.map((source, index) => {
+        if (!source.selected) return { ...source, error: '' }
+        const sourceResult = resultById.get(source.id)
+        return {
+          ...source,
+          lastUsedAt: reloadTime - index,
+          error: sourceResult?.ok ? '' : describeNotesPoolSourceError(sourceResult?.reason),
+        }
+      }), successfulSources))
+      setDirtyExternalNoteIds(new Set())
+
+      const loadedNoteIds = new Set(loadedNotes.map((note) => note.id))
+      if (!loadedNoteIds.has(selectedExternalNoteId)) {
+        setSelectedExternalNoteId('')
+        setExpandedExternalNoteId('')
+        setExternalNoteDraftContent('')
+      } else {
+        const reloadedSelectedNote = loadedNotes.find((note) => note.id === selectedExternalNoteId)
+        setExternalNoteDraftContent(reloadedSelectedNote?.content || '')
+      }
+
+      const failedCount = sourceResults.filter((source) => !source.ok).length
+      showAutoMessage(
+        failedCount
+          ? `Reloaded ${successfulSources.length} sources; ${failedCount} failed.`
+          : `Reloaded ${successfulSources.length} sources.`,
+        'Notes Pool',
+        1800
+      )
+    } catch (error) {
+      showAutoMessage('Reload failed.', 'Notes Pool', 1800)
+      window.debugApi?.log(`Notes Pool reload failed: ${error.message || String(error)}`)
+    } finally {
+      setExternalNotesReloading(false)
+    }
   }
 
   const updateExternalNoteDraftContent = (noteId, content) => {
@@ -2255,10 +3027,24 @@ export default function VideoMode() {
     const canLeave = await confirmExternalNoteDirtyBeforeLeave()
     if (!canLeave) return
 
-    appendExternalNotes(await window.videoApi.selectLegacyNoteFolder())
+    appendExternalNotes(await window.videoApi.selectLegacyNoteFolder({
+      maxDepth: externalNotesFolderDepth,
+    }))
   }
 
   const clearExternalNotes = async () => {
+    const decision = await showActionDialog({
+      title: 'Clear Notes',
+      message: 'Clear all notes from Notes Pool?',
+      defaultValue: 'clear',
+      cancelValue: 'cancel',
+      actions: [
+        { label: 'Clear', value: 'clear', danger: true },
+        { label: 'Cancel', value: 'cancel' },
+      ],
+    })
+    if (decision !== 'clear') return
+
     const canLeave = await confirmExternalNoteDirtyBeforeLeave()
     if (!canLeave) return
 
@@ -2267,6 +3053,16 @@ export default function VideoMode() {
     setExpandedExternalNoteId('')
     setExternalNoteDraftContent('')
     setDirtyExternalNoteIds(new Set())
+    setExternalNoteLoadedSources([])
+    setExternalNoteSources((current) => current
+      .map((source) => ({
+        ...source,
+        selected: false,
+        error: '',
+      }))
+      .sort((left, right) => right.lastUsedAt - left.lastUsedAt)
+      .slice(0, MAX_NOTES_POOL_SOURCES))
+    setExternalNoteSourcesOpen(false)
   }
 
   const openExternalNoteTarget = async (externalNote) => {
@@ -2411,6 +3207,13 @@ export default function VideoMode() {
     })
   }
 
+  const syncQuickNoteRangeToInfo = (range) => {
+    setSelectedStart(range.start)
+    setSelectedEnd(range.end)
+    setCurStart(range.start)
+    setCurEnd(range.end)
+  }
+
   const addQuickNote = async () => {
     if (!videoFile?.filePath) return
 
@@ -2419,8 +3222,7 @@ export default function VideoMode() {
 
     addNote(createQuickNote(range, ''))
     setNotesFilterOn(false)
-    setCurStart(range.start)
-    setCurEnd(range.end)
+    syncQuickNoteRangeToInfo(range)
     setDirty(APP_MODES.VIDEO, true)
     showAutoMessage('Action message.', 'Message', 900)
   }
@@ -2457,7 +3259,7 @@ export default function VideoMode() {
     showAutoMessage('Action message.', 'Message', 900)
   }
 
-  const createQuickNote = (range, content = 'None') => ({
+  const createQuickNote = (range, content = '') => ({
     id: `${videoFile?.filePath || 'video'}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     sourceVideoPath: videoFile?.filePath || '',
     sourceVideoName: videoFile?.fileName || '',
@@ -2485,6 +3287,7 @@ export default function VideoMode() {
     const insertIndex = position === 'before' ? selectedIndex : selectedIndex + 1
     insertNoteAt(insertIndex, createQuickNote(range))
     setNotesFilterOn(false)
+    syncQuickNoteRangeToInfo(range)
     setDirty(APP_MODES.VIDEO, true)
     showAutoMessage('Action message.', 'Message', 900)
   }
@@ -2939,7 +3742,22 @@ export default function VideoMode() {
   }
 
 
-  const getContextMenuItemCount = (type) => (type === 'subtitleCue' ? 3 : type === 'externalNote' ? 4 : type === 'video' ? 11 : 12)
+  const getContextMenuItemCount = (type) => (
+    type === 'subtitleCue' ? 3 : type === 'externalNote' ? 4 : type === 'mp4File' ? 3 : 12
+  )
+
+  const openMp4FileContextMenu = (event, filePath, listSource) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const position = getContextMenuPosition(event, getContextMenuItemCount('mp4File'))
+    setContextMenu({
+      type: 'mp4File',
+      filePath,
+      listSource,
+      x: position.x,
+      y: position.y,
+    })
+  }
 
   const openContextMenu = async (event, type, note = null) => {
     event.preventDefault()
@@ -3009,6 +3827,44 @@ export default function VideoMode() {
     setDirty(APP_MODES.VIDEO, true)
   }
 
+  const locateNoteByPlaybackTime = async () => {
+    const playbackTime = Number(getPlayerTime())
+    if (!Number.isFinite(playbackTime)) {
+      showAutoMessage('No matching note.', 'Locate Note', 1400)
+      return
+    }
+
+    const candidates = notes
+      .map((note, index) => {
+        const noteTime = parseTime(note.start)
+        if (!Number.isFinite(noteTime)) return null
+        const delta = noteTime - playbackTime
+        const distance = Math.abs(delta)
+        const inRange = delta === 0
+          || (delta < 0 && distance <= locateNotePastLimitSec)
+          || (delta > 0 && distance <= locateNoteFutureLimitSec)
+        return inRange ? { note, index, delta, distance } : null
+      })
+      .filter(Boolean)
+      .sort((left, right) => (
+        (left.distance - right.distance)
+        || (Number(left.delta > 0) - Number(right.delta > 0))
+        || (left.index - right.index)
+      ))
+
+    const target = candidates[0]?.note
+    if (!target) {
+      showAutoMessage('No matching note.', 'Locate Note', 1400)
+      return
+    }
+
+    const canSelect = await selectNote(target)
+    if (!canSelect) return
+    setNotesFilterOn(false)
+    setLeftTab('notes')
+    scrollSelectedNoteIntoView()
+  }
+
   const runContextMenuAction = (handler) => {
     setContextMenu(null)
     setTimeout(() => {
@@ -3017,6 +3873,19 @@ export default function VideoMode() {
   }
 
   const getContextMenuItems = () => {
+    if (contextMenu?.type === 'mp4File') {
+      const targetPath = contextMenu.filePath
+      return [
+        { label: 'Copy Filename', action: () => copyMp4FileName(targetPath) },
+        { label: 'Open Folder', action: () => openMp4Folder(targetPath) },
+        {
+          label: 'Rename',
+          disabled: isSameFilePath(targetPath, videoFile?.filePath),
+          action: () => renameMp4File(targetPath),
+        },
+      ]
+    }
+
     if (contextMenu?.type === 'subtitleCue') {
       return [
         {
@@ -3049,10 +3918,10 @@ export default function VideoMode() {
 
     const menuNote = contextMenu?.note || selectedNote
     const noteItems = [
-      { label: 'Append Quick Mark', action: () => runAction('video.appendQuickMark') },
-      { label: 'Append Mark', action: () => runAction('video.appendMark') },
-      { label: 'Insert Quick Before', action: () => insertQuickNoteNearSelected('before') },
       { label: 'Insert Quick After', action: () => insertQuickNoteNearSelected('after') },
+      { label: 'Insert Quick Before', action: () => insertQuickNoteNearSelected('before') },
+      { label: 'Append Mark', action: () => runAction('video.appendMark') },
+      { label: 'Append Quick Mark', action: () => runAction('video.appendQuickMark') },
       { label: 'Quick Update Range', action: quickUpdateSelectedRange, separator: true },
       { label: 'Copy Start', action: () => copyContextStart(menuNote), separator: true },
       { label: 'Copy Start+File', action: () => copyContextStartAndFile(menuNote) },
@@ -3064,7 +3933,7 @@ export default function VideoMode() {
     if (contextMenu?.type === 'video') {
       return [
         ...noteItems,
-
+        { label: 'Locate Note', action: locateNoteByPlaybackTime },
         { label: 'Close Menu', action: () => {}, separator: true },
       ]
     }
@@ -3227,6 +4096,30 @@ export default function VideoMode() {
       handler: () => volumeByStep(-VOLUME_STEP),
     },
     {
+      id: 'video.rollingFontSizeUp',
+      label: 'Rolling Font Size Up',
+      scope: APP_MODES.VIDEO,
+      handler: () => changeRollingSubtitleFontSize(1),
+    },
+    {
+      id: 'video.rollingFontSizeDown',
+      label: 'Rolling Font Size Down',
+      scope: APP_MODES.VIDEO,
+      handler: () => changeRollingSubtitleFontSize(-1),
+    },
+    {
+      id: 'video.videoOpacityDown',
+      label: 'Video Opacity Down',
+      scope: APP_MODES.VIDEO,
+      handler: () => changeCurrentVideoOpacity(-1),
+    },
+    {
+      id: 'video.videoOpacityUp',
+      label: 'Video Opacity Up',
+      scope: APP_MODES.VIDEO,
+      handler: () => changeCurrentVideoOpacity(1),
+    },
+    {
       id: 'video.toggleView',
       label: 'Toggle View',
       scope: APP_MODES.VIDEO,
@@ -3263,6 +4156,18 @@ export default function VideoMode() {
       handler: addQuickNote,
     },
     {
+      id: 'video.insertQuickBefore',
+      label: 'Insert Quick Before',
+      scope: APP_MODES.VIDEO,
+      handler: () => insertQuickNoteNearSelected('before'),
+    },
+    {
+      id: 'video.insertQuickAfter',
+      label: 'Insert Quick After',
+      scope: APP_MODES.VIDEO,
+      handler: () => insertQuickNoteNearSelected('after'),
+    },
+    {
       id: 'video.quickUpdateRange',
       label: 'Quick Update Range',
       scope: APP_MODES.VIDEO,
@@ -3277,8 +4182,11 @@ export default function VideoMode() {
   ]), [
     addQuickNote,
     appendCurrentMark,
+    changeCurrentVideoOpacity,
+    changeRollingSubtitleFontSize,
     confirmUpdateSelectedContent,
     cycleFullscreenPanelState,
+    insertQuickNoteNearSelected,
     seekToCurrentStart,
     seekByScaledSeconds,
     saveVideoNotes,
@@ -3683,17 +4591,34 @@ export default function VideoMode() {
     const startRightWidth = videoRightWidth
     const startStageRatio = videoStageRatio
     const startSubtitleCenterSideRatio = subtitleCenterSideRatio
+    const bodyBounds = event.currentTarget.closest('.video-body')?.getBoundingClientRect()
     const centerBounds = event.currentTarget.closest('.video-center')?.getBoundingClientRect()
 
     const handlePointerMove = (moveEvent) => {
       if (type === 'left') {
-        const nextWidth = Math.max(150, Math.min(420, startLeftWidth + moveEvent.clientX - startX))
+        const availablePanelWidth = Math.max(
+          0,
+          (bodyBounds?.width || 0) - (VIDEO_VERTICAL_SPLITTER_WIDTH * 2)
+        )
+        const maximumLeftWidth = Math.max(0, availablePanelWidth - startRightWidth)
+        const nextWidth = Math.max(
+          0,
+          Math.min(maximumLeftWidth, startLeftWidth + moveEvent.clientX - startX)
+        )
         setVideoLeftWidth(nextWidth)
         return
       }
 
       if (type === 'right') {
-        const nextWidth = Math.max(150, Math.min(420, startRightWidth - (moveEvent.clientX - startX)))
+        const availablePanelWidth = Math.max(
+          0,
+          (bodyBounds?.width || 0) - (VIDEO_VERTICAL_SPLITTER_WIDTH * 2)
+        )
+        const maximumRightWidth = Math.max(0, availablePanelWidth - startLeftWidth)
+        const nextWidth = Math.max(
+          0,
+          Math.min(maximumRightWidth, startRightWidth - (moveEvent.clientX - startX))
+        )
         setVideoRightWidth(nextWidth)
         return
       }
@@ -3752,6 +4677,39 @@ export default function VideoMode() {
     window.addEventListener('pointerup', handlePointerUp)
   }
 
+  const startMp4FilesResize = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const recentSection = event.currentTarget.previousElementSibling
+    const directorySection = event.currentTarget.nextElementSibling
+    const startRecentHeight = recentSection?.getBoundingClientRect().height || 0
+    const startDirectoryHeight = directorySection?.getBoundingClientRect().height || 0
+    const availableHeight = startRecentHeight + startDirectoryHeight
+    const startY = event.clientY
+    if (availableHeight <= 0) return
+
+    const minimumRecentHeight = Math.min(48, availableHeight)
+    const minimumDirectoryHeight = Math.min(80, Math.max(0, availableHeight - minimumRecentHeight))
+
+    const handlePointerMove = (moveEvent) => {
+      const maximumRecentHeight = Math.max(minimumRecentHeight, availableHeight - minimumDirectoryHeight)
+      const nextRecentHeight = Math.max(
+        minimumRecentHeight,
+        Math.min(maximumRecentHeight, startRecentHeight + moveEvent.clientY - startY)
+      )
+      setMp4RecentSectionRatio(nextRecentHeight / availableHeight)
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }
+
   const fullscreenClass = `fullscreen-state-${fullscreenCycleState}`
   const controlModeClass = videoControlMode ? 'video-control-mode' : ''
   const videoViewHiddenClass = fullscreenViewState.hideView ? 'video-view-hidden' : 'video-view-visible'
@@ -3773,6 +4731,7 @@ export default function VideoMode() {
         '--video-stage-height': `${Math.round(videoStageRatio * 1000) / 10}%`,
         '--video-subtitle-center-blur': `${subtitleCenterViewBlurPx}px`,
         '--video-subtitle-center-dim': videoViewDim,
+        '--video-view-opacity': fullscreenViewState.videoOpacity,
         '--video-subtitle-center-layout-right-width': `${Math.round(subtitleCenterSideRatio * 1000) / 10}%`,
         '--video-bottom-side-width': `${videoBottomSideWidth}px`,
         '--video-subtitle-center-layout-info-height': `${subtitleCenterInfoHeight}px`,
@@ -3800,23 +4759,6 @@ export default function VideoMode() {
           <div className="notes-panel">
             <div className="notes-tools">
               <div className="notes-actions-row">
-                <div className="note-font-tools" aria-label="Note item font size">
-                  <button
-                    data-tooltip="Smaller note item font"
-                    onClick={() => changeNoteItemFontSize('videoNotesFontSize', videoNotesFontSize, -1)}
-                    type="button"
-                  >
-                    -
-                  </button>
-                  <span>{videoNotesFontSize}px</span>
-                  <button
-                    data-tooltip="Larger note item font"
-                    onClick={() => changeNoteItemFontSize('videoNotesFontSize', videoNotesFontSize, 1)}
-                    type="button"
-                  >
-                    +
-                  </button>
-                </div>
                 <div className="notes-action-group">
                   <button
                     className="notes-replace-button"
@@ -3848,7 +4790,46 @@ export default function VideoMode() {
                     <i className="fa-solid fa-eraser" aria-hidden="true" />
                   </button>
                 </div>
-                <div className="notes-action-group notes-action-group-spaced">
+                <div className="notes-action-group notes-move-action-group">
+                  <button
+                    className="notes-icon-button"
+                    data-tooltip="Move note up"
+                    disabled={selectedNoteIndex <= 0}
+                    onClick={() => moveSelectedNote('up')}
+                    type="button"
+                  >
+                    <i className="fa-solid fa-arrow-up" aria-hidden="true" />
+                  </button>
+                  <button
+                    className="notes-icon-button"
+                    data-tooltip="Move note down"
+                    disabled={selectedNoteIndex < 0 || selectedNoteIndex >= notes.length - 1}
+                    onClick={() => moveSelectedNote('down')}
+                    type="button"
+                  >
+                    <i className="fa-solid fa-arrow-down" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+              <div className="notes-options-row">
+                <div className="note-font-tools" aria-label="Note item font size">
+                  <button
+                    data-tooltip="Smaller note item font"
+                    onClick={() => changeNoteItemFontSize('videoNotesFontSize', videoNotesFontSize, -1)}
+                    type="button"
+                  >
+                    -
+                  </button>
+                  <span>{videoNotesFontSize}px</span>
+                  <button
+                    data-tooltip="Larger note item font"
+                    onClick={() => changeNoteItemFontSize('videoNotesFontSize', videoNotesFontSize, 1)}
+                    type="button"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="notes-pool-checks">
                   <label className="notes-compact-check">
                     <input
                       checked={notesFilterOn}
@@ -3920,7 +4901,12 @@ export default function VideoMode() {
             </div>
           </div>
         ) : (
-          <div className="files-list">
+          <div
+            className="files-list"
+            style={{
+              gridTemplateRows: `auto minmax(48px, ${mp4RecentSectionRatio}fr) 6px minmax(80px, ${1 - mp4RecentSectionRatio}fr)`,
+            }}
+          >
             <label className="recent-folder-picker">
               <span>Recent folders</span>
               <select defaultValue="" onChange={(event) => loadVideoFolderPath(event.target.value)}>
@@ -3942,6 +4928,7 @@ export default function VideoMode() {
                       <button
                         className={filePath === videoFile?.filePath ? 'mp4-list-row recent active' : 'mp4-list-row recent'}
                         key={filePath}
+                        onContextMenu={(event) => openMp4FileContextMenu(event, filePath, 'recent')}
                         onDoubleClick={() => openRecentVideoFile(filePath)}
                         title={filePath}
                         type="button"
@@ -3953,10 +4940,16 @@ export default function VideoMode() {
                 )}
               </div>
             </div>
+            <div
+              aria-label="Resize recent and folder MP4 file lists"
+              className="mp4-files-splitter"
+              onPointerDown={startMp4FilesResize}
+              role="separator"
+            />
             <div className="list-section directory-section">
               <label className="folder-title-field">
                 <span>folder:</span>
-                <input readOnly title={videoFile?.folderPath || ''} value={videoFile?.folderPath || ''} />
+                <input readOnly title={directoryFolderPath} value={directoryFolderPath} />
               </label>
               <div className="mp4-sort-bar" aria-label="MP4 file sorting">
                 <label>
@@ -3985,6 +4978,10 @@ export default function VideoMode() {
                   />
                 </button>
               </div>
+              <div className="mp4-directory-status" aria-label="Current folder file counts">
+                <span>MP4: {directoryMp4Files.length}</span>
+                <span>JSON: {directoryJsonFileCount}</span>
+              </div>
               <div
                 className="list-scroll-body"
                 onKeyDown={handleDirectoryMp4KeyDown}
@@ -3999,6 +4996,14 @@ export default function VideoMode() {
                       className={entry.fileName === selectedDirectoryMp4Name ? 'mp4-list-row active' : 'mp4-list-row'}
                       key={entry.fileName}
                       onClick={() => setSelectedDirectoryMp4Name(entry.fileName)}
+                      onContextMenu={(event) => {
+                        setSelectedDirectoryMp4Name(entry.fileName)
+                        openMp4FileContextMenu(
+                          event,
+                          joinPath(directoryFolderPath, entry.fileName),
+                          'directory',
+                        )
+                      }}
                       onDoubleClick={() => openVideoFilePath(entry.fileName)}
                       title={entry.fileName}
                       type="button"
@@ -4038,7 +5043,10 @@ export default function VideoMode() {
             src={videoFile?.fileUrl}
             volume={volume}
           />
-          {fullscreenViewState.hideView && fullscreenCycleState !== 4 ? (
+          {!videoFile?.filePath ? (
+            <div className="video-nothing-loaded">Nothing loaded</div>
+          ) : null}
+          {videoFile?.filePath && fullscreenViewState.hideView && fullscreenCycleState !== 4 ? (
             <div className="video-hidden-seek">
               <input
                 aria-label="Seek video"
@@ -4054,7 +5062,7 @@ export default function VideoMode() {
               />
             </div>
           ) : null}
-          {titleOn && subtitleDisplayMode === 'rolling' ? (
+          {videoFile?.filePath && titleOn && subtitleDisplayMode === 'rolling' ? (
             <RollingSubtitlePanel
               bottomPanelRef={videoBottomPanelRef}
               containerRef={videoStageRef}
@@ -4091,6 +5099,7 @@ export default function VideoMode() {
               onReadingAnchorChange={handleSubtitleReadingAnchorChange}
               onReadingScrollStart={handleSubtitleReadingScrollStart}
               onReadingViewportChange={handleSubtitleReadingViewportChange}
+              fontSizeStepRequest={rollingSubtitleFontStepRequest}
             />
           ) : null}
           {titleOn && subtitleDisplayMode === 'rolling' && rollingSubtitleError ? (
@@ -4176,6 +5185,14 @@ export default function VideoMode() {
                 <span>Vol</span>
                 <strong>{Math.round(volume * 100)}%</strong>
               </div>
+              <div>
+                <span>Opacity</span>
+                <strong>{Number(fullscreenViewState.videoOpacity).toFixed(1)}</strong>
+              </div>
+              <div className="rolling-font-info">
+                <span>Rolling Font</span>
+                <strong>{currentRollingFontSize}px</strong>
+              </div>
               <div className="info-file video-source-file">
                 <strong title={videoFile?.filePath || videoFile?.fileName || ''}>
                   <em className={videoOpenSource === 'pool' ? 'video-file-source pool' : 'video-file-source default'}>
@@ -4187,7 +5204,9 @@ export default function VideoMode() {
             </div>
             <div className="video-mini-controls" aria-label="Video controls">
               <button
-                data-tooltip={subtitleCapabilities.canManualPlay ? 'Play / Pause' : 'Exit Sub Reading before playback'}
+                data-tooltip={!videoFile?.filePath
+                  ? 'No video loaded'
+                  : subtitleCapabilities.canManualPlay ? 'Play / Pause' : 'Exit Sub Reading before playback'}
                 disabled={!subtitleCapabilities.canManualPlay && playerRef.current?.paused?.() !== false}
                 onClick={() => runAction('video.togglePlay')}
                 type="button"
@@ -4257,6 +5276,7 @@ export default function VideoMode() {
           {rightToolTab === 'main' ? (
             <div className="video-toolbar-page main-page">
               <button type="button" onClick={openVideoFile}>Open</button>
+              <button disabled={!videoFile?.filePath} type="button" onClick={closeCurrentVideo}>Close</button>
               <button type="button" onClick={saveVideoNotes}>Save</button>
               <button type="button" onClick={addQuickNote}>QuickNote</button>
               <button type="button" onClick={() => setRepeat(!repeat)}>Repeat</button>
@@ -4299,11 +5319,19 @@ export default function VideoMode() {
                   </button>
                   <button
                     data-tooltip="Clear notes"
-                    disabled={externalNotes.length === 0}
+                    disabled={externalNotes.length === 0 && externalNoteLoadedSources.length === 0 && selectedExternalNoteSources.length === 0}
                     onClick={clearExternalNotes}
                     type="button"
                   >
                     <i className="fa-solid fa-trash" aria-hidden="true" />
+                  </button>
+                  <button
+                    data-tooltip="Reload selected sources"
+                    disabled={selectedExternalNoteSources.length === 0 || externalNotesReloading}
+                    onClick={reloadExternalNoteSources}
+                    type="button"
+                  >
+                    <i className="fa-solid fa-rotate-right" aria-hidden="true" />
                   </button>
                 </div>
                 <div className="notes-action-group notes-action-group-spaced">
@@ -4337,6 +5365,39 @@ export default function VideoMode() {
                     <i className="fa-solid fa-eraser" aria-hidden="true" />
                   </button>
                 </div>
+              </div>
+              <div className="notes-pool-options-row">
+                <label
+                  data-tooltip="JSON subfolder search depth (0 = selected folder only)"
+                  title="JSON subfolder search depth (0 = selected folder only)"
+                >
+                  <span>Depth</span>
+                  <select
+                    aria-label="Notes Pool subfolder search depth"
+                    onChange={(event) => setExternalNotesFolderDepth(Number(event.target.value))}
+                    value={externalNotesFolderDepth}
+                  >
+                    {Array.from({ length: MAX_NOTES_POOL_FOLDER_DEPTH + 1 }, (_, depth) => (
+                      <option key={depth} value={depth}>{depth}</option>
+                    ))}
+                  </select>
+                </label>
+                <span className="notes-pool-source-state">
+                  {externalNoteSourceLoadFailures.length > 0
+                    ? `Reload failed (${externalNoteSourceLoadFailures.length})`
+                    : externalNoteSourcesNeedReload ? 'Reload required' : ''}
+                </span>
+                <button
+                  aria-expanded={externalNoteSourcesOpen}
+                  aria-label="Show Notes Pool sources"
+                  className="notes-pool-source-list-button"
+                  data-tooltip="Current and recent sources"
+                  onClick={toggleExternalNoteSourcesMenu}
+                  ref={notesPoolSourceButtonRef}
+                  type="button"
+                >
+                  <i className="fa-solid fa-list-check" aria-hidden="true" />
+                </button>
               </div>
               <div className="notes-pool-tools">
                 <div className="note-font-tools" aria-label="Notes Pool item font size">
@@ -4398,7 +5459,11 @@ export default function VideoMode() {
                   {selectedExternalNote?.sourceJsonName || '-'}
                 </div>
               </div>
-              <div className="notes-pool-list" style={{ '--video-note-item-font-size': `${videoNotesPoolFontSize}px` }}>
+              <div
+                className="notes-pool-list"
+                ref={notesPoolListRef}
+                style={{ '--video-note-item-font-size': `${videoNotesPoolFontSize}px` }}
+              >
                 {externalNotes.length === 0 ? (
                   <div className="empty-list">No notes loaded</div>
                 ) : visibleExternalNotes.length === 0 ? (
@@ -4424,7 +5489,37 @@ export default function VideoMode() {
                         <span className="note-row-index">{index + 1}</span>
                         <span>{note.start}</span>
                         <span className="note-row-duration">{formatDuration(getNoteDuration(note))}</span>
-                        <span className="note-row-content-inline">{note.content}</span>
+                        {expandedExternalNoteId === note.id ? (
+                          <span
+                            className="notes-pool-row-main-actions"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            {dirtyExternalNoteIds.has(note.id) ? (
+                              <span className="notes-pool-row-dirty">Unsaved</span>
+                            ) : null}
+                            <button
+                              aria-label={dirtyExternalNoteIds.has(note.id) ? 'Save content' : 'Saved'}
+                              className="notes-pool-editor-icon-button"
+                              data-tooltip={dirtyExternalNoteIds.has(note.id) ? 'Save content' : 'Saved'}
+                              disabled={!dirtyExternalNoteIds.has(note.id)}
+                              onClick={() => saveExternalNoteContent(note, externalNoteDraftContent)}
+                              type="button"
+                            >
+                              <i className="fa-solid fa-floppy-disk" aria-hidden="true" />
+                            </button>
+                            <button
+                              aria-label="Cancel changes"
+                              className="notes-pool-editor-icon-button"
+                              data-tooltip="Cancel changes"
+                              onClick={() => cancelExternalNoteEdit(note)}
+                              type="button"
+                            >
+                              <i className="fa-solid fa-xmark" aria-hidden="true" />
+                            </button>
+                          </span>
+                        ) : (
+                          <span className="note-row-content-inline">{note.content}</span>
+                        )}
                       </span>
                       {externalNotesShowFileName ? (
                         <span className="notes-pool-row-file">{note.sourceVideoName}</span>
@@ -4432,32 +5527,14 @@ export default function VideoMode() {
                       {expandedExternalNoteId === note.id ? (
                         <div className="notes-pool-row-editor" onClick={(event) => event.stopPropagation()}>
                           <textarea
-                            onChange={(event) => updateExternalNoteDraftContent(note.id, event.target.value)}
+                            onChange={(event) => {
+                              updateExternalNoteDraftContent(note.id, event.target.value)
+                              window.requestAnimationFrame(resizeExternalNoteEditor)
+                            }}
                             onKeyDown={(event) => event.stopPropagation()}
+                            ref={externalNoteEditorRef}
                             value={note.id === selectedExternalNoteId ? externalNoteDraftContent : note.content || ''}
                           />
-                          <div className="notes-pool-row-editor-actions">
-                            {dirtyExternalNoteIds.has(note.id) ? (
-                              <span className="notes-pool-row-dirty">Unsaved</span>
-                            ) : null}
-                            <button
-                              data-tooltip={dirtyExternalNoteIds.has(note.id) ? 'Save content' : 'Saved'}
-                              disabled={!dirtyExternalNoteIds.has(note.id)}
-                              onClick={() => saveExternalNoteContent(note, externalNoteDraftContent)}
-                              type="button"
-                            >
-                              <i className="fa-solid fa-floppy-disk" aria-hidden="true" />
-                              <span>Save</span>
-                            </button>
-                            <button
-                              data-tooltip="Cancel editing"
-                              onClick={() => cancelExternalNoteEdit(note)}
-                              type="button"
-                            >
-                              <i className="fa-solid fa-ban" aria-hidden="true" />
-                              <span>Cancel</span>
-                            </button>
-                          </div>
                         </div>
                       ) : null}
                     </div>
@@ -4565,9 +5642,63 @@ export default function VideoMode() {
 
       {dialog && !dialog.autoClose ? (
         <div className={dialog.nonModal ? 'inline-dialog-layer non-modal' : 'inline-dialog-mask'}>
-          <div className={['subtitlePick', 'subtitleEdit'].includes(dialog.kind) ? 'inline-dialog subtitle-pick-dialog' : 'inline-dialog'}>
+          <div className={[
+            'inline-dialog',
+            ['subtitlePick', 'subtitleEdit'].includes(dialog.kind) ? 'subtitle-pick-dialog' : '',
+            dialog.kind === 'videoRename' ? 'video-rename-dialog video-rename-editor-dialog' : '',
+            dialog.kind === 'videoRenameConfirm' ? 'video-rename-dialog video-rename-confirm-dialog' : '',
+          ].filter(Boolean).join(' ')}>
             <div className="inline-dialog-title">{dialog.title}</div>
-            {['subtitlePick', 'subtitleEdit'].includes(dialog.kind) ? (
+            {dialog.kind === 'videoRename' ? (
+              <div className="video-rename-fields">
+                <label className="replace-field">
+                  <span>Old filename</span>
+                  <textarea
+                    className="video-rename-filename"
+                    readOnly
+                    rows="2"
+                    spellCheck="false"
+                    value={dialog.originalFileName || ''}
+                    wrap="soft"
+                  />
+                </label>
+                <label className="replace-field">
+                  <span>New filename</span>
+                  <textarea
+                    autoFocus
+                    className="video-rename-filename"
+                    onChange={(event) => setDialog((current) => {
+                      const fileName = event.target.value.replace(/[\r\n]+/g, '')
+                      const suffixState = getRenameSuffixState(fileName)
+                      return {
+                        ...current,
+                        fileName,
+                        jidChecked: suffixState.hasJid,
+                        jomChecked: suffixState.hasJom,
+                        jidGenerated: false,
+                      }
+                    })}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    rows="2"
+                    spellCheck="false"
+                    value={dialog.fileName || ''}
+                    wrap="soft"
+                  />
+                </label>
+              </div>
+            ) : dialog.kind === 'videoRenameConfirm' ? (
+              <div className="video-rename-confirm">
+                <p>Rename this file and its related files?</p>
+                <div>
+                  <span>Old</span>
+                  <strong title={dialog.originalFileName || ''}>{dialog.originalFileName || ''}</strong>
+                </div>
+                <div>
+                  <span>New</span>
+                  <strong title={dialog.fileName || ''}>{dialog.fileName || ''}</strong>
+                </div>
+              </div>
+            ) : ['subtitlePick', 'subtitleEdit'].includes(dialog.kind) ? (
               <label className="subtitle-pick-editor">
                 <span>{dialog.kind === 'subtitleEdit' ? 'Subtitle text' : 'Selected subtitles'}</span>
                 <textarea
@@ -4594,7 +5725,54 @@ export default function VideoMode() {
             ) : (
               <div className="inline-dialog-message">{dialog.message}</div>
             )}
-            <div className="inline-dialog-actions">
+            <div className={dialog.kind === 'videoRename'
+              ? 'inline-dialog-actions video-rename-footer'
+              : 'inline-dialog-actions'}>
+              {dialog.kind === 'videoRename' ? (
+                <span className="video-rename-options">
+                  <label>
+                    <input
+                      checked={dialog.jidChecked === true}
+                      onChange={(event) => {
+                        const checked = event.target.checked
+                        setDialog((current) => {
+                          const fileName = setNumericJidSuffix(current.fileName, checked)
+                          return {
+                            ...current,
+                            fileName,
+                            jidChecked: checked,
+                            jomChecked: getRenameSuffixState(fileName).hasJom,
+                            jidGenerated: checked
+                              ? fileName !== current.fileName || current.jidGenerated === true
+                              : false,
+                          }
+                        })
+                      }}
+                      type="checkbox"
+                    />
+                    <span>Jid</span>
+                  </label>
+                  <label>
+                    <input
+                      checked={dialog.jomChecked === true}
+                      onChange={(event) => {
+                        const checked = event.target.checked
+                        setDialog((current) => {
+                          const fileName = setJomSuffix(current.fileName, checked)
+                          return {
+                            ...current,
+                            fileName,
+                            jidChecked: getRenameSuffixState(fileName).hasJid,
+                            jomChecked: checked,
+                          }
+                        })
+                      }}
+                      type="checkbox"
+                    />
+                    <span>_JOM</span>
+                  </label>
+                </span>
+              ) : null}
               {dialog.actions.map((action, index) => (
                 <button
                   className={[
@@ -4602,8 +5780,18 @@ export default function VideoMode() {
                     action.danger ? 'danger' : '',
                   ].filter(Boolean).join(' ')}
                   key={action.value}
-                  onClick={() => closeDialog(['subtitlePick', 'subtitleEdit'].includes(dialog.kind) ? { decision: action.value, text: dialog.subtitleText || '' } : action.value)}
-                  autoFocus={index === 0}
+                  onClick={() => closeDialog(
+                    dialog.kind === 'videoRename'
+                      ? {
+                        decision: action.value,
+                        text: dialog.fileName || '',
+                        jidGenerated: dialog.jidGenerated === true,
+                      }
+                      : ['subtitlePick', 'subtitleEdit'].includes(dialog.kind)
+                        ? { decision: action.value, text: dialog.subtitleText || '' }
+                        : action.value
+                  )}
+                  autoFocus={dialog.kind !== 'videoRename' && index === 0}
                   type="button"
                 >
                   {action.label}
@@ -4672,6 +5860,75 @@ export default function VideoMode() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {externalNoteSourcesOpen ? (
+        <div
+          className="notes-pool-source-menu"
+          onClick={(event) => event.stopPropagation()}
+          ref={notesPoolSourceMenuRef}
+          style={externalNoteSourcesPosition}
+        >
+          <div className="notes-pool-source-menu-header">
+            <strong>Sources</strong>
+            <button
+              data-tooltip="Remove sources that are not currently loaded"
+              disabled={cleanableExternalNoteSourceCount === 0}
+              onClick={cleanRecentExternalNoteSources}
+              type="button"
+            >
+              Clean
+            </button>
+          </div>
+          <div className="notes-pool-source-items">
+            {sortedExternalNoteSources.length === 0 ? (
+              <div className="notes-pool-source-empty">No recent sources</div>
+            ) : sortedExternalNoteSources.map((source) => {
+              const tooltip = source.error
+                ? `${source.path}\nLoad failed: ${source.error}`
+                : source.path
+              const sourceIsLoaded = externalNoteLoadedSources.some((loadedSource) => loadedSource.id === source.id)
+              const sourceCanBeRemoved = !source.selected && !sourceIsLoaded
+              return (
+                <div
+                  className={source.error ? 'notes-pool-source-item failed' : 'notes-pool-source-item'}
+                  key={source.id}
+                  title={tooltip}
+                >
+                  <input
+                    aria-label={`Use source ${getNotesPoolSourceLabel(source)}`}
+                    checked={source.selected}
+                    onChange={() => toggleExternalNoteSource(source.id)}
+                    type="checkbox"
+                  />
+                  <span className="notes-pool-source-name">{getNotesPoolSourceLabel(source)}</span>
+                  {source.type === 'folder' ? (
+                    <span className="notes-pool-source-depth">D{source.depth}</span>
+                  ) : null}
+                  {source.error ? (
+                    <span className="notes-pool-source-error" title={`Load failed: ${source.error}`}>
+                      <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" />
+                    </span>
+                  ) : null}
+                  <button
+                    aria-label="Remove source"
+                    className="notes-pool-source-remove"
+                    data-tooltip={sourceCanBeRemoved ? 'Remove source' : 'Uncheck and reload before removing'}
+                    disabled={!sourceCanBeRemoved}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      removeRecentExternalNoteSource(source)
+                    }}
+                    type="button"
+                  >
+                    <i className="fa-solid fa-xmark" aria-hidden="true" />
+                  </button>
+                </div>
+              )
+            })}
           </div>
         </div>
       ) : null}

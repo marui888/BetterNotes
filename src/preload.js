@@ -9,10 +9,13 @@ contextBridge.exposeInMainWorld('videoApi', {
   updateVttCueText: (payload) => ipcRenderer.invoke('video:updateVttCueText', payload),
   openSubtitleExternal: (filePath) => ipcRenderer.invoke('video:openSubtitleExternal', filePath),
   selectLegacyNoteFiles: () => ipcRenderer.invoke('video:selectLegacyNoteFiles'),
-  selectLegacyNoteFolder: () => ipcRenderer.invoke('video:selectLegacyNoteFolder'),
+  selectLegacyNoteFolder: (options) => ipcRenderer.invoke('video:selectLegacyNoteFolder', options),
+  loadLegacyNoteSources: (sources) => ipcRenderer.invoke('video:loadLegacyNoteSources', sources),
   saveLegacyNoteContent: (payload) => ipcRenderer.invoke('video:saveLegacyNoteContent', payload),
   saveNotes: (filePath, notes) => ipcRenderer.invoke('video:saveNotes', filePath, notes),
   listMp4Files: (folderPath) => ipcRenderer.invoke('video:listMp4Files', folderPath),
+  showFileInFolder: (filePath) => ipcRenderer.invoke('video:showFileInFolder', filePath),
+  renameFile: (payload) => ipcRenderer.invoke('video:renameFile', payload),
   readClipboardText: () => ipcRenderer.invoke('video:readClipboardText'),
   writeClipboardText: (text) => ipcRenderer.invoke('video:writeClipboardText', text),
   convertSrtSubtitle: (payload) => ipcRenderer.invoke('video:convertSrtSubtitle', payload),
@@ -64,6 +67,11 @@ contextBridge.exposeInMainWorld('appApi', {
   loadLastSessionState: () => ipcRenderer.invoke('app:loadLastSessionState'),
   saveLastSessionState: (sessionState) => ipcRenderer.invoke('app:saveLastSessionState', sessionState),
   registerGlobalActivationShortcut: (shortcut) => ipcRenderer.invoke('app:registerGlobalActivationShortcut', shortcut),
+  onGlobalActivationChanged: (handler) => {
+    const listener = (_event, state) => handler(state)
+    ipcRenderer.on('app:globalActivationChanged', listener)
+    return () => ipcRenderer.removeListener('app:globalActivationChanged', listener)
+  },
   onShowSettings: (handler) => {
     const listener = () => handler()
     ipcRenderer.on('app:showSettings', listener)

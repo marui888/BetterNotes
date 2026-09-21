@@ -70,6 +70,8 @@ const DEFAULT_APP_SETTINGS = {
     subtitleCenterViewDim: 0.65,
     videoNotesFontSize: 11,
     videoNotesPoolFontSize: 11,
+    locateNotePastLimitSec: 100,
+    locateNoteFutureLimitSec: 10,
     playAllSubtitleSuffix: '.en.vtt',
     subtitleConvertPromptTimeoutSec: 5,
     imageAutoLoadDelayMs: 500,
@@ -286,6 +288,14 @@ function normalizeAppSettings(value) {
   const videoNotesPoolFontSize = Number.isFinite(rawVideoNotesPoolFontSize)
     ? Math.max(9, Math.min(18, Math.round(rawVideoNotesPoolFontSize)))
     : DEFAULT_APP_SETTINGS.general.videoNotesPoolFontSize
+  const rawLocateNotePastLimitSec = Number(value?.general?.locateNotePastLimitSec)
+  const locateNotePastLimitSec = Number.isFinite(rawLocateNotePastLimitSec)
+    ? Math.max(0, Math.min(3600, Math.round(rawLocateNotePastLimitSec)))
+    : DEFAULT_APP_SETTINGS.general.locateNotePastLimitSec
+  const rawLocateNoteFutureLimitSec = Number(value?.general?.locateNoteFutureLimitSec)
+  const locateNoteFutureLimitSec = Number.isFinite(rawLocateNoteFutureLimitSec)
+    ? Math.max(0, Math.min(3600, Math.round(rawLocateNoteFutureLimitSec)))
+    : DEFAULT_APP_SETTINGS.general.locateNoteFutureLimitSec
   const rawSubtitleConvertPromptTimeoutSec = Number(value?.general?.subtitleConvertPromptTimeoutSec)
   const subtitleConvertPromptTimeoutSec = Number.isFinite(rawSubtitleConvertPromptTimeoutSec)
     ? Math.max(1, Math.min(60, Math.round(rawSubtitleConvertPromptTimeoutSec)))
@@ -333,6 +343,8 @@ function normalizeAppSettings(value) {
       subtitleCenterViewDim,
       videoNotesFontSize,
       videoNotesPoolFontSize,
+      locateNotePastLimitSec,
+      locateNoteFutureLimitSec,
       playAllSubtitleSuffix,
       subtitleConvertPromptTimeoutSec,
       imageAutoLoadDelayMs,
@@ -371,6 +383,7 @@ function toggleMainWindowActivation() {
   if (!mainWindow || mainWindow.isDestroyed()) return
 
   if (mainWindow.isFocused() && !mainWindow.isMinimized()) {
+    mainWindow.webContents.send('app:globalActivationChanged', { active: false })
     mainWindow.minimize()
     return
   }
@@ -379,6 +392,7 @@ function toggleMainWindowActivation() {
   mainWindow.show()
   mainWindow.focus()
   mainWindow.webContents.focus()
+  mainWindow.webContents.send('app:globalActivationChanged', { active: true })
 }
 
 function registerGlobalActivationShortcut(shortcut) {
@@ -1366,7 +1380,18 @@ async function buildLegacyVideoNotesFromJson(jsonPath) {
     return { ok: false, reason: 'missing-video-file', sourceJsonPath, sourceVideoPath, notes: [] }
   }
 
-  const rawNotes = await readJsonFile(sourceJsonPath, [])
+  let rawNotes
+  try {
+    rawNotes = JSON.parse(await fs.readFile(sourceJsonPath, 'utf8'))
+  } catch (error) {
+    return {
+      ok: false,
+      reason: ['EACCES', 'EPERM'].includes(error?.code) ? 'access-denied' : 'invalid-note-json',
+      sourceJsonPath,
+      sourceVideoPath,
+      notes: [],
+    }
+  }
   if (!Array.isArray(rawNotes)) {
     return { ok: false, reason: 'invalid-note-json', sourceJsonPath, sourceVideoPath, notes: [] }
   }
@@ -1405,17 +1430,230 @@ async function buildLegacyVideoNotesFromJsonFiles(jsonPaths = []) {
   }
 }
 
-async function listJsonFilesInFolder(folderPath) {
+async function listJsonFilesInFolder(folderPath, maxDepth = 0) {
   const normalizedFolder = normalizeFilePath(folderPath)
-  try {
-    const entries = await fs.readdir(normalizedFolder, { withFileTypes: true })
-    return entries
+  const safeMaxDepth = Math.max(0, Math.min(4, Math.trunc(Number(maxDepth) || 0)))
+  const jsonFiles = []
+
+  const visitFolder = async (currentFolder, currentDepth) => {
+    let entries
+    try {
+      entries = await fs.readdir(currentFolder, { withFileTypes: true })
+    } catch (error) {
+      console.error('list json files failed:', currentFolder, error)
+      if (currentDepth === 0) throw error
+      return
+    }
+
+    entries
       .filter((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.json')
-      .map((entry) => path.join(normalizedFolder, entry.name))
-      .sort((a, b) => path.basename(a).localeCompare(path.basename(b)))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach((entry) => jsonFiles.push(path.join(currentFolder, entry.name)))
+
+    if (currentDepth >= safeMaxDepth) return
+
+    const subfolders = entries
+      .filter((entry) => entry.isDirectory())
+      .sort((a, b) => a.name.localeCompare(b.name))
+    for (const entry of subfolders) {
+      await visitFolder(path.join(currentFolder, entry.name), currentDepth + 1)
+    }
+  }
+
+  await visitFolder(normalizedFolder, 0)
+  return jsonFiles
+}
+
+function normalizeLegacyNoteSource(source) {
+  const type = source?.type === 'folder' ? 'folder' : 'file'
+  const sourcePath = normalizeFilePath(source?.path)
+  if (!sourcePath) return null
+  return {
+    type,
+    path: sourcePath,
+    depth: type === 'folder'
+      ? Math.max(0, Math.min(4, Math.trunc(Number(source?.depth) || 0)))
+      : 0,
+  }
+}
+
+async function renameVideoFileFamily(payload = {}) {
+  const sourcePath = normalizeFilePath(payload.filePath)
+  const nextFileName = String(payload.fileName || '').trim()
+  if (!isMp4File(sourcePath) || !(await fileExists(sourcePath))) {
+    return { ok: false, reason: 'file-not-found' }
+  }
+  if (
+    !nextFileName
+    || path.basename(nextFileName) !== nextFileName
+    || /[<>:"/\\|?*\u0000-\u001f]/.test(nextFileName)
+    || /[. ]$/.test(nextFileName)
+    || path.extname(nextFileName).toLowerCase() !== '.mp4'
+  ) {
+    return { ok: false, reason: 'invalid-file-name' }
+  }
+
+  const nextBaseName = path.parse(nextFileName).name
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(nextBaseName)) {
+    return { ok: false, reason: 'invalid-file-name' }
+  }
+
+  const folderPath = path.dirname(sourcePath)
+  const sourceFileName = path.basename(sourcePath)
+  const sourceBaseName = path.parse(sourceFileName).name
+  if (sourceFileName === nextFileName) {
+    return {
+      ok: true,
+      unchanged: true,
+      filePath: sourcePath,
+      fileName: sourceFileName,
+      mp4Files: await listMp4FilesInFolder(folderPath),
+    }
+  }
+
+  try {
+    const entries = await fs.readdir(folderPath, { withFileTypes: true })
+    const sourceBaseLower = sourceBaseName.toLowerCase()
+    const relatedEntries = entries.filter((entry) => {
+      if (!entry.isFile()) return false
+      const entryNameLower = entry.name.toLowerCase()
+      if (entryNameLower === sourceFileName.toLowerCase()) return true
+      const extension = path.extname(entry.name).toLowerCase()
+      if (extension === '.json') return entryNameLower === `${sourceBaseLower}.json`
+      if (!['.vtt', '.srt'].includes(extension)) return false
+      const subtitleBaseLower = entryNameLower.slice(0, -extension.length)
+      return subtitleBaseLower === sourceBaseLower || subtitleBaseLower.startsWith(`${sourceBaseLower}.`)
+    })
+    const operations = relatedEntries.map((entry) => {
+      const suffix = entry.name.slice(sourceBaseName.length)
+      const targetName = entry.name.toLowerCase() === sourceFileName.toLowerCase()
+        ? nextFileName
+        : `${nextBaseName}${suffix}`
+      return {
+        sourcePath: path.join(folderPath, entry.name),
+        targetPath: path.join(folderPath, targetName),
+      }
+    })
+    const targetKeys = new Set()
+    for (const operation of operations) {
+      const targetKey = operation.targetPath.toLowerCase()
+      if (targetKeys.has(targetKey)) return { ok: false, reason: 'target-file-exists' }
+      targetKeys.add(targetKey)
+      if (
+        operation.sourcePath.toLowerCase() !== targetKey
+        && await fileExists(operation.targetPath)
+      ) {
+        return { ok: false, reason: 'target-file-exists' }
+      }
+    }
+
+    const completed = []
+    try {
+      for (const operation of operations) {
+        await fs.rename(operation.sourcePath, operation.targetPath)
+        completed.push(operation)
+      }
+    } catch (error) {
+      for (const operation of completed.reverse()) {
+        await fs.rename(operation.targetPath, operation.sourcePath).catch(() => {})
+      }
+      return { ok: false, reason: error.code || error.message || 'rename-failed' }
+    }
+
+    const targetPath = path.join(folderPath, nextFileName)
+    return {
+      ok: true,
+      filePath: targetPath,
+      fileName: nextFileName,
+      renamedFiles: operations.map((operation) => ({
+        from: operation.sourcePath,
+        to: operation.targetPath,
+      })),
+      mp4Files: await listMp4FilesInFolder(folderPath),
+    }
   } catch (error) {
-    console.error('list json files failed:', error)
-    return []
+    return { ok: false, reason: error.code || error.message || 'rename-failed' }
+  }
+}
+
+async function buildLegacyVideoNotesFromSources(sources = []) {
+  const sourceMap = new Map()
+  ;(Array.isArray(sources) ? sources : []).forEach((source) => {
+    const normalized = normalizeLegacyNoteSource(source)
+    if (!normalized) return
+    const key = `${normalized.type}:${normalized.path.toLowerCase()}`
+    if (!sourceMap.has(key)) sourceMap.set(key, normalized)
+  })
+
+  const sourceResults = []
+  const noteMap = new Map()
+  const loadedFiles = new Set()
+  const skippedFiles = []
+
+  for (const source of sourceMap.values()) {
+    if (source.type === 'file') {
+      let result
+      try {
+        const fileStat = await fs.stat(source.path)
+        result = fileStat.isFile()
+          ? await buildLegacyVideoNotesFromJson(source.path)
+          : { ok: false, reason: 'file-not-found', sourceJsonPath: source.path, notes: [] }
+      } catch (error) {
+        result = {
+          ok: false,
+          reason: ['EACCES', 'EPERM'].includes(error?.code) ? 'access-denied' : 'file-not-found',
+          sourceJsonPath: source.path,
+          notes: [],
+        }
+      }
+      ;(result.notes || []).forEach((note) => noteMap.set(note.id, note))
+      if (result.ok) loadedFiles.add(result.sourceJsonPath)
+      if (!result.ok) {
+        skippedFiles.push({
+          sourceJsonPath: result.sourceJsonPath,
+          sourceVideoPath: result.sourceVideoPath,
+          reason: result.reason,
+        })
+      }
+      sourceResults.push({
+        ...source,
+        ok: result.ok === true,
+        reason: result.ok ? '' : result.reason,
+        noteCount: result.notes?.length || 0,
+      })
+      continue
+    }
+
+    try {
+      const folderStat = await fs.stat(source.path)
+      if (!folderStat.isDirectory()) {
+        sourceResults.push({ ...source, ok: false, reason: 'folder-not-found', noteCount: 0 })
+        continue
+      }
+
+      const jsonFiles = await listJsonFilesInFolder(source.path, source.depth)
+      const result = await buildLegacyVideoNotesFromJsonFiles(jsonFiles)
+      ;(result.notes || []).forEach((note) => noteMap.set(note.id, note))
+      ;(result.loadedFiles || []).forEach((filePath) => loadedFiles.add(filePath))
+      skippedFiles.push(...(result.skippedFiles || []))
+      sourceResults.push({ ...source, ok: true, reason: '', noteCount: result.notes?.length || 0 })
+    } catch (error) {
+      sourceResults.push({
+        ...source,
+        ok: false,
+        reason: ['EACCES', 'EPERM'].includes(error?.code) ? 'access-denied' : 'folder-not-found',
+        noteCount: 0,
+      })
+    }
+  }
+
+  return {
+    ok: true,
+    notes: [...noteMap.values()],
+    loadedFiles: [...loadedFiles],
+    skippedFiles,
+    sources: [...sourceMap.values()],
+    sourceResults,
   }
 }
 
@@ -1763,10 +2001,13 @@ function registerIpcHandlers() {
       return { ok: false, canceled: true, notes: [], loadedFiles: [], skippedFiles: [] }
     }
 
-    return buildLegacyVideoNotesFromJsonFiles(result.filePaths)
+    return buildLegacyVideoNotesFromSources(result.filePaths.map((filePath) => ({
+      type: 'file',
+      path: filePath,
+    })))
   })
 
-  ipcMain.handle('video:selectLegacyNoteFolder', async () => {
+  ipcMain.handle('video:selectLegacyNoteFolder', async (_event, options = {}) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory'],
     })
@@ -1775,12 +2016,17 @@ function registerIpcHandlers() {
       return { ok: false, canceled: true, notes: [], loadedFiles: [], skippedFiles: [] }
     }
 
-    const jsonFiles = await listJsonFilesInFolder(result.filePaths[0])
-    return {
-      ...(await buildLegacyVideoNotesFromJsonFiles(jsonFiles)),
-      folderPath: normalizeFilePath(result.filePaths[0]),
-    }
+    const maxDepth = Math.max(0, Math.min(4, Math.trunc(Number(options?.maxDepth) || 0)))
+    return buildLegacyVideoNotesFromSources([{
+      type: 'folder',
+      path: result.filePaths[0],
+      depth: maxDepth,
+    }])
   })
+
+  ipcMain.handle('video:loadLegacyNoteSources', async (_event, sources) => (
+    buildLegacyVideoNotesFromSources(sources)
+  ))
 
   ipcMain.handle('video:saveLegacyNoteContent', async (_event, payload) => saveLegacyVideoNoteContent(payload))
 
@@ -1851,6 +2097,23 @@ function registerIpcHandlers() {
     ok: true,
     mp4Files: await listMp4FilesInFolder(folderPath),
   }))
+
+  ipcMain.handle('video:showFileInFolder', async (_event, filePath) => {
+    const normalizedPath = normalizeFilePath(filePath)
+    if (!isMp4File(normalizedPath)) return { ok: false, reason: 'invalid-file' }
+    if (await fileExists(normalizedPath)) {
+      shell.showItemInFolder(normalizedPath)
+      return { ok: true }
+    }
+
+    const folderPath = path.dirname(normalizedPath)
+    const errorMessage = await shell.openPath(folderPath)
+    return errorMessage
+      ? { ok: false, reason: errorMessage }
+      : { ok: true, fileMissing: true }
+  })
+
+  ipcMain.handle('video:renameFile', async (_event, payload) => renameVideoFileFamily(payload))
 
   ipcMain.handle('image:openFile', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {

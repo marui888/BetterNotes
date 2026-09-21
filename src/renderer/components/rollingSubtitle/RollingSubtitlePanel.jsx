@@ -55,6 +55,44 @@ const hasPanelRect = (value) => ['x', 'y', 'width', 'height'].every((key) => (
   && Number.isFinite(Number(value[key]))
 ))
 
+const getRelativePanelRect = (panelRect, bounds) => {
+  if (!panelRect || !bounds?.width || !bounds?.height) return null
+  return {
+    centerX: (panelRect.x + (panelRect.width / 2)) / bounds.width,
+    centerY: (panelRect.y + (panelRect.height / 2)) / bounds.height,
+    width: panelRect.width / bounds.width,
+    height: panelRect.height / bounds.height,
+  }
+}
+
+const getPanelRectFromRelative = (relativeRect, bounds) => {
+  if (!relativeRect || !bounds?.width || !bounds?.height) return null
+
+  const maxWidth = Math.max(1, Math.round(bounds.width))
+  const maxHeight = Math.max(1, Math.round(bounds.height))
+  const minWidth = Math.min(MIN_WIDTH, maxWidth)
+  const minHeight = Math.min(MIN_HEIGHT, maxHeight)
+  const width = clamp(Math.round(relativeRect.width * bounds.width), minWidth, maxWidth)
+  const height = clamp(Math.round(relativeRect.height * bounds.height), minHeight, maxHeight)
+  const visibleWidth = Math.min(VISIBLE_HANDLE_SIZE, maxWidth)
+  const visibleHeight = Math.min(VISIBLE_HANDLE_SIZE, maxHeight)
+
+  return {
+    x: clamp(
+      Math.round((relativeRect.centerX * bounds.width) - (width / 2)),
+      -width + visibleWidth,
+      maxWidth - visibleWidth,
+    ),
+    y: clamp(
+      Math.round((relativeRect.centerY * bounds.height) - (height / 2)),
+      0,
+      Math.max(0, maxHeight - visibleHeight),
+    ),
+    width,
+    height,
+  }
+}
+
 export default function RollingSubtitlePanel({
   bottomPanelRef,
   containerRef,
@@ -76,6 +114,7 @@ export default function RollingSubtitlePanel({
   videoViewHidden = false,
   defaultFontSize = DEFAULT_FONT_SIZE,
   fontSizeKey = 'normal',
+  fontSizeStepRequest = null,
   getCurrentTime,
   onAddSelectedSubtitles,
   onPickSelectedSubtitles,
@@ -112,6 +151,12 @@ export default function RollingSubtitlePanel({
   const currentTimeRef = useRef(currentTime)
   const getCurrentTimeRef = useRef(getCurrentTime)
   const rectRef = useRef(DEFAULT_RECT)
+  const relativeRectRef = useRef(null)
+  const containerSizeRef = useRef(null)
+  const activePanelViewKeyRef = useRef(panelViewKey)
+  const sessionPanelViewStatesRef = useRef({})
+  const initialPanelStateRestoredRef = useRef(false)
+  const lastFontSizeStepSequenceRef = useRef(Number(fontSizeStepRequest?.sequence) || 0)
   const subtitleNoteAddingRef = useRef(false)
   const resumeScrollingRef = useRef(false)
   const resumeSettlingTimeRef = useRef(0)
@@ -486,90 +531,222 @@ export default function RollingSubtitlePanel({
     const bounds = containerRef?.current?.getBoundingClientRect()
     if (!bounds?.width || !bounds?.height) return
 
-    const hasPersistedRect = hasPanelRect(panelViewState)
-    const width = clamp(
-      hasPersistedRect ? Number(panelViewState.width) : Math.round(bounds.width / 2),
-      MIN_WIDTH,
-      Math.max(MIN_WIDTH, Math.round(bounds.width)),
-    )
-    const height = clamp(
-      hasPersistedRect ? Number(panelViewState.height) : Math.round(bounds.height * 0.95),
-      MIN_HEIGHT,
-      Math.max(MIN_HEIGHT, Math.round(bounds.height)),
-    )
-    const nextRect = {
-      x: hasPersistedRect
-        ? clamp(Number(panelViewState.x), -width + VISIBLE_HANDLE_SIZE, bounds.width - VISIBLE_HANDLE_SIZE)
-        : 0,
-      y: hasPersistedRect
-        ? clamp(Number(panelViewState.y), 0, Math.max(0, bounds.height - VISIBLE_HANDLE_SIZE))
-        : 0,
-      width,
-      height,
+    const isInitialRestore = !initialPanelStateRestoredRef.current
+    const previousPanelViewKey = activePanelViewKeyRef.current
+    if (!isInitialRestore && previousPanelViewKey !== panelViewKey) {
+      sessionPanelViewStatesRef.current[previousPanelViewKey] = {
+        ...rectRef.current,
+        dockPosition,
+      }
     }
-    const nextDockPosition = DOCK_POSITIONS.includes(panelViewState?.dockPosition)
-      ? panelViewState.dockPosition
-      : 'left'
-    const nextFontSize = clamp(
-      Number(panelViewState?.fontSize) || fallbackFontSize,
-      MIN_FONT_SIZE,
-      MAX_FONT_SIZE,
-    )
+
+    const maxWidth = Math.max(1, Math.round(bounds.width))
+    const maxHeight = Math.max(1, Math.round(bounds.height))
+    const persistedRectAvailable = isInitialRestore && hasPanelRect(panelViewState)
+    const sessionPanelViewState = !isInitialRestore
+      ? sessionPanelViewStatesRef.current[panelViewKey]
+      : null
+    let nextRect
+    let nextDockPosition
+
+    if (sessionPanelViewState) {
+      const width = Math.max(1, Number(sessionPanelViewState.width) || DEFAULT_RECT.width)
+      const height = clamp(
+        Number(sessionPanelViewState.height) || DEFAULT_RECT.height,
+        Math.min(MIN_HEIGHT, maxHeight),
+        maxHeight,
+      )
+      nextRect = {
+        x: subtitleCenterModeActive
+          ? Math.round((bounds.width - width) / 2)
+          : clamp(
+              Number(sessionPanelViewState.x) || 0,
+              -width + Math.min(VISIBLE_HANDLE_SIZE, maxWidth),
+              maxWidth - Math.min(VISIBLE_HANDLE_SIZE, maxWidth),
+            ),
+        y: clamp(
+          Number(sessionPanelViewState.y) || 0,
+          0,
+          Math.max(0, bounds.height - Math.min(VISIBLE_HANDLE_SIZE, maxHeight)),
+        ),
+        width,
+        height,
+      }
+      nextDockPosition = DOCK_POSITIONS.includes(sessionPanelViewState.dockPosition)
+        ? sessionPanelViewState.dockPosition
+        : subtitleCenterModeActive ? 'center' : 'left'
+    } else if (subtitleCenterModeActive) {
+      const bottomRect = bottomPanelRef?.current?.getBoundingClientRect()
+      const bottomTop = bottomRect ? bottomRect.top - bounds.top : bounds.height
+      const availableHeight = bottomTop > MIN_HEIGHT ? bottomTop : bounds.height
+      const widthSource = Number.isFinite(Number(subtitleCenterModeSessionSizeRef.current?.width))
+        ? Number(subtitleCenterModeSessionSizeRef.current.width)
+        : persistedRectAvailable
+          ? Number(panelViewState.width)
+          : Math.round(bounds.width * 0.5)
+      const width = clamp(widthSource, Math.min(MIN_WIDTH, maxWidth), maxWidth)
+      const height = persistedRectAvailable
+        ? clamp(Number(panelViewState.height), Math.min(MIN_HEIGHT, maxHeight), maxHeight)
+        : Math.max(1, Math.min(maxHeight, Math.round(availableHeight)))
+      nextRect = {
+        x: Math.round((bounds.width - width) / 2),
+        y: persistedRectAvailable
+          ? clamp(Number(panelViewState.y), 0, Math.max(0, bounds.height - VISIBLE_HANDLE_SIZE))
+          : 0,
+        width,
+        height,
+      }
+      nextDockPosition = 'center'
+      subtitleCenterModeSessionSizeRef.current = { width }
+    } else {
+      const width = clamp(
+        persistedRectAvailable ? Number(panelViewState.width) : Math.round(bounds.width / 2),
+        Math.min(MIN_WIDTH, maxWidth),
+        maxWidth,
+      )
+      const height = clamp(
+        persistedRectAvailable ? Number(panelViewState.height) : Math.round(bounds.height * 0.95),
+        Math.min(MIN_HEIGHT, maxHeight),
+        maxHeight,
+      )
+      nextRect = {
+        x: persistedRectAvailable
+          ? clamp(Number(panelViewState.x), -width + VISIBLE_HANDLE_SIZE, bounds.width - VISIBLE_HANDLE_SIZE)
+          : 0,
+        y: persistedRectAvailable
+          ? clamp(Number(panelViewState.y), 0, Math.max(0, bounds.height - VISIBLE_HANDLE_SIZE))
+          : 0,
+        width,
+        height,
+      }
+      nextDockPosition = persistedRectAvailable && DOCK_POSITIONS.includes(panelViewState?.dockPosition)
+        ? panelViewState.dockPosition
+        : 'left'
+    }
+
+    const nextFontSize = isInitialRestore
+      ? clamp(Number(panelViewState?.fontSize) || fallbackFontSize, MIN_FONT_SIZE, MAX_FONT_SIZE)
+      : fontSize
 
     rectRef.current = nextRect
+    relativeRectRef.current = getRelativePanelRect(nextRect, bounds)
+    containerSizeRef.current = { width: bounds.width, height: bounds.height }
+    activePanelViewKeyRef.current = panelViewKey
+    initialPanelStateRestoredRef.current = true
+    sessionPanelViewStatesRef.current[panelViewKey] = {
+      ...nextRect,
+      dockPosition: nextDockPosition,
+    }
     setRect(nextRect)
     setDockPosition(nextDockPosition)
-    setFontSizeByView((current) => ({
-      ...current,
-      [resolvedFontSizeKey]: nextFontSize,
-    }))
-    if (!hasPersistedRect && !subtitleCenterModeActive) {
+    if (isInitialRestore) {
+      setFontSizeByView((current) => ({
+        ...current,
+        [resolvedFontSizeKey]: nextFontSize,
+      }))
+    }
+    if (isInitialRestore && !persistedRectAvailable && !subtitleCenterModeActive) {
       onPanelViewStateChange?.({ ...nextRect, fontSize: nextFontSize, dockPosition: nextDockPosition })
     }
     window.requestAnimationFrame(rebuildLayoutAndMotionPlan)
   }, [containerRef, panelViewKey])
 
   useEffect(() => {
-    if (!enableSubtitleCenterLayout || !subtitleCenterLayoutRequest) return
+    if (
+      !enableSubtitleCenterLayout
+      || !subtitleCenterModeActive
+      || !subtitleCenterLayoutRequest
+    ) return undefined
 
-    const hasPersistedRect = hasPanelRect(panelViewState)
-    if (hasPersistedRect) {
+    const animationId = window.requestAnimationFrame(() => {
+      const stageRect = containerRef?.current?.getBoundingClientRect()
+      if (!stageRect?.width || !stageRect?.height) return
+
+      const sideBySideLayout = Number(subtitleCenterLayout) === 1
+      const bottomRect = bottomPanelRef?.current?.getBoundingClientRect()
+      const bottomTop = bottomRect ? bottomRect.top - stageRect.top : stageRect.height
+      const availableBottom = sideBySideLayout
+        ? stageRect.height
+        : bottomTop > 0
+          ? Math.min(stageRect.height, bottomTop)
+          : stageRect.height
+      const currentRect = rectRef.current
+      const nextHeight = Math.max(1, Math.round(availableBottom - currentRect.y))
+      const nextRect = {
+        ...currentRect,
+        x: Math.round((stageRect.width - currentRect.width) / 2),
+        height: nextHeight,
+      }
+
+      rectRef.current = nextRect
+      relativeRectRef.current = getRelativePanelRect(nextRect, stageRect)
+      containerSizeRef.current = { width: stageRect.width, height: stageRect.height }
+      sessionPanelViewStatesRef.current[panelViewKey] = {
+        ...nextRect,
+        dockPosition: 'center',
+      }
+      setRect(nextRect)
+      setDockPosition('center')
       window.requestAnimationFrame(rebuildLayoutAndMotionPlan)
-      return
-    }
-
-    const stageRect = containerRef?.current?.getBoundingClientRect()
-    if (!stageRect?.width || !stageRect?.height) return
-
-    const bottomRect = bottomPanelRef?.current?.getBoundingClientRect()
-    const bottomTop = bottomRect ? bottomRect.top - stageRect.top : stageRect.height
-    const availableHeight = bottomTop > MIN_HEIGHT ? bottomTop : stageRect.height
-    const sessionSize = subtitleCenterModeSessionSizeRef.current
-    const widthSource = Number.isFinite(Number(sessionSize?.width))
-      ? Number(sessionSize.width)
-      : Math.round(stageRect.width * 0.5)
-    const nextWidth = clamp(widthSource, MIN_WIDTH, Math.round(stageRect.width))
-    const nextHeight = Math.max(
-      MIN_HEIGHT,
-      Math.min(Math.round(stageRect.height), Math.round(availableHeight)),
-    )
-
-    const nextRect = {
-      x: Math.max(0, Math.round((stageRect.width - nextWidth) / 2)),
-      y: 0,
-      width: nextWidth,
-      height: nextHeight,
-    }
-    rectRef.current = nextRect
-    setRect(nextRect)
-    setDockPosition('center')
-    onPanelViewStateChange?.({
-      ...nextRect,
-      fontSize: clamp(Number(panelViewState?.fontSize) || fallbackFontSize, MIN_FONT_SIZE, MAX_FONT_SIZE),
-      dockPosition: 'center',
     })
-    window.requestAnimationFrame(rebuildLayoutAndMotionPlan)
-  }, [bottomPanelRef, containerRef, subtitleCenterLayoutRequest, enableSubtitleCenterLayout])
+
+    return () => window.cancelAnimationFrame(animationId)
+  }, [
+    bottomPanelRef,
+    containerRef,
+    enableSubtitleCenterLayout,
+    panelViewKey,
+    subtitleCenterLayout,
+    subtitleCenterLayoutRequest,
+    subtitleCenterModeActive,
+  ])
+
+  useEffect(() => {
+    const container = containerRef?.current
+    if (!window.ResizeObserver || !container) return undefined
+
+    let animationId = 0
+    const observer = new ResizeObserver(() => {
+      window.cancelAnimationFrame(animationId)
+      animationId = window.requestAnimationFrame(() => {
+        const bounds = container.getBoundingClientRect()
+        if (!bounds.width || !bounds.height) return
+
+        const previousSize = containerSizeRef.current
+        const widthChanged = !previousSize || Math.abs(previousSize.width - bounds.width) > 0.5
+        const heightChanged = !previousSize || Math.abs(previousSize.height - bounds.height) > 0.5
+        containerSizeRef.current = { width: bounds.width, height: bounds.height }
+        if (!widthChanged && !heightChanged) return
+
+        if (!relativeRectRef.current) {
+          relativeRectRef.current = getRelativePanelRect(rectRef.current, bounds)
+          return
+        }
+
+        const currentRect = rectRef.current
+        const relativeNextRect = heightChanged
+          ? getPanelRectFromRelative(relativeRectRef.current, bounds)
+          : null
+        const nextRect = {
+          x: widthChanged
+            ? Math.round((bounds.width - currentRect.width) / 2)
+            : currentRect.x,
+          y: relativeNextRect?.y ?? currentRect.y,
+          width: currentRect.width,
+          height: relativeNextRect?.height ?? currentRect.height,
+        }
+        rectRef.current = nextRect
+        setRect(nextRect)
+        window.requestAnimationFrame(rebuildLayoutAndMotionPlan)
+      })
+    })
+
+    observer.observe(container)
+    return () => {
+      window.cancelAnimationFrame(animationId)
+      observer.disconnect()
+    }
+  }, [containerRef, panelViewKey])
 
   useEffect(() => {
     let animationId = 0
@@ -781,8 +958,12 @@ export default function RollingSubtitlePanel({
       if (!drag) return
 
       const bounds = containerRef?.current?.getBoundingClientRect()
-      const maxWidth = Math.max(MIN_WIDTH, bounds?.width || window.innerWidth)
-      const maxHeight = Math.max(MIN_HEIGHT, bounds?.height || window.innerHeight)
+      const maxWidth = Math.max(1, bounds?.width || window.innerWidth)
+      const maxHeight = Math.max(1, bounds?.height || window.innerHeight)
+      const minWidth = Math.min(MIN_WIDTH, maxWidth)
+      const minHeight = Math.min(MIN_HEIGHT, maxHeight)
+      const visibleWidth = Math.min(VISIBLE_HANDLE_SIZE, maxWidth)
+      const visibleHeight = Math.min(VISIBLE_HANDLE_SIZE, maxHeight)
       const dx = event.clientX - drag.startX
       const dy = event.clientY - drag.startY
 
@@ -790,8 +971,10 @@ export default function RollingSubtitlePanel({
         setRect((current) => {
           const nextRect = {
             ...current,
-            x: clamp(drag.rect.x + dx, -current.width + VISIBLE_HANDLE_SIZE, maxWidth - VISIBLE_HANDLE_SIZE),
-            y: clamp(drag.rect.y + dy, 0, Math.max(0, maxHeight - VISIBLE_HANDLE_SIZE)),
+            x: subtitleCenterModeActive
+              ? Math.round((maxWidth - current.width) / 2)
+              : clamp(drag.rect.x + dx, -current.width + visibleWidth, maxWidth - visibleWidth),
+            y: clamp(drag.rect.y + dy, 0, Math.max(0, maxHeight - visibleHeight)),
           }
           rectRef.current = nextRect
           return nextRect
@@ -802,8 +985,8 @@ export default function RollingSubtitlePanel({
 
       setRect((current) => {
         if (subtitleCenterModeActive) {
-          const width = clamp(drag.rect.width + dx, MIN_WIDTH, maxWidth)
-          const x = Math.max(0, Math.round((maxWidth - width) / 2))
+          const width = clamp(drag.rect.width + dx, minWidth, maxWidth)
+          const x = Math.round((maxWidth - width) / 2)
           subtitleCenterModeSessionSizeRef.current = { width }
           window.requestAnimationFrame(refreshVisibleMetrics)
           const nextRect = { ...current, x, width, height: drag.rect.height }
@@ -813,17 +996,25 @@ export default function RollingSubtitlePanel({
 
         if (drag.type === 'resize-ne') {
           const maxHeightFromTop = drag.rect.y + drag.rect.height
-          const nextY = clamp(drag.rect.y + dy, 0, Math.max(0, maxHeightFromTop - MIN_HEIGHT))
-          const width = clamp(drag.rect.width + dx, MIN_WIDTH, maxWidth - current.x)
-          const height = clamp(maxHeightFromTop - nextY, MIN_HEIGHT, maxHeight - nextY)
+          const availableWidth = Math.max(1, maxWidth - current.x)
+          const nextY = clamp(drag.rect.y + dy, 0, Math.max(0, maxHeightFromTop - minHeight))
+          const width = clamp(drag.rect.width + dx, Math.min(minWidth, availableWidth), availableWidth)
+          const availableHeight = Math.max(1, maxHeight - nextY)
+          const height = clamp(
+            maxHeightFromTop - nextY,
+            Math.min(minHeight, availableHeight),
+            availableHeight,
+          )
           window.requestAnimationFrame(refreshVisibleMetrics)
           const nextRect = { ...current, y: nextY, width, height }
           rectRef.current = nextRect
           return nextRect
         }
 
-        const width = clamp(drag.rect.width + dx, MIN_WIDTH, maxWidth - current.x)
-        const height = clamp(drag.rect.height + dy, MIN_HEIGHT, maxHeight - current.y)
+        const availableWidth = Math.max(1, maxWidth - current.x)
+        const availableHeight = Math.max(1, maxHeight - current.y)
+        const width = clamp(drag.rect.width + dx, Math.min(minWidth, availableWidth), availableWidth)
+        const height = clamp(drag.rect.height + dy, Math.min(minHeight, availableHeight), availableHeight)
         window.requestAnimationFrame(refreshVisibleMetrics)
         const nextRect = { ...current, width, height }
         rectRef.current = nextRect
@@ -836,8 +1027,24 @@ export default function RollingSubtitlePanel({
       dragRef.current = null
       if (hadActiveDrag) {
         window.requestAnimationFrame(() => {
+          const bounds = containerRef?.current?.getBoundingClientRect()
+          const currentRect = rectRef.current
+          const nextRect = subtitleCenterModeActive && bounds?.width
+            ? {
+                ...currentRect,
+                x: Math.round((bounds.width - currentRect.width) / 2),
+              }
+            : currentRect
+          if (nextRect !== currentRect) {
+            rectRef.current = nextRect
+            setRect(nextRect)
+          }
+          relativeRectRef.current = getRelativePanelRect(nextRect, bounds)
+          if (bounds?.width && bounds?.height) {
+            containerSizeRef.current = { width: bounds.width, height: bounds.height }
+          }
           onPanelViewStateChange?.({
-            ...rectRef.current,
+            ...nextRect,
             fontSize,
             dockPosition,
           })
@@ -868,17 +1075,17 @@ export default function RollingSubtitlePanel({
     const bounds = containerRef?.current?.getBoundingClientRect()
     if (!bounds?.width || !bounds?.height) return
 
-    const width = Math.min(bounds.width, Math.max(MIN_WIDTH, Math.round(bounds.width * 0.48)))
-    const height = Math.min(bounds.height, Math.max(MIN_HEIGHT, Math.round(bounds.height * 0.95)))
+    const currentRect = rectRef.current
     const x = position === 'left'
       ? 0
       : position === 'right'
-        ? Math.max(0, Math.round(bounds.width - width))
-        : Math.max(0, Math.round((bounds.width - width) / 2))
-    const y = Math.max(0, Math.round((bounds.height - height) / 2))
+        ? Math.round(bounds.width - currentRect.width)
+        : Math.round((bounds.width - currentRect.width) / 2)
 
-    const nextRect = { x, y, width, height }
+    const nextRect = { ...currentRect, x }
     rectRef.current = nextRect
+    relativeRectRef.current = getRelativePanelRect(nextRect, bounds)
+    containerSizeRef.current = { width: bounds.width, height: bounds.height }
     setRect(nextRect)
     onPanelViewStateChange?.({
       ...nextRect,
@@ -891,12 +1098,10 @@ export default function RollingSubtitlePanel({
   const toggleDockPosition = (event) => {
     event.preventDefault()
     event.stopPropagation()
-    setDockPosition((current) => {
-      const currentIndex = Math.max(0, DOCK_POSITIONS.indexOf(current))
-      const next = DOCK_POSITIONS[(currentIndex + 1) % DOCK_POSITIONS.length]
-      applyDockPosition(next)
-      return next
-    })
+    const currentIndex = Math.max(0, DOCK_POSITIONS.indexOf(dockPosition))
+    const nextPosition = DOCK_POSITIONS[(currentIndex + 1) % DOCK_POSITIONS.length]
+    setDockPosition(nextPosition)
+    applyDockPosition(nextPosition)
   }
 
   const changeTimingOffset = (event, step) => {
@@ -924,6 +1129,28 @@ export default function RollingSubtitlePanel({
       dockPosition,
     })
   }
+
+  useEffect(() => {
+    const sequence = Number(fontSizeStepRequest?.sequence) || 0
+    if (!sequence || sequence === lastFontSizeStepSequenceRef.current) return
+    lastFontSizeStepSequenceRef.current = sequence
+
+    const direction = Number(fontSizeStepRequest?.direction) < 0 ? -1 : 1
+    const nextFontSize = direction > 0
+      ? FONT_SIZE_PRESETS.find((size) => size > fontSize)
+      : [...FONT_SIZE_PRESETS].reverse().find((size) => size < fontSize)
+    if (!Number.isFinite(nextFontSize)) return
+
+    setFontSizeByView((current) => ({
+      ...current,
+      [resolvedFontSizeKey]: nextFontSize,
+    }))
+    onPanelViewStateChange?.({
+      ...rectRef.current,
+      fontSize: nextFontSize,
+      dockPosition,
+    })
+  }, [dockPosition, fontSize, fontSizeStepRequest, onPanelViewStateChange, resolvedFontSizeKey])
 
 
   const getSelectedCuesByIds = (ids) => cues.filter((cue) => ids.has(cue.id))
