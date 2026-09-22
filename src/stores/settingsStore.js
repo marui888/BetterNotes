@@ -52,9 +52,9 @@ export const DEFAULT_APP_SETTINGS = {
       'video.jumpForward': 'F4',
       'video.intoEditingFocus': 'Alt+E',
       'video.appendMark': 'Ctrl+S F',
-      'video.appendQuickMark': 'Ctrl+S A',
-      'video.insertQuickBefore': 'Ctrl+S D',
-      'video.insertQuickAfter': 'Ctrl+S S',
+      'video.appendQuickMark': 'Ctrl+S S',
+      'video.insertQuickBefore': 'Ctrl+S B',
+      'video.insertQuickAfter': 'Ctrl+S A',
       'video.toggleControlMode': 'Alt+V',
       'video.toggleControlModeChord': 'Alt+V V',
       'video.toggleSubtitleHidden': 'Alt+V S',
@@ -156,6 +156,12 @@ function mergeShortcutBucket(scope, value) {
 
     const noteSegmentedDefaults = {
       'video.appendMark': 'F',
+      'video.appendQuickMark': 'S',
+      'video.insertQuickBefore': 'B',
+      'video.insertQuickAfter': 'A',
+    }
+    const legacyNoteSegmentedDefaults = {
+      'video.appendMark': 'F',
       'video.appendQuickMark': 'A',
       'video.insertQuickBefore': 'D',
       'video.insertQuickAfter': 'S',
@@ -166,6 +172,12 @@ function mergeShortcutBucket(scope, value) {
     const notePrefix = noteSegmentedActionIds
       .map((actionId) => String(value?.[actionId] || '').trim().split(/\s+/).filter(Boolean))
       .find((parts) => parts.length > 1)?.[0] || 'Ctrl+S'
+    const usesLegacyNoteSegmentedDefaults = hasNoteSegmentedSchema
+      && noteSegmentedActionIds.every((actionId) => {
+        const parts = String(value?.[actionId] || '').trim().split(/\s+/).filter(Boolean)
+        return parts.length > 1
+          && parts.slice(1).join(' ') === legacyNoteSegmentedDefaults[actionId]
+      })
 
     noteSegmentedActionIds.forEach((actionId) => {
       const rawShortcut = String(value?.[actionId] || '').trim()
@@ -174,7 +186,7 @@ function mergeShortcutBucket(scope, value) {
         return
       }
       const parts = rawShortcut.split(/\s+/).filter(Boolean)
-      const secondKey = hasNoteSegmentedSchema && parts.length > 1
+      const secondKey = hasNoteSegmentedSchema && !usesLegacyNoteSegmentedDefaults && parts.length > 1
         ? parts.slice(1).join(' ')
         : noteSegmentedDefaults[actionId]
       merged[actionId] = notePrefix && secondKey ? `${notePrefix} ${secondKey}` : ''

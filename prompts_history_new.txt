@@ -25,6 +25,35 @@
 =========================================================
 =========================================================
 
+//mr:: 2026_09_22 06_18_19
+
+刚才我没有描述得太清楚，你现在修改了代码，我再试，现在问题更加清楚：
+问题的表现应该和系统输入法有个，如果note content获得输入焦点，
+这是用户触发了 Ctrl+S，那么用户输入的第二段快捷键会被系统输入法劫持。
+但是，如果是英文输入状态，则没有问题。
+
+//mr:: 2026_09_22 06_04_37
+
+触发 分段快捷键的第一段，右下角弹出提示窗口，
+如果现在有输入焦点的是note content，则输入第二段字符时，会被认为是文本输入而不是快捷键的第二段。
+以 CTRL+S 的问题，最为明显。
+
+//mr:: 2026_09_22 00_14_41
+1.
+Append Mark          F
+Append Quick Mark    A
+Insert Quick Before  D
+Insert Quick After   S
+
+默认值 修改为：
+Append Mark          F
+Append Quick Mark    S
+Insert Quick Before  B
+Insert Quick After   A
+
+2.
+move up 和 move down 两个按钮 向 clear filter 按靠近一些。
+
 //mr:: 2026_09_21 10_17_01
 执行下面的功能时：
 Insert Quick before （对应第二段快捷键 D）

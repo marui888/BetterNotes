@@ -19,6 +19,23 @@ export function formatShortcutEvent(event) {
   return parts.join('+')
 }
 
+function formatPendingChordEvent(event) {
+  const shortcut = formatShortcutEvent(event)
+  const imeHandledKey = event.isComposing
+    || event.key === 'Process'
+    || event.key === 'Unidentified'
+  const physicalLetterMatch = !event.ctrlKey
+    && !event.altKey
+    && !event.shiftKey
+    && !event.metaKey
+    ? /^Key([A-Z])$/.exec(String(event.code || ''))
+    : null
+
+  return imeHandledKey && physicalLetterMatch
+    ? physicalLetterMatch[1]
+    : shortcut
+}
+
 function findActionByShortcut(shortcuts, scope, shortcut) {
   const entries = Object.entries(shortcuts?.[scope] || {})
   const match = entries.find(([, value]) => value === shortcut)
@@ -148,8 +165,81 @@ export default function useShortcutManager(mode, disabled = false) {
   const pendingChordRef = useRef(null)
   const pendingChordScopesRef = useRef(null)
   const chordTimerRef = useRef(null)
+  const suppressBeforeInputRef = useRef(false)
+  const suppressBeforeInputTimerRef = useRef(null)
+  const pendingChordFocusRef = useRef(null)
+  const focusRestoreFrameRef = useRef(0)
+  const focusRestoreSnapshotRef = useRef(null)
 
-  const clearPendingChord = () => {
+  const clearBeforeInputSuppression = () => {
+    suppressBeforeInputRef.current = false
+    if (suppressBeforeInputTimerRef.current) {
+      clearTimeout(suppressBeforeInputTimerRef.current)
+      suppressBeforeInputTimerRef.current = null
+    }
+  }
+
+  const suppressNextBeforeInput = () => {
+    clearBeforeInputSuppression()
+    suppressBeforeInputRef.current = true
+    suppressBeforeInputTimerRef.current = setTimeout(() => {
+      suppressBeforeInputRef.current = false
+      suppressBeforeInputTimerRef.current = null
+    }, 0)
+  }
+
+  const cancelPendingChordFocusRestore = () => {
+    if (focusRestoreFrameRef.current) {
+      window.cancelAnimationFrame(focusRestoreFrameRef.current)
+      focusRestoreFrameRef.current = 0
+    }
+    const snapshot = focusRestoreSnapshotRef.current
+    focusRestoreSnapshotRef.current = null
+    return snapshot
+  }
+
+  const captureAndBlurVideoNoteContent = () => {
+    const deferredSnapshot = cancelPendingChordFocusRestore()
+    const existingSnapshot = pendingChordFocusRef.current
+    pendingChordFocusRef.current = null
+    const element = document.activeElement
+    if (!element?.matches?.('.video-mode .note-editor')) {
+      pendingChordFocusRef.current = existingSnapshot || deferredSnapshot
+      return
+    }
+
+    pendingChordFocusRef.current = {
+      element,
+      selectionStart: element.selectionStart,
+      selectionEnd: element.selectionEnd,
+    }
+    element.blur()
+  }
+
+  const restorePendingChordFocus = () => {
+    const snapshot = pendingChordFocusRef.current
+    pendingChordFocusRef.current = null
+    if (!snapshot?.element) return
+
+    cancelPendingChordFocusRestore()
+    focusRestoreSnapshotRef.current = snapshot
+    focusRestoreFrameRef.current = window.requestAnimationFrame(() => {
+      focusRestoreFrameRef.current = 0
+      const restoreSnapshot = focusRestoreSnapshotRef.current
+      focusRestoreSnapshotRef.current = null
+      const element = restoreSnapshot?.element
+      if (!element) return
+      if (!element.isConnected || !element.closest('.mode-panel.active')) return
+
+      element.focus({ preventScroll: true })
+      const textLength = String(element.value || '').length
+      const start = Math.max(0, Math.min(Number(restoreSnapshot.selectionStart) || 0, textLength))
+      const end = Math.max(start, Math.min(Number(restoreSnapshot.selectionEnd) || start, textLength))
+      element.setSelectionRange?.(start, end)
+    })
+  }
+
+  const clearPendingChord = ({ restoreFocus = true } = {}) => {
     pendingChordRef.current = null
     pendingChordScopesRef.current = null
     if (chordTimerRef.current) {
@@ -157,10 +247,12 @@ export default function useShortcutManager(mode, disabled = false) {
       chordTimerRef.current = null
     }
     window.dispatchEvent(new CustomEvent('shortcut-chord-change', { detail: null }))
+    if (restoreFocus) restorePendingChordFocus()
   }
 
   const startPendingChord = (firstShortcut, options, scopes = null) => {
-    clearPendingChord()
+    clearPendingChord({ restoreFocus: false })
+    captureAndBlurVideoNoteContent()
     pendingChordRef.current = firstShortcut
     pendingChordScopesRef.current = scopes
     window.dispatchEvent(new CustomEvent('shortcut-chord-change', {
@@ -175,7 +267,9 @@ export default function useShortcutManager(mode, disabled = false) {
       if (disabled && !pendingChordRef.current) return
       if (document.querySelector('.subtitle-pick-dialog') && !pendingChordRef.current) return
 
-      const shortcut = formatShortcutEvent(event)
+      const shortcut = pendingChordRef.current
+        ? formatPendingChordEvent(event)
+        : formatShortcutEvent(event)
       if (!shortcut) return
 
       const shortcuts = settings.shortcuts || {}
@@ -184,6 +278,10 @@ export default function useShortcutManager(mode, disabled = false) {
       if (pendingChordRef.current) {
         event.preventDefault()
         event.stopPropagation()
+        event.stopImmediatePropagation?.()
+        if (event.key?.length === 1 || /^Key[A-Z]$/.test(String(event.code || ''))) {
+          suppressNextBeforeInput()
+        }
 
         if (shortcut === 'Escape') {
           clearPendingChord()
@@ -204,6 +302,7 @@ export default function useShortcutManager(mode, disabled = false) {
       if (hasChordPrefix(shortcuts, scopes, shortcut)) {
         event.preventDefault()
         event.stopPropagation()
+        event.stopImmediatePropagation?.()
         startPendingChord(shortcut, getChordOptions(shortcuts, scopes, shortcut, mode))
         return
       }
@@ -217,6 +316,14 @@ export default function useShortcutManager(mode, disabled = false) {
       event.preventDefault()
       event.stopPropagation()
       runAction(actionId)
+    }
+
+    const handleBeforeInput = (event) => {
+      if (!suppressBeforeInputRef.current) return
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation?.()
+      clearBeforeInputSuppression()
     }
 
     const handleChordCancel = () => clearPendingChord()
@@ -234,13 +341,18 @@ export default function useShortcutManager(mode, disabled = false) {
     }
 
     window.addEventListener('keydown', handleKeyDown, true)
+    window.addEventListener('beforeinput', handleBeforeInput, true)
     window.addEventListener('shortcut-chord-cancel', handleChordCancel)
     const removeGlobalActivationListener = window.appApi?.onGlobalActivationChanged?.(
       handleGlobalActivationChanged
     )
     return () => {
-      clearPendingChord()
+      clearPendingChord({ restoreFocus: false })
+      pendingChordFocusRef.current = null
+      cancelPendingChordFocusRestore()
+      clearBeforeInputSuppression()
       window.removeEventListener('keydown', handleKeyDown, true)
+      window.removeEventListener('beforeinput', handleBeforeInput, true)
       window.removeEventListener('shortcut-chord-cancel', handleChordCancel)
       removeGlobalActivationListener?.()
     }

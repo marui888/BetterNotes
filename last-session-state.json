@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "savedAt": "2026-09-21T02:22:08.567Z",
+  "savedAt": "2026-09-22T20:23:30.078Z",
   "window": {
-    "displayId": 833458951,
+    "displayId": 3170587619,
     "displayBounds": {
       "x": 0,
       "y": 0,
@@ -10,10 +10,10 @@
       "height": 1080
     },
     "bounds": {
-      "x": 218,
-      "y": 153,
-      "width": 1920,
-      "height": 1032
+      "x": -8,
+      "y": -8,
+      "width": 1936,
+      "height": 1048
     },
     "isMaximized": true
   },
@@ -36,12 +36,12 @@
       "specialFolderPath": ""
     },
     "video": {
-      "currentFilePath": "F:\\__视频 解题 初中数学 中考数学\\up主 一数-初中 中考\\一数-初中版\\中考压轴·瓜豆原理\\1.瓜豆4.25 11点30定稿发布(Av116460017945147,P1).mp4",
-      "folderPath": "F:\\__视频 解题 初中数学 中考数学\\up主 一数-初中 中考\\一数-初中版\\中考压轴·瓜豆原理",
+      "currentFilePath": "F:\\__视频 解题 初中数学 中考数学\\up主 一数-初中 中考\\相似三角形满分大合集\\09.【重难点】9.相似模型：双高模型(Av116266945808092,P9).mp4",
+      "folderPath": "F:\\__视频 解题 初中数学 中考数学\\up主 一数-初中 中考\\相似三角形满分大合集",
       "leftTab": "files",
-      "rightToolTab": "notesPool",
-      "selectedNoteIndex": 9,
-      "playbackTime": 976.753506,
+      "rightToolTab": "main",
+      "selectedNoteIndex": -1,
+      "playbackTime": 37.55901,
       "mainMiddleView": {
         "toggleView": {
           "activeState": 0,
@@ -54,9 +54,9 @@
             },
             "f4": {
               "hideSub": false,
-              "hideView": false,
+              "hideView": true,
               "hvLayout": 1,
-              "videoOpacity": 1
+              "videoOpacity": 0
             }
           }
         },
@@ -66,23 +66,23 @@
               "x": 0,
               "y": 0,
               "width": 1012,
-              "height": 930,
-              "fontSize": 30,
+              "height": 710,
+              "fontSize": 36,
               "dockPosition": "left"
             },
             "f4": {
-              "x": 156,
-              "y": 24,
-              "width": 1123,
-              "height": 935,
-              "fontSize": 42,
+              "x": 132,
+              "y": 0,
+              "width": 1329,
+              "height": 959,
+              "fontSize": 60,
               "dockPosition": "center"
             }
           }
         },
         "playingView": {
-          "playbackRate": 0.6,
-          "volume": 0.6000000000000001
+          "playbackRate": 0.75,
+          "volume": 0.45
         }
       },
       "filterHistory": {
@@ -121,27 +121,387 @@
         "activeLoaded": true,
         "sources": {
           "default": {
-            "filePath": "F:\\__视频 解题 初中数学 中考数学\\up主 一数-初中 中考\\一数-初中版\\中考压轴·瓜豆原理\\1.瓜豆4.25 11点30定稿发布(Av116460017945147,P1).mp4",
-            "playbackTime": 976.753506
+            "filePath": "F:\\__视频 解题 初中数学 中考数学\\up主 一数-初中 中考\\相似三角形满分大合集\\09.【重难点】9.相似模型：双高模型(Av116266945808092,P9).mp4",
+            "playbackTime": 37.55901
           },
           "pool": {
-            "filePath": "D:\\解题 高中数学\\解题 夏老师\\【夏老师直播带你刷高考真题】2020全国一卷理科数学\\2.2020全国一卷理科数学全卷详解(Av371374802,P2).mp4",
-            "playbackTime": 1171.50747
+            "filePath": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].mp4",
+            "playbackTime": 1554.417447
           }
         }
       },
       "notesPool": {
-        "notes": [],
-        "filterText": "基友",
+        "notes": [
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json#0",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].mp4",
+            "sourceJsonName": "“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json",
+            "sourceVideoName": "“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].mp4",
+            "noteIndex": 0,
+            "start": "00:01:54.0",
+            "end": "00:01:57.0",
+            "content": "AUTO:\n>> What are you asking of me.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:01:54.0",
+              "End": "00:01:57.0",
+              "Content": "AUTO:\n>> What are you asking of me."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json#1",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].mp4",
+            "sourceJsonName": "“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json",
+            "sourceVideoName": "“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].mp4",
+            "noteIndex": 1,
+            "start": "00:05:20.0",
+            "end": "00:05:25.0",
+            "content": "AUTO:\n>> Supper is served. Come to table while\nit's hot.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:05:20.0",
+              "End": "00:05:25.0",
+              "Content": "AUTO:\n>> Supper is served. Come to table while\nit's hot."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json#2",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].mp4",
+            "sourceJsonName": "“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json",
+            "sourceVideoName": "“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].mp4",
+            "noteIndex": 2,
+            "start": "00:10:21.0",
+            "end": "00:10:26.0",
+            "content": "AUTO:\n>> Take one more step toward her, Mercer,\n[music] and you won't walk off this\nhill.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:10:21.0",
+              "End": "00:10:26.0",
+              "Content": "AUTO:\n>> Take one more step toward her, Mercer,\n[music] and you won't walk off this\nhill."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json#3",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].mp4",
+            "sourceJsonName": "“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].json",
+            "sourceVideoName": "“Can You Cook？” He Asked the Humiliated Bride—Her Answer Changed Everything [9e-GvYiRBVk].mp4",
+            "noteIndex": 3,
+            "start": "00:12:11.0",
+            "end": "00:12:17.0",
+            "content": "AUTO:\n>> Because no one in this world will ever\nmake you feel [music] worthless again\nwhile I draw breath.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:12:11.0",
+              "End": "00:12:17.0",
+              "Content": "AUTO:\n>> Because no one in this world will ever\nmake you feel [music] worthless again\nwhile I draw breath."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json#0",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "sourceJsonName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "noteIndex": 0,
+            "start": "00:00:25.0",
+            "end": "00:00:36.0",
+            "content": "AUTO:\nOn the side\nsteps of the church, away from the main\nentrance where most people passed, sat a\nyoung woman who watched.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:00:25.0",
+              "End": "00:00:36.0",
+              "Content": "AUTO:\nOn the side\nsteps of the church, away from the main\nentrance where most people passed, sat a\nyoung woman who watched."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json#1",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "sourceJsonName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "noteIndex": 1,
+            "start": "00:02:59.0",
+            "end": "00:03:11.0",
+            "content": "AUTO:\nsomeone so small. \"Hi,\" Emma said. \"I'm\nEmma. What's your name?\" Anna swallowed\nhard, unus to being spoken to like a\nperson rather than an obstacle. \"I'm",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:02:59.0",
+              "End": "00:03:11.0",
+              "Content": "AUTO:\nsomeone so small. \"Hi,\" Emma said. \"I'm\nEmma. What's your name?\" Anna swallowed\nhard, unus to being spoken to like a\nperson rather than an obstacle. \"I'm"
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json#2",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "sourceJsonName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "noteIndex": 2,
+            "start": "00:03:50.0",
+            "end": "00:04:11.0",
+            "content": "AUTO:\n  and Anna felt\nsomething break open inside her chest.\nShe'd been so strong for so long.\nKeeping her emotions locked down because\nshowing vulnerability on the streets was\ndangerous. But this unexpected kindness\nfrom a child she didn't know undid her\ncompletely.  ",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:03:50.0",
+              "End": "00:04:11.0",
+              "Content": "AUTO:\n  and Anna felt\nsomething break open inside her chest.\nShe'd been so strong for so long.\nKeeping her emotions locked down because\nshowing vulnerability on the streets was\ndangerous. But this unexpected kindness\nfrom a child she didn't know undid her\ncompletely.  "
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json#3",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "sourceJsonName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "noteIndex": 3,
+            "start": "00:04:07.0",
+            "end": "00:04:30.0",
+            "content": "AUTO:\nAnd she found herself crying\ninto Emma's red coat while the little\ngirl patted her back and said, \"It's\nokay. It's okay to be sad sometimes.\"\nThe man, Emma's father, had reached them\nby then. Anna looked up at him through\nher tears, expecting to see disapproval\nor disgust. Instead, she saw her own.\nEmotions reflected back at her.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:04:07.0",
+              "End": "00:04:30.0",
+              "Content": "AUTO:\nAnd she found herself crying\ninto Emma's red coat while the little\ngirl patted her back and said, \"It's\nokay. It's okay to be sad sometimes.\"\nThe man, Emma's father, had reached them\nby then. Anna looked up at him through\nher tears, expecting to see disapproval\nor disgust. Instead, she saw her own.\nEmotions reflected back at her."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json#4",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "sourceJsonName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "noteIndex": 4,
+            "start": "00:05:49.0",
+            "end": "00:06:02.0",
+            "content": "AUTO:\nAnd my mother would be\nfurious with me if I left you here. So\nplease come with us.\" Anna wanted to\nrefuse. She had her pride what was left\nof it.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:05:49.0",
+              "End": "00:06:02.0",
+              "Content": "AUTO:\nAnd my mother would be\nfurious with me if I left you here. So\nplease come with us.\" Anna wanted to\nrefuse. She had her pride what was left\nof it."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json#5",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "sourceJsonName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].json",
+            "sourceVideoName": "“I Think You Need A Hug...＂ Said The Little Girl To The Young Homeless Woman At The Church Steps, … [2GNyaSF6jwU].mp4",
+            "noteIndex": 5,
+            "start": "00:09:46.0",
+            "end": "00:10:10.0",
+            "content": "AUTO:\nStill people who need us. She\ntook Anna's hand. You're here for a\nreason tonight. Maybe it's so Emma could\nlearn about compassion. Maybe it's so\nMichael could be reminded that success\nmeans nothing if we don't use it to help\nothers. Or maybe it's because you needed\nto remember that you're not alone. That\nthere are people who care about you even\nif they just met you.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:09:46.0",
+              "End": "00:10:10.0",
+              "Content": "AUTO:\nStill people who need us. She\ntook Anna's hand. You're here for a\nreason tonight. Maybe it's so Emma could\nlearn about compassion. Maybe it's so\nMichael could be reminded that success\nmeans nothing if we don't use it to help\nothers. Or maybe it's because you needed\nto remember that you're not alone. That\nthere are people who care about you even\nif they just met you."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].json#0",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].mp4",
+            "sourceJsonName": "＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].json",
+            "sourceVideoName": "＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].mp4",
+            "noteIndex": 0,
+            "start": "00:05:46.0",
+            "end": "00:05:49.0",
+            "content": "AUTO:\nto be lonely when you are responsible\nfor the Saturday brunch of an entire",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:05:46.0",
+              "End": "00:05:49.0",
+              "Content": "AUTO:\nto be lonely when you are responsible\nfor the Saturday brunch of an entire"
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].json#1",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].mp4",
+            "sourceJsonName": "＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].json",
+            "sourceVideoName": "＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].mp4",
+            "noteIndex": 1,
+            "start": "00:08:01.0",
+            "end": "00:08:04.0",
+            "content": "AUTO:\nThat's true. She said, I don't know what",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:08:01.0",
+              "End": "00:08:04.0",
+              "Content": "AUTO:\nThat's true. She said, I don't know what"
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].json#2",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].mp4",
+            "sourceJsonName": "＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].json",
+            "sourceVideoName": "＂I'm Too Old To Start Over,＂ She Said At Fifty… I Replied, ＂Then Let's Start Together＂ [3d5cLYMu-G0].mp4",
+            "noteIndex": 2,
+            "start": "00:06:24.0",
+            "end": "00:06:29.0",
+            "content": "None",
+            "raw": {
+              "Start": "00:06:24.0",
+              "End": "00:06:29.0",
+              "Content": "None"
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\＂MY DAD'S SORRY HE CAN'T MAKE IT＂ THE GIRL SAID— AS SOON AS SHE WALKED INTO THE EMPTY BLIND DATE [85EGHnI6GNs].json#0",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\＂MY DAD'S SORRY HE CAN'T MAKE IT＂ THE GIRL SAID— AS SOON AS SHE WALKED INTO THE EMPTY BLIND DATE [85EGHnI6GNs].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\＂MY DAD'S SORRY HE CAN'T MAKE IT＂ THE GIRL SAID— AS SOON AS SHE WALKED INTO THE EMPTY BLIND DATE [85EGHnI6GNs].mp4",
+            "sourceJsonName": "＂MY DAD'S SORRY HE CAN'T MAKE IT＂ THE GIRL SAID— AS SOON AS SHE WALKED INTO THE EMPTY BLIND DATE [85EGHnI6GNs].json",
+            "sourceVideoName": "＂MY DAD'S SORRY HE CAN'T MAKE IT＂ THE GIRL SAID— AS SOON AS SHE WALKED INTO THE EMPTY BLIND DATE [85EGHnI6GNs].mp4",
+            "noteIndex": 0,
+            "start": "00:00:17.0",
+            "end": "00:00:29.0",
+            "content": "AUTO:\nand let me know in the comments where\nyou're watching from because tomorrow I\nwill be giving you another story just as\nbeautiful as this one, and you don't\nwant to miss it.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:00:17.0",
+              "End": "00:00:29.0",
+              "Content": "AUTO:\nand let me know in the comments where\nyou're watching from because tomorrow I\nwill be giving you another story just as\nbeautiful as this one, and you don't\nwant to miss it."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\＂MY DAD'S SORRY HE CAN'T MAKE IT＂ THE GIRL SAID— AS SOON AS SHE WALKED INTO THE EMPTY BLIND DATE [85EGHnI6GNs].json#1",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\＂MY DAD'S SORRY HE CAN'T MAKE IT＂ THE GIRL SAID— AS SOON AS SHE WALKED INTO THE EMPTY BLIND DATE [85EGHnI6GNs].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\＂MY DAD'S SORRY HE CAN'T MAKE IT＂ THE GIRL SAID— AS SOON AS SHE WALKED INTO THE EMPTY BLIND DATE [85EGHnI6GNs].mp4",
+            "sourceJsonName": "＂MY DAD'S SORRY HE CAN'T MAKE IT＂ THE GIRL SAID— AS SOON AS SHE WALKED INTO THE EMPTY BLIND DATE [85EGHnI6GNs].json",
+            "sourceVideoName": "＂MY DAD'S SORRY HE CAN'T MAKE IT＂ THE GIRL SAID— AS SOON AS SHE WALKED INTO THE EMPTY BLIND DATE [85EGHnI6GNs].mp4",
+            "noteIndex": 1,
+            "start": "00:07:06.0",
+            "end": "00:07:17.0",
+            "content": "AUTO:\n\"Mommy gave him to me when I was born.\nDaddy says I've had him longer than I've\nhad teeth.\"\n\"He looks very well loved.\" \"He is. He\nsleeps with me every night.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:07:06.0",
+              "End": "00:07:17.0",
+              "Content": "AUTO:\n\"Mommy gave him to me when I was born.\nDaddy says I've had him longer than I've\nhad teeth.\"\n\"He looks very well loved.\" \"He is. He\nsleeps with me every night."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\Billionaire Pretends To Be Homeless To Find True Love, Then This Happened [C1mXmYQOpD4].json#0",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\Billionaire Pretends To Be Homeless To Find True Love, Then This Happened [C1mXmYQOpD4].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\Billionaire Pretends To Be Homeless To Find True Love, Then This Happened [C1mXmYQOpD4].mp4",
+            "sourceJsonName": "Billionaire Pretends To Be Homeless To Find True Love, Then This Happened [C1mXmYQOpD4].json",
+            "sourceVideoName": "Billionaire Pretends To Be Homeless To Find True Love, Then This Happened [C1mXmYQOpD4].mp4",
+            "noteIndex": 0,
+            "start": "00:08:40.0",
+            "end": "00:08:46.0",
+            "content": "AUTO:\n>> Emma, please listen to me.\n>> Not right now.\nI need time.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:08:40.0",
+              "End": "00:08:46.0",
+              "Content": "AUTO:\n>> Emma, please listen to me.\n>> Not right now.\nI need time."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\Billionaire Pretends To Be Homeless To Find True Love, Then This Happened [C1mXmYQOpD4].json#1",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\Billionaire Pretends To Be Homeless To Find True Love, Then This Happened [C1mXmYQOpD4].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\Billionaire Pretends To Be Homeless To Find True Love, Then This Happened [C1mXmYQOpD4].mp4",
+            "sourceJsonName": "Billionaire Pretends To Be Homeless To Find True Love, Then This Happened [C1mXmYQOpD4].json",
+            "sourceVideoName": "Billionaire Pretends To Be Homeless To Find True Love, Then This Happened [C1mXmYQOpD4].mp4",
+            "noteIndex": 1,
+            "start": "00:08:18.0",
+            "end": "00:08:23.0",
+            "content": "AUTO:\n>> Yes, I'm a billionaire.\n>> So, it's all true?",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:08:18.0",
+              "End": "00:08:23.0",
+              "Content": "AUTO:\n>> Yes, I'm a billionaire.\n>> So, it's all true?"
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].json#0",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].mp4",
+            "sourceJsonName": "HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].json",
+            "sourceVideoName": "HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].mp4",
+            "noteIndex": 0,
+            "start": "00:21:40.0",
+            "end": "00:21:44.0",
+            "content": "AUTO:\n>> I like being prepared.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:21:40.0",
+              "End": "00:21:44.0",
+              "Content": "AUTO:\n>> I like being prepared."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].json#1",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].mp4",
+            "sourceJsonName": "HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].json",
+            "sourceVideoName": "HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].mp4",
+            "noteIndex": 1,
+            "start": "00:24:55.0",
+            "end": "00:25:17.0",
+            "content": "AUTO:\nIt's been a long time\nsince I knew what it was like to have a\nplace to come back to at the end of the\nday.",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:24:55.0",
+              "End": "00:25:17.0",
+              "Content": "AUTO:\nIt's been a long time\nsince I knew what it was like to have a\nplace to come back to at the end of the\nday."
+            }
+          },
+          {
+            "id": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].json#2",
+            "sourceJsonPath": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].json",
+            "sourceVideoPath": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].mp4",
+            "sourceJsonName": "HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].json",
+            "sourceVideoName": "HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].mp4",
+            "noteIndex": 2,
+            "start": "00:25:48.0",
+            "end": "00:26:04.0",
+            "content": "AUTO:\nYou'd be better off selling while\nthere's still time. 进行时\n>> Then I'd rather lose trying than sell\nwithout a fight. 非谓语 形合意合",
+            "raw": {
+              "createdBy": "rolling-subtitles",
+              "Start": "00:25:48.0",
+              "End": "00:26:04.0",
+              "Content": "AUTO:\nYou'd be better off selling while\nthere's still time. 进行时\n>> Then I'd rather lose trying than sell\nwithout a fight. 非谓语 形合意合"
+            }
+          }
+        ],
+        "filterText": "trying",
         "filterOn": false,
         "reverse": false,
         "showFileName": false,
         "folderSearchDepth": 1,
-        "sources": [],
-        "loadedSources": [],
-        "selectedNoteId": "",
-        "expandedNoteId": "",
-        "draftContent": "",
+        "sources": [
+          {
+            "id": "folder:f:\\__视频 english 来自油管20260910 from gem12",
+            "type": "folder",
+            "path": "F:\\__视频 English 来自油管20260910 from GEM12",
+            "depth": 1,
+            "selected": true,
+            "lastUsedAt": 1790021662519,
+            "error": ""
+          }
+        ],
+        "loadedSources": [
+          {
+            "id": "folder:f:\\__视频 english 来自油管20260910 from gem12",
+            "type": "folder",
+            "path": "F:\\__视频 English 来自油管20260910 from GEM12",
+            "depth": 1,
+            "selected": true,
+            "lastUsedAt": 1790021662519,
+            "error": ""
+          }
+        ],
+        "selectedNoteId": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].json#2",
+        "expandedNoteId": "F:\\__视频 English 来自油管20260910 from GEM12\\HE ASKED FOR A JOB... BUT SHE WHISPERED “WHAT I REALLY NEED IS A HUSBAND” [2Khqp5e_dZw].json#2",
+        "draftContent": "AUTO:\nYou'd be better off selling while\nthere's still time. 进行时\n>> Then I'd rather lose trying than sell\nwithout a fight. 非谓语 形合意合",
         "dirtyNoteIds": []
       }
     }
