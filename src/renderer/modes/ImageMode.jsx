@@ -1,10 +1,105 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { APP_MODES, useAppStore } from '../../stores/appStore'
-import { IMAGE_SUFFIX_OPTIONS, useImageStore } from '../../stores/imageStore'
+import { IMAGE_SUFFIX_OTHER, useImageStore } from '../../stores/imageStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { registerActions, runAction } from '../actions/actionRegistry'
 import SimpleContextMenu from '../components/SimpleContextMenu'
 import useKeywordInsertion from '../hooks/useKeywordInsertion'
+
+const INVALID_IMAGE_SUFFIX_CHARACTERS = '<>:"/\\|?*'
+
+function getImageSuffixKey(value) {
+  return String(value || '').trim().replace(/^_+/, '').toLocaleLowerCase()
+}
+
+function getImageSuffixError(value) {
+  const suffix = String(value || '').trim()
+  if (!suffix || !getImageSuffixKey(suffix)) return 'Enter a suffix.'
+  if (suffix === IMAGE_SUFFIX_OTHER) return `"${IMAGE_SUFFIX_OTHER}" is reserved.`
+  if (INVALID_IMAGE_SUFFIX_CHARACTERS.split('').some((character) => suffix.includes(character))) {
+    return 'The suffix contains an invalid filename character.'
+  }
+  return ''
+}
+
+function ImageSuffixPicker({ className, label, onChange, onDelete, options, value }) {
+  const rootRef = useRef(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return undefined
+    const closePicker = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false)
+    }
+    window.addEventListener('pointerdown', closePicker, true)
+    return () => window.removeEventListener('pointerdown', closePicker, true)
+  }, [open])
+
+  const selectOption = (option) => {
+    onChange(option)
+    setOpen(false)
+  }
+
+  return (
+    <div className={`${className} image-suffix-field`} ref={rootRef}>
+      <span>{label}</span>
+      <div className="image-suffix-picker">
+        <button
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          className="image-suffix-trigger"
+          onClick={() => setOpen((current) => !current)}
+          title={value}
+          type="button"
+        >
+          <span>{value}</span>
+          <i className="fa-solid fa-caret-down" aria-hidden="true" />
+        </button>
+        {open ? (
+          <div className="image-suffix-menu" role="listbox">
+            {options.map((option) => (
+              <div className="image-suffix-option-row" key={option}>
+                <button
+                  aria-selected={value === option}
+                  className={value === option ? 'image-suffix-option active' : 'image-suffix-option'}
+                  onClick={() => selectOption(option)}
+                  role="option"
+                  title={option}
+                  type="button"
+                >
+                  {option}
+                </button>
+                <button
+                  aria-label={`Delete suffix ${option}`}
+                  className="image-suffix-remove"
+                  data-tooltip="Delete suffix"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setOpen(false)
+                    onDelete(option)
+                  }}
+                  type="button"
+                >
+                  <i className="fa-solid fa-xmark" aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+            <button
+              aria-selected={value === IMAGE_SUFFIX_OTHER}
+              className={value === IMAGE_SUFFIX_OTHER ? 'image-suffix-option other active' : 'image-suffix-option other'}
+              onClick={() => selectOption(IMAGE_SUFFIX_OTHER)}
+              role="option"
+              type="button"
+            >
+              {IMAGE_SUFFIX_OTHER}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return '--'
@@ -80,6 +175,9 @@ function compareImageFiles(a, b, sortKey) {
 }
 
 export default function ImageMode() {
+  const imageBodyRef = useRef(null)
+  const imageCenterRef = useRef(null)
+  const imageLayoutResizeCleanupRef = useRef(null)
   const currentListRef = useRef(null)
   const recentListRef = useRef(null)
   const noteEditorRef = useRef(null)
@@ -103,12 +201,20 @@ export default function ImageMode() {
   const [txtNoteEnabled, setTxtNoteEnabled] = useState(false)
   const [currentSortKey, setCurrentSortKey] = useState('name')
   const [currentSortDirection, setCurrentSortDirection] = useState('asc')
+  const [imageLeftWidth, setImageLeftWidth] = useState(280)
+  const [imageRightWidth, setImageRightWidth] = useState(112)
+  const [imageBottomHeight, setImageBottomHeight] = useState(130)
+  const [imageLayoutDragging, setImageLayoutDragging] = useState('')
+  const [imageGroupStartIndex, setImageGroupStartIndex] = useState(0)
 
   const dirty = useAppStore((state) => state.dirtyByMode.image)
   const mode = useAppStore((state) => state.mode)
   const imageAutoLoadDelayMs = useSettingsStore((state) => state.settings.general.imageAutoLoadDelayMs)
+  const imageViewCount = useSettingsStore((state) => state.settings.general.imageViewCount || 1)
+  const imageSuffixOptions = useSettingsStore((state) => state.settings.general.imageSuffixOptions || [])
   const locallyMoveFolder = useSettingsStore((state) => state.settings.general.locallyMoveFolder)
   const picModeWideMoveFolder = useSettingsStore((state) => state.settings.general.picModeWideMoveFolder)
+  const saveSettings = useSettingsStore((state) => state.saveSettings)
   const recentImageFiles = useAppStore((state) => state.recentFiles.image || [])
   const recentImageFolders = useAppStore((state) => state.recentFolders.image || [])
   const setDirty = useAppStore((state) => state.setDirty)
@@ -133,10 +239,48 @@ export default function ImageMode() {
   const setSuffixOption = useImageStore((state) => state.setSuffixOption)
   const setCustomSuffix = useImageStore((state) => state.setCustomSuffix)
 
+  useEffect(() => {
+    if (suffixOption === IMAGE_SUFFIX_OTHER) return
+    if (imageSuffixOptions.includes(suffixOption)) return
+    setSuffixOption(imageSuffixOptions[0] || IMAGE_SUFFIX_OTHER)
+  }, [imageSuffixOptions, setSuffixOption, suffixOption])
+
+  useEffect(() => () => {
+    imageLayoutResizeCleanupRef.current?.()
+  }, [])
+
   const sortedImageFiles = useMemo(() => {
     const direction = currentSortDirection === 'desc' ? -1 : 1
     return [...imageFiles].sort((a, b) => compareImageFiles(a, b, currentSortKey) * direction)
   }, [currentSortDirection, currentSortKey, imageFiles])
+
+  const activeImageIndex = sortedImageFiles.findIndex((item) => item.filePath === imageFile?.filePath)
+  const visibleImageFiles = sortedImageFiles.slice(
+    imageGroupStartIndex,
+    imageGroupStartIndex + imageViewCount,
+  )
+
+  useEffect(() => {
+    if (sortedImageFiles.length === 0) {
+      if (imageGroupStartIndex !== 0) setImageGroupStartIndex(0)
+      return
+    }
+
+    if (imageGroupStartIndex >= sortedImageFiles.length) {
+      setImageGroupStartIndex(Math.max(0, sortedImageFiles.length - 1))
+      return
+    }
+
+    if (
+      activeImageIndex >= 0
+      && (
+        activeImageIndex < imageGroupStartIndex
+        || activeImageIndex >= imageGroupStartIndex + imageViewCount
+      )
+    ) {
+      setImageGroupStartIndex(activeImageIndex)
+    }
+  }, [activeImageIndex, imageGroupStartIndex, imageViewCount, sortedImageFiles.length])
 
   const selectedIndex = sortedImageFiles.findIndex((item) => item.filePath === selectedImagePath)
   const selectedRecentIndex = recentImageFiles.findIndex((filePath) => filePath === selectedRecentPath)
@@ -329,6 +473,7 @@ export default function ImageMode() {
   }
 
   const scheduleImageLoad = (filePath, {
+    nextGroupStartIndex = null,
     previousImagePath = selectedImagePathRef.current,
     previousRecentPath = selectedRecentPathRef.current,
     restoreEditorFocus = false,
@@ -355,6 +500,8 @@ export default function ImageMode() {
           selectedRecentPathRef.current = previousRecentPath
           setSelectedRecentPath(previousRecentPath)
         }
+      } else if (Number.isInteger(nextGroupStartIndex)) {
+        setImageGroupStartIndex(nextGroupStartIndex)
       }
       if (restoreEditorFocus) {
         setTimeout(() => {
@@ -365,6 +512,21 @@ export default function ImageMode() {
         }, 0)
       }
     }, delay)
+  }
+
+  const activatePreviewImage = async (file) => {
+    if (!file?.filePath || file.filePath === imageFile?.filePath) return
+    await loadImageFile(file.filePath)
+  }
+
+  const loadImageFromCurrentList = async (filePath) => {
+    const targetIndex = sortedImageFiles.findIndex((file) => file.filePath === filePath)
+    const targetAlreadyVisible = targetIndex >= imageGroupStartIndex
+      && targetIndex < imageGroupStartIndex + imageViewCount
+    const loaded = await loadImageFile(filePath)
+    if (loaded && targetIndex >= 0 && !targetAlreadyVisible) {
+      setImageGroupStartIndex(targetIndex)
+    }
   }
 
   const loadImageFolderPath = async (folderPath) => {
@@ -462,6 +624,7 @@ export default function ImageMode() {
     selectedImagePathRef.current = file.filePath
     setSelectedImagePath(file.filePath)
     setContextMenu({
+      filePath: file.filePath,
       x: event.clientX,
       y: event.clientY,
     })
@@ -486,7 +649,82 @@ export default function ImageMode() {
     }
   }, [keywordMenu])
 
-  const getSuffix = () => (suffixOption === '其它' ? customSuffix : suffixOption)
+  const getSuffix = () => (suffixOption === IMAGE_SUFFIX_OTHER ? customSuffix : suffixOption)
+
+  const saveImageSuffixOptions = async (nextOptions) => {
+    const currentSettings = useSettingsStore.getState().settings
+    return saveSettings({
+      ...currentSettings,
+      general: {
+        ...currentSettings.general,
+        imageSuffixOptions: nextOptions,
+      },
+    })
+  }
+
+  const changeImageViewCount = async (nextCount) => {
+    const normalizedCount = Math.max(1, Math.min(3, Math.round(Number(nextCount) || 1)))
+    if (activeImageIndex >= 0) setImageGroupStartIndex(activeImageIndex)
+
+    const currentSettings = useSettingsStore.getState().settings
+    try {
+      await saveSettings({
+        ...currentSettings,
+        general: {
+          ...currentSettings.general,
+          imageViewCount: normalizedCount,
+        },
+      })
+    } catch (error) {
+      window.debugApi?.log(`Save image view count failed: ${error?.message || String(error)}`)
+    }
+  }
+
+  const rememberUsedCustomSuffix = async (suffix) => {
+    const normalizedSuffix = String(suffix || '').trim()
+    const suffixKey = getImageSuffixKey(normalizedSuffix)
+    const currentOptions = useSettingsStore.getState().settings.general.imageSuffixOptions || []
+    const existingOption = currentOptions.find((option) => getImageSuffixKey(option) === suffixKey)
+    if (existingOption) {
+      setSuffixOption(existingOption)
+      return
+    }
+
+    try {
+      await saveImageSuffixOptions([...currentOptions, normalizedSuffix])
+      setSuffixOption(normalizedSuffix)
+    } catch (error) {
+      window.debugApi?.log(`Save image suffix failed: ${error?.message || String(error)}`)
+    }
+  }
+
+  const deleteImageSuffix = async (suffix) => {
+    setContextMenu(null)
+    const decision = await showActionDialog({
+      title: 'Delete suffix',
+      message: `Delete "${suffix}" from the suffix list?`,
+      defaultValue: 'delete',
+      cancelValue: 'cancel',
+      actions: [
+        { label: 'Delete', value: 'delete', danger: true },
+        { label: 'Cancel', value: 'cancel' },
+      ],
+    })
+    if (decision !== 'delete') return
+
+    const suffixKey = getImageSuffixKey(suffix)
+    const currentOptions = useSettingsStore.getState().settings.general.imageSuffixOptions || []
+    const nextOptions = currentOptions.filter((option) => getImageSuffixKey(option) !== suffixKey)
+    try {
+      await saveImageSuffixOptions(nextOptions)
+      if (getImageSuffixKey(suffixOption) === suffixKey) {
+        setSuffixOption(nextOptions[0] || IMAGE_SUFFIX_OTHER)
+      }
+    } catch (error) {
+      window.debugApi?.log(`Delete image suffix failed: ${error?.message || String(error)}`)
+      showAutoMessage('Suffix', 'Unable to delete the suffix.', 1600)
+    }
+  }
 
   const buildSuggestedFileName = (operation, fileName) => {
     if (operation === 'move') return fileName
@@ -540,8 +778,19 @@ export default function ImageMode() {
   }
 
   const operateSelectedFile = async (operation) => {
-    const activeImagePath = selectedImagePathRef.current || selectedImagePath
+    const activeImagePath = contextMenu?.filePath
+      || imageFile?.filePath
+      || selectedImagePathRef.current
+      || selectedImagePath
     if (!activeImagePath || !window.imageApi?.operateFile) return
+
+    const customSuffixUsed = operation !== 'move' && suffixOption === IMAGE_SUFFIX_OTHER
+    const customSuffixValue = customSuffixUsed ? String(customSuffix || '').trim() : ''
+    const customSuffixError = customSuffixUsed ? getImageSuffixError(customSuffixValue) : ''
+    if (customSuffixError) {
+      showAutoMessage('Invalid suffix', customSuffixError, 1800)
+      return
+    }
 
     const selectedFile = imageFiles.find((file) => file.filePath === activeImagePath)
     if (!selectedFile) return
@@ -579,6 +828,10 @@ export default function ImageMode() {
     })
     setContextMenu(null)
     if (!result?.ok) return
+
+    if (customSuffixUsed) {
+      await rememberUsedCustomSuffix(customSuffixValue)
+    }
 
     const movedAway = result.targetFolder
       && result.targetFolder.toLowerCase() !== result.folderPath.toLowerCase()
@@ -655,16 +908,87 @@ export default function ImageMode() {
     if (imageFilesRef.current.length === 0) return
 
     const shouldRestoreEditorFocus = document.activeElement === noteEditorRef.current
-    const currentIndex = imageFilesRef.current.findIndex((item) => item.filePath === selectedImagePathRef.current)
+    const currentIndex = imageFilesRef.current.findIndex((item) => item.filePath === imageFile?.filePath)
     const baseIndex = currentIndex >= 0 ? currentIndex : 0
-    const previousPath = selectedImagePathRef.current
-    const item = selectImageByIndex(baseIndex + step)
+    const visibleStart = Math.max(0, Math.min(imageGroupStartIndex, imageFilesRef.current.length - 1))
+    const visibleEnd = Math.min(
+      imageFilesRef.current.length - 1,
+      visibleStart + imageViewCount - 1,
+    )
+    let targetIndex = baseIndex + step
+    let nextGroupStartIndex = visibleStart
+
+    if (step > 0 && baseIndex >= visibleEnd) {
+      if (visibleEnd >= imageFilesRef.current.length - 1) return
+      nextGroupStartIndex = visibleStart + imageViewCount
+      targetIndex = nextGroupStartIndex
+    } else if (step < 0 && baseIndex <= visibleStart) {
+      if (visibleStart <= 0) return
+      nextGroupStartIndex = Math.max(0, visibleStart - imageViewCount)
+      targetIndex = visibleStart - 1
+    }
+
+    const previousPath = imageFile?.filePath || selectedImagePathRef.current
+    const item = selectImageByIndex(targetIndex)
     if (item) {
       scheduleImageLoad(item.filePath, {
+        nextGroupStartIndex,
         previousImagePath: previousPath,
         restoreEditorFocus: shouldRestoreEditorFocus,
       })
     }
+  }
+
+  const startImageLayoutResize = (event, type) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    imageLayoutResizeCleanupRef.current?.()
+    const bodyBounds = imageBodyRef.current?.getBoundingClientRect()
+    const centerBounds = imageCenterRef.current?.getBoundingClientRect()
+    if (!bodyBounds || !centerBounds) return
+
+    const startX = event.clientX
+    const startY = event.clientY
+    const startLeftWidth = imageLeftWidth
+    const startRightWidth = imageRightWidth
+    const startBottomHeight = imageBottomHeight
+    setImageLayoutDragging(type === 'horizontal' ? 'horizontal' : 'vertical')
+
+    const handlePointerMove = (moveEvent) => {
+      if (type === 'left') {
+        const maximumLeftWidth = Math.max(80, bodyBounds.width - startRightWidth - 240 - 12)
+        const nextWidth = startLeftWidth + (moveEvent.clientX - startX)
+        setImageLeftWidth(Math.max(80, Math.min(maximumLeftWidth, nextWidth)))
+        return
+      }
+
+      if (type === 'right') {
+        const maximumRightWidth = Math.max(88, bodyBounds.width - startLeftWidth - 240 - 12)
+        const nextWidth = startRightWidth - (moveEvent.clientX - startX)
+        setImageRightWidth(Math.max(88, Math.min(maximumRightWidth, nextWidth)))
+        return
+      }
+
+      const maximumBottomHeight = Math.max(90, centerBounds.height - 100 - 6)
+      const nextHeight = startBottomHeight - (moveEvent.clientY - startY)
+      setImageBottomHeight(Math.max(90, Math.min(maximumBottomHeight, nextHeight)))
+    }
+
+    const finishResize = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', finishResize)
+      window.removeEventListener('pointercancel', finishResize)
+      if (imageLayoutResizeCleanupRef.current === finishResize) {
+        imageLayoutResizeCleanupRef.current = null
+      }
+      setImageLayoutDragging('')
+    }
+
+    imageLayoutResizeCleanupRef.current = finishResize
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', finishResize)
+    window.addEventListener('pointercancel', finishResize)
   }
 
   useEffect(() => registerActions([
@@ -712,14 +1036,24 @@ export default function ImageMode() {
     },
   ]), [
     moveCurrentImageByStep,
+    imageFile?.filePath,
+    imageGroupStartIndex,
+    imageViewCount,
     operateSelectedFile,
     saveImageNote,
     toggleFocusBetweenCurrentListAndNoteInput,
   ])
 
   return (
-    <section className="image-mode">
-      <div className="image-body">
+    <section className={imageLayoutDragging ? `image-mode splitter-dragging-${imageLayoutDragging}` : 'image-mode'}>
+      <div
+        className="image-body"
+        ref={imageBodyRef}
+        style={{
+          '--image-left-width': `${imageLeftWidth}px`,
+          '--image-right-width': `${imageRightWidth}px`,
+        }}
+      >
         <aside className="image-left-panel">
         <div className="left-tabs">
           <button
@@ -781,7 +1115,7 @@ export default function ImageMode() {
                       setSelectedImagePath(file.filePath)
                     }}
                     onContextMenu={(event) => openFileMenu(event, file)}
-                    onDoubleClick={() => loadImageFile(file.filePath)}
+                    onDoubleClick={() => loadImageFromCurrentList(file.filePath)}
                     title={file.filePath}
                     type="button"
                   >
@@ -828,14 +1162,52 @@ export default function ImageMode() {
         )}
         </aside>
 
-        <section className="image-center">
-        <div className="image-stage">
-          {imageFile?.fileUrl ? (
-            <img alt={imageFile.fileName} src={imageFile.fileUrl} />
+        <div
+          aria-label="Resize left picture panel"
+          aria-orientation="vertical"
+          className="image-layout-splitter vertical"
+          onPointerDown={(event) => startImageLayoutResize(event, 'left')}
+          role="separator"
+        />
+
+        <section
+          className="image-center"
+          ref={imageCenterRef}
+          style={{ '--image-bottom-height': `${imageBottomHeight}px` }}
+        >
+        <div
+          className="image-stage"
+          style={{ '--image-view-count': imageViewCount }}
+        >
+          {visibleImageFiles.length > 0 ? (
+            visibleImageFiles.map((file) => {
+              const active = file.filePath === imageFile?.filePath
+              const fileUrl = file.fileUrl || (active ? imageFile?.fileUrl : '')
+              return (
+                <button
+                  className={active ? 'image-preview-tile active' : 'image-preview-tile'}
+                  key={file.filePath}
+                  onClick={() => activatePreviewImage(file)}
+                  title={file.filePath}
+                  type="button"
+                >
+                  {fileUrl ? <img alt={file.fileName} src={fileUrl} /> : null}
+                  <span>{file.fileName}</span>
+                </button>
+              )
+            })
           ) : (
             <div className="image-empty-stage">Open an image file or folder</div>
           )}
         </div>
+
+        <div
+          aria-label="Resize picture and note areas"
+          aria-orientation="horizontal"
+          className="image-layout-splitter horizontal"
+          onPointerDown={(event) => startImageLayoutResize(event, 'horizontal')}
+          role="separator"
+        />
 
         <div className="image-bottom-panel">
           <textarea
@@ -858,21 +1230,45 @@ export default function ImageMode() {
         </div>
         </section>
 
+        <div
+          aria-label="Resize right picture toolbar"
+          aria-orientation="vertical"
+          className="image-layout-splitter vertical"
+          onPointerDown={(event) => startImageLayoutResize(event, 'right')}
+          role="separator"
+        />
+
         <aside className="image-toolbar">
         <button type="button" onClick={openImageFile}>Open File</button>
         <button type="button" onClick={openImageFolder}>Open Folder</button>
         <button type="button" onClick={() => runAction('image.saveNote')}>Save</button>
         <button type="button" onClick={() => runAction('image.previousImage')}>Pre</button>
         <button type="button" onClick={() => runAction('image.nextImage')}>Next</button>
-        <label className="toolbar-field">
-          <span>Suffix</span>
-          <select value={suffixOption} onChange={(event) => setSuffixOption(event.target.value)}>
-            {IMAGE_SUFFIX_OPTIONS.map((option) => (
-              <option key={option} value={option}>{option}</option>
+        <div className="image-view-count-control">
+          <span>Pictures</span>
+          <div role="group" aria-label="Pictures shown at once">
+            {[1, 2, 3].map((count) => (
+              <button
+                aria-pressed={imageViewCount === count}
+                className={imageViewCount === count ? 'active' : ''}
+                key={count}
+                onClick={() => changeImageViewCount(count)}
+                type="button"
+              >
+                {count}
+              </button>
             ))}
-          </select>
-        </label>
-        {suffixOption === '其它' ? (
+          </div>
+        </div>
+        <ImageSuffixPicker
+          className="toolbar-field"
+          label="Suffix"
+          onChange={setSuffixOption}
+          onDelete={deleteImageSuffix}
+          options={imageSuffixOptions}
+          value={suffixOption}
+        />
+        {suffixOption === IMAGE_SUFFIX_OTHER ? (
           <input
             className="toolbar-input"
             onChange={(event) => setCustomSuffix(event.target.value)}
@@ -898,7 +1294,7 @@ export default function ImageMode() {
         <span>Status: <strong className={dirty ? 'status-unsaved' : ''}>{dirty ? 'Unsaved' : 'Saved'}</strong></span>
         <span>File: <strong title={imageInfo?.fileName || ''}>{imageInfo?.fileName || '--'}</strong></span>
         <span>Res: <strong>{imageInfo?.width && imageInfo?.height ? `${imageInfo.width} x ${imageInfo.height}` : '--'}</strong></span>
-        <span>Current: <strong>{selectedIndex >= 0 ? selectedIndex + 1 : '--'} / {imageFiles.length}</strong></span>
+        <span>Current: <strong>{activeImageIndex >= 0 ? activeImageIndex + 1 : '--'} / {imageFiles.length}</strong></span>
       </footer>
 
       {contextMenu ? (
@@ -908,15 +1304,15 @@ export default function ImageMode() {
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(event) => event.stopPropagation()}
         >
-          <label className="context-field">
-            <span>后缀</span>
-            <select value={suffixOption} onChange={(event) => setSuffixOption(event.target.value)}>
-              {IMAGE_SUFFIX_OPTIONS.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-          </label>
-          {suffixOption === '其它' ? (
+          <ImageSuffixPicker
+            className="context-field"
+            label="后缀"
+            onChange={setSuffixOption}
+            onDelete={deleteImageSuffix}
+            options={imageSuffixOptions}
+            value={suffixOption}
+          />
+          {suffixOption === IMAGE_SUFFIX_OTHER ? (
             <input
               className="context-input"
               onChange={(event) => setCustomSuffix(event.target.value)}

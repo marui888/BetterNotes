@@ -4,11 +4,18 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { registerActions, runAction } from '../actions/actionRegistry'
 import SimpleContextMenu from '../components/SimpleContextMenu'
 import useKeywordInsertion from '../hooks/useKeywordInsertion'
+import TextLibraryTab from './TextLibraryTab'
+import TextStudyPlanTab from './TextStudyPlanTab'
+import TextMixedNotesTab from './TextMixedNotesTab'
 import { getAutoPlaySkipReason } from './textWordValidator'
 
 const TEXT_TABS = {
   WORDS: 'words',
   FILES: 'files',
+  LIBRARY: 'library',
+  STUDY: 'study',
+  MIXED_LIBRARY: 'mixedLibrary',
+  MIXED_STUDY: 'mixedStudy',
 }
 
 const WORDS_TAB_VIEW_MODES = {
@@ -35,7 +42,7 @@ function createEmptyRecord() {
   return {
     id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     word: '',
-    markers: ['', '', '', '', '', ''],
+    markers: ['', '', '', '', ''],
     annotation: '',
   }
 }
@@ -44,6 +51,8 @@ function getDictionaryErrorMessage(reason, dictionaryName) {
   const messages = {
     'empty-word': 'No word to lookup.',
     'windows-only': 'Dictionary lookup is only available on Windows.',
+    'autohotkey-path-not-configured': 'AutoHotkey path is not configured.',
+    'autohotkey-path-invalid': 'The configured AutoHotkey path is invalid.',
     'mdict-not-found': 'MDict window was not found.',
     'mdict-input-not-found': 'MDict input box was not found.',
     'webster-not-found': 'Merriam-Webster 11th window was not found.',
@@ -65,8 +74,8 @@ function formatDictionaryWindowCandidates(windows) {
 }
 
 function recordToLine(record) {
-  const markers = Array.isArray(record?.markers) ? record.markers.slice(0, 6) : []
-  while (markers.length < 6) markers.push('')
+  const markers = Array.isArray(record?.markers) ? record.markers.slice(0, 5) : []
+  while (markers.length < 5) markers.push('')
 
   return [
     record?.word || '',
@@ -77,14 +86,14 @@ function recordToLine(record) {
 
 function lineToRecord(line, oldRecord) {
   const parts = String(line ?? '').split('|')
-  const markers = parts.slice(1, 7)
-  while (markers.length < 6) markers.push('')
+  const markers = parts.length > 1 ? parts.slice(1, -1).slice(0, 5) : []
+  while (markers.length < 5) markers.push('')
 
   return {
     ...(oldRecord || createEmptyRecord()),
     word: parts[0] || '',
     markers,
-    annotation: parts.length > 7 ? parts.slice(7).join('|') : '',
+    annotation: parts.length > 1 ? parts.at(-1) : '',
     raw: line,
   }
 }
@@ -149,6 +158,8 @@ function formatWordAnnotationText(text, cursorPosition) {
 }
 
 export default function TextMode() {
+  const wordsTabRef = useRef(null)
+  const wordsSplitDragRef = useRef(null)
   const wordListRef = useRef(null)
   const currentTxtListRef = useRef(null)
   const recentTxtListRef = useRef(null)
@@ -167,6 +178,10 @@ export default function TextMode() {
   const autoLookupTimerRef = useRef(null)
   const autoLookupRunningRef = useRef(false)
   const autoLookupContextRef = useRef({ fileIndex: -1, wordIndex: -1 })
+  const librarySessionStateRef = useRef(null)
+  const studyPlanSessionStateRef = useRef(null)
+  const mixedLibrarySessionStateRef = useRef(null)
+  const mixedStudySessionStateRef = useRef(null)
 
   const [activeTab, setActiveTab] = useState(TEXT_TABS.WORDS)
   const [textFile, setTextFile] = useState(null)
@@ -183,6 +198,8 @@ export default function TextMode() {
   const [dialog, setDialog] = useState(null)
   const [inputContextMenu, setInputContextMenu] = useState(null)
   const [wordsTabViewMode, setWordsTabViewMode] = useState(WORDS_TAB_VIEW_MODES.INPUT)
+  const [wordsUpperRatio, setWordsUpperRatio] = useState(50)
+  const [wordsSplitterDragging, setWordsSplitterDragging] = useState(false)
   const [wordToolbarLayout, setWordToolbarLayout] = useState({ columns: 2, width: 62 })
   const [autoLookupRunning, setAutoLookupRunning] = useState(false)
   const [autoLookupError, setAutoLookupError] = useState(false)
@@ -193,7 +210,10 @@ export default function TextMode() {
   const textAutoPlayDicts = useSettingsStore((state) => state.settings.general.textAutoPlayDicts)
   const monthlyNotesFolder = useSettingsStore((state) => state.settings.general.monthlyNotesFolder)
   const specialTextFolder = useSettingsStore((state) => state.settings.general.specialTextFolder)
-  const wordsReviewFontSize = useSettingsStore((state) => state.settings.general.wordsReviewFontSize)
+  const toggleViewFontSize = useSettingsStore((state) => state.settings.general.toggleViewFontSize)
+  const occurrenceFontSize = useSettingsStore((state) => state.settings.general.occurrenceFontSize)
+  const occurrenceMinFontSize = useSettingsStore((state) => state.settings.general.occurrenceMinFontSize)
+  const reviewToDicts = useSettingsStore((state) => state.settings.general.reviewToDicts)
   const websterSpellOut = useSettingsStore((state) => state.settings.general.websterSpellOut)
   const recentTextFiles = useAppStore((state) => state.recentFiles.text || [])
   const recentTextFolders = useAppStore((state) => state.recentFolders.text || [])
@@ -207,6 +227,19 @@ export default function TextMode() {
   const setLeaveGuard = useAppStore((state) => state.setLeaveGuard)
   const registerSessionProvider = useAppStore((state) => state.registerSessionProvider)
   const restoreSessionState = useAppStore((state) => state.restoreSessionState)
+
+  if (librarySessionStateRef.current === null && restoreSessionState?.modes?.text?.library) {
+    librarySessionStateRef.current = restoreSessionState.modes.text.library
+  }
+  if (studyPlanSessionStateRef.current === null && restoreSessionState?.modes?.text?.studyPlan) {
+    studyPlanSessionStateRef.current = restoreSessionState.modes.text.studyPlan
+  }
+  if (mixedLibrarySessionStateRef.current === null && restoreSessionState?.modes?.text?.mixedLibrary) {
+    mixedLibrarySessionStateRef.current = restoreSessionState.modes.text.mixedLibrary
+  }
+  if (mixedStudySessionStateRef.current === null && restoreSessionState?.modes?.text?.mixedStudy) {
+    mixedStudySessionStateRef.current = restoreSessionState.modes.text.mixedStudy
+  }
 
   const selectedRecord = useMemo(
     () => records.find((record) => record.id === selectedRecordId) || null,
@@ -705,6 +738,10 @@ export default function TextMode() {
       selectedRecordIndex: recordsRef.current.findIndex((record) => record.id === selectedRecordIdRef.current),
       specialTextFilePath: specialTextFile?.filePath || '',
       specialFolderPath,
+      library: librarySessionStateRef.current,
+      studyPlan: studyPlanSessionStateRef.current,
+      mixedLibrary: mixedLibrarySessionStateRef.current,
+      mixedStudy: mixedStudySessionStateRef.current,
     }))
     return () => registerSessionProvider(APP_MODES.TEXT, null)
   }, [
@@ -780,6 +817,34 @@ export default function TextMode() {
 
     const info = await window.textApi.readTextFile(filePath)
     applyTextFileInfo(info)
+  }
+
+  const openLibraryOccurrenceInWords = async (occurrence) => {
+    if (!occurrence?.filePath || !window.textApi?.readTextFile) {
+      showAutoMessage('The source TXT file is not available.')
+      return
+    }
+    if (!(await confirmBeforeLeave())) return
+
+    const info = await window.textApi.readTextFile(occurrence.filePath)
+    if (!info?.ok) {
+      showAutoMessage('Could not open the source TXT file.')
+      return
+    }
+
+    const nextRecords = applyTextFileInfo(info)
+    const targetIndex = Math.max(0, Math.min(
+      Number(occurrence.lineNumber || 1) - 1,
+      nextRecords.length - 1
+    ))
+    const targetRecord = nextRecords[targetIndex] || null
+    selectedRecordIdRef.current = targetRecord?.id || null
+    setSelectedRecordId(targetRecord?.id || null)
+    setIndependentInput(targetRecord?.word || '')
+    const nextLineDraft = targetRecord ? recordToLine(targetRecord) : ''
+    lineDraftRef.current = nextLineDraft
+    setLineDraft(nextLineDraft)
+    setActiveTab(TEXT_TABS.WORDS)
   }
 
   const convertCurrentFolderTxtToUtf8 = async () => {
@@ -1012,6 +1077,10 @@ export default function TextMode() {
 
   const showDictionaryLookupError = async (reason, dictionaryName) => {
     const baseMessage = getDictionaryErrorMessage(reason, dictionaryName)
+    if (reason === 'autohotkey-path-not-configured' || reason === 'autohotkey-path-invalid') {
+      showAutoMessage(baseMessage, 'AutoHotkey', 5000)
+      return
+    }
     if (!window.textApi?.findDictionaryWindows) {
       showAutoMessage(baseMessage, 'Dictionary not found', 3500)
       return
@@ -1078,6 +1147,30 @@ export default function TextMode() {
       showDictionaryLookupError(result?.reason, 'Webster')
     }
     return result
+  }
+
+  const lookupReviewWord = async (explicitWord, options = {}) => {
+    const word = String(explicitWord || '').trim()
+    if (!word) {
+      if (!options.silentNoTargets) showAutoMessage('No word to lookup.')
+      return { ok: false, reason: 'empty-word' }
+    }
+
+    const useMDict = reviewToDicts?.mdict === true
+    const useWebster = reviewToDicts?.webster === true
+    if (!useMDict && !useWebster) {
+      if (!options.silentNoTargets) showAutoMessage('No Review dictionary selected.')
+      return { ok: false, reason: 'no-review-dictionary-selected' }
+    }
+
+    const tasks = []
+    if (useMDict) tasks.push(lookupMDictWord(word))
+    if (useWebster) tasks.push(lookupWebsterWord(word))
+    const results = await Promise.allSettled(tasks)
+    return {
+      ok: results.every((result) => result.status === 'fulfilled' && result.value?.ok),
+      results,
+    }
   }
 
   const captureWebsterOutput = async () => {
@@ -1732,6 +1825,61 @@ export default function TextMode() {
     }
   }
 
+  const handleWordsSplitterPointerDown = (event) => {
+    const container = wordsTabRef.current
+    if (!container) return
+
+    event.preventDefault()
+    const rect = container.getBoundingClientRect()
+    const styles = window.getComputedStyle(container)
+    const paddingTop = Number.parseFloat(styles.paddingTop) || 0
+    const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0
+    const rowGap = Number.parseFloat(styles.rowGap) || 0
+    const availableHeight = rect.height - paddingTop - paddingBottom - 28 - 6 - (rowGap * 3)
+    if (availableHeight <= 0) return
+
+    wordsSplitDragRef.current = {
+      availableHeight,
+      paddingTop,
+      pointerId: event.pointerId,
+      top: rect.top,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setWordsSplitterDragging(true)
+  }
+
+  const handleWordsSplitterPointerMove = (event) => {
+    const drag = wordsSplitDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+
+    const minUpperHeight = Math.min(100, drag.availableHeight * 0.45)
+    const minLowerHeight = Math.min(120, drag.availableHeight * 0.45)
+    const requestedHeight = event.clientY - drag.top - drag.paddingTop
+    const upperHeight = Math.max(
+      minUpperHeight,
+      Math.min(drag.availableHeight - minLowerHeight, requestedHeight)
+    )
+    const nextRatio = Math.round((upperHeight / drag.availableHeight) * 1000) / 10
+    setWordsUpperRatio(Math.max(15, Math.min(85, nextRatio)))
+  }
+
+  const handleWordsSplitterPointerUp = (event) => {
+    const drag = wordsSplitDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    wordsSplitDragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    setWordsSplitterDragging(false)
+  }
+
+  const handleWordsSplitterKeyDown = (event) => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+    event.preventDefault()
+    const offset = event.key === 'ArrowUp' ? -5 : 5
+    setWordsUpperRatio((current) => Math.max(15, Math.min(85, current + offset)))
+  }
+
   const handleDialogKeyDown = (event) => {
     if (!dialog) return
     if (event.key === 'Escape') {
@@ -1768,17 +1916,64 @@ export default function TextMode() {
         >
           <i className="fa-solid fa-folder-open" aria-hidden="true" />
         </button>
+        <button
+          aria-label="Collection Filter"
+          aria-selected={activeTab === TEXT_TABS.LIBRARY}
+          className={activeTab === TEXT_TABS.LIBRARY ? 'text-mode-tab active' : 'text-mode-tab'}
+          data-tooltip="汇总筛选 / Collection Filter"
+          onClick={() => setActiveTab(TEXT_TABS.LIBRARY)}
+          role="tab"
+          type="button"
+        >
+          <i className="fa-solid fa-table-list" aria-hidden="true" />
+        </button>
+        <button
+          aria-label="Study Plan"
+          aria-selected={activeTab === TEXT_TABS.STUDY}
+          className={activeTab === TEXT_TABS.STUDY ? 'text-mode-tab active' : 'text-mode-tab'}
+          data-tooltip="学习计划 / Study Plan"
+          onClick={() => setActiveTab(TEXT_TABS.STUDY)}
+          role="tab"
+          type="button"
+        >
+          <i className="fa-solid fa-graduation-cap" aria-hidden="true" />
+        </button>
+        <button
+          aria-label="Mixed Notes Filter"
+          aria-selected={activeTab === TEXT_TABS.MIXED_LIBRARY}
+          className={activeTab === TEXT_TABS.MIXED_LIBRARY ? 'text-mode-tab active' : 'text-mode-tab'}
+          data-tooltip="Mixed Notes Filter"
+          onClick={() => setActiveTab(TEXT_TABS.MIXED_LIBRARY)}
+          role="tab"
+          type="button"
+        >
+          <i className="fa-solid fa-note-sticky" aria-hidden="true" />
+        </button>
+        <button
+          aria-label="Mixed Notes Study Plan"
+          aria-selected={activeTab === TEXT_TABS.MIXED_STUDY}
+          className={activeTab === TEXT_TABS.MIXED_STUDY ? 'text-mode-tab active' : 'text-mode-tab'}
+          data-tooltip="Mixed Notes Study Plan"
+          onClick={() => setActiveTab(TEXT_TABS.MIXED_STUDY)}
+          role="tab"
+          type="button"
+        >
+          <i className="fa-solid fa-book-open-reader" aria-hidden="true" />
+        </button>
       </div>
 
       {activeTab === TEXT_TABS.WORDS ? (
         <div
           className={wordsTabViewMode === WORDS_TAB_VIEW_MODES.REVIEW
-            ? 'text-words-tab review'
-            : 'text-words-tab input'}
+            ? `text-words-tab review${wordsSplitterDragging ? ' splitter-dragging' : ''}`
+            : `text-words-tab input${wordsSplitterDragging ? ' splitter-dragging' : ''}`}
+          ref={wordsTabRef}
           role="tabpanel"
           style={{
-            '--words-review-font-size': `${wordsReviewFontSize || 13}px`,
+            '--toggle-view-font-size': `${toggleViewFontSize || 13}px`,
             '--text-list-toolbar-width': `${wordToolbarLayout.width}px`,
+            '--words-upper-track': `${wordsUpperRatio}fr`,
+            '--words-lower-track': `${100 - wordsUpperRatio}fr`,
           }}
         >
           <section className="text-list-panel">
@@ -2029,6 +2224,23 @@ export default function TextMode() {
             </div>
           </section>
 
+          <div
+            aria-label="Resize word list and editor areas"
+            aria-orientation="horizontal"
+            aria-valuemax="85"
+            aria-valuemin="15"
+            aria-valuenow={Math.round(wordsUpperRatio)}
+            className="text-words-horizontal-splitter"
+            data-tooltip="Drag to resize upper and lower areas"
+            onKeyDown={handleWordsSplitterKeyDown}
+            onPointerCancel={handleWordsSplitterPointerUp}
+            onPointerDown={handleWordsSplitterPointerDown}
+            onPointerMove={handleWordsSplitterPointerMove}
+            onPointerUp={handleWordsSplitterPointerUp}
+            role="separator"
+            tabIndex={0}
+          />
+
           <section className="text-edit-panel">
             <div className="text-special-file-row">
               <select
@@ -2149,7 +2361,7 @@ export default function TextMode() {
             </span>
           </div>
         </div>
-      ) : (
+      ) : activeTab === TEXT_TABS.FILES ? (
         <div className="text-files-tab" role="tabpanel">
           <label className="text-list-label" htmlFor="text-recent-folders">Recent folders</label>
           <select
@@ -2213,6 +2425,48 @@ export default function TextMode() {
             </div>
           </div>
         </div>
+      ) : activeTab === TEXT_TABS.LIBRARY ? (
+        <TextLibraryTab
+          key="word-library"
+          initialState={librarySessionStateRef.current || restoreSessionState?.modes?.text?.library}
+          onOpenOccurrence={openLibraryOccurrenceInWords}
+          onSessionStateChange={(state) => {
+            librarySessionStateRef.current = state
+          }}
+        />
+      ) : activeTab === TEXT_TABS.STUDY ? (
+        <TextStudyPlanTab
+          key="word-study"
+          initialState={studyPlanSessionStateRef.current || restoreSessionState?.modes?.text?.studyPlan}
+          occurrenceFontSize={occurrenceFontSize}
+          occurrenceMinFontSize={occurrenceMinFontSize}
+          onReviewWordLookup={lookupReviewWord}
+          onSessionStateChange={(state) => {
+            studyPlanSessionStateRef.current = state
+          }}
+        />
+      ) : activeTab === TEXT_TABS.MIXED_LIBRARY ? (
+        <TextMixedNotesTab
+          key="mixed-library"
+          initialState={mixedLibrarySessionStateRef.current || restoreSessionState?.modes?.text?.mixedLibrary}
+          onSessionStateChange={(state) => {
+            mixedLibrarySessionStateRef.current = state
+          }}
+        />
+      ) : (
+        <TextStudyPlanTab
+          key="mixed-study"
+          initialState={mixedStudySessionStateRef.current || restoreSessionState?.modes?.text?.mixedStudy}
+          libraryApi={window.mixedNotesApi}
+          itemLabel="WPS"
+          occurrenceFontSize={occurrenceFontSize}
+          occurrenceMinFontSize={occurrenceMinFontSize}
+          showEmptyOccurrences
+          showDictionaryAction={false}
+          onSessionStateChange={(state) => {
+            mixedStudySessionStateRef.current = state
+          }}
+        />
       )}
 
       {inputContextMenu ? (

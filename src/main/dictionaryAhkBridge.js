@@ -2,12 +2,15 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { getDictionaryToolsRoot } from './toolPaths'
+import {
+  enqueueDictionaryAhkOperation,
+  getDictionaryToolsRoot,
+  resolveConfiguredAutoHotkeyPath,
+} from './toolPaths'
 
 const execFileAsync = promisify(execFile)
 const DICTIONARY_TOOLS_ROOT = getDictionaryToolsRoot()
 
-const AHK_EXE_PATH = 'D:\\AutoHotKey\\AutoHotkey.exe'
 const DICTIONARY_AHK_PATH = path.join(DICTIONARY_TOOLS_ROOT, 'dictionary-bridge.ahk')
 const DICTIONARY_RESULT_PATH = path.join(DICTIONARY_TOOLS_ROOT, 'dictionary-bridge-result.json')
 const AHK_TIMEOUT_MS = 8000
@@ -25,78 +28,98 @@ async function readAhkResultJson() {
   }
 }
 
-async function runAhkDictionaryCommand(args) {
-  if (process.platform !== 'win32') {
-    return { ok: false, reason: 'windows-only' }
-  }
+async function clearAhkResultJson() {
+  await fs.rm(DICTIONARY_RESULT_PATH, { force: true })
+}
 
-  try {
-    await execFileAsync(AHK_EXE_PATH, [DICTIONARY_AHK_PATH, ...args, 'silent'], {
-      cwd: process.cwd(),
-      timeout: AHK_TIMEOUT_MS,
-      windowsHide: true,
-    })
-  } catch (error) {
-    const ahkResult = await readAhkResultJson()
-    return {
-      ok: false,
-      reason: ahkResult?.reason || (error.killed ? 'dictionary-ahk-timeout' : 'dictionary-ahk-failed'),
-      detail: error.message,
-      exitCode: error.code,
-      signal: error.signal,
-      ahkResult,
+async function readCurrentAhkResult(command) {
+  const result = await readAhkResultJson()
+  return result?.command === command
+    ? result
+    : { ok: false, reason: 'stale-ahk-result', ahkResult: result }
+}
+
+async function runAhkDictionaryCommand(args, configuredAutoHotkeyPath) {
+  return enqueueDictionaryAhkOperation(async () => {
+    if (process.platform !== 'win32') {
+      return { ok: false, reason: 'windows-only' }
     }
-  }
 
-  return readAhkResultJson()
+    const resolvedPath = await resolveConfiguredAutoHotkeyPath(configuredAutoHotkeyPath)
+    if (!resolvedPath.ok) return resolvedPath
+
+    await clearAhkResultJson()
+
+    try {
+      await execFileAsync(resolvedPath.executablePath, [DICTIONARY_AHK_PATH, ...args, 'silent'], {
+        cwd: process.cwd(),
+        timeout: AHK_TIMEOUT_MS,
+        windowsHide: true,
+      })
+    } catch (error) {
+      const ahkResult = await readCurrentAhkResult(args[0])
+      return {
+        ok: false,
+        reason: ahkResult?.reason === 'stale-ahk-result'
+          ? error.killed ? 'dictionary-ahk-timeout' : 'dictionary-ahk-failed'
+          : ahkResult?.reason || (error.killed ? 'dictionary-ahk-timeout' : 'dictionary-ahk-failed'),
+        detail: error.message,
+        exitCode: error.code,
+        signal: error.signal,
+        ahkResult,
+      }
+    }
+
+    return readCurrentAhkResult(args[0])
+  })
 }
 
-export async function lookupMDict(word) {
+export async function lookupMDict(word, configuredAutoHotkeyPath) {
   const searchWord = normalizeWord(word)
   if (!searchWord) {
     return { ok: false, reason: 'empty-word' }
   }
 
-  return runAhkDictionaryCommand(['mdict', searchWord])
+  return runAhkDictionaryCommand(['mdict', searchWord], configuredAutoHotkeyPath)
 }
 
-export async function lookupMDictRestore(word) {
+export async function lookupMDictRestore(word, configuredAutoHotkeyPath) {
   const searchWord = normalizeWord(word)
   if (!searchWord) {
     return { ok: false, reason: 'empty-word' }
   }
 
-  return runAhkDictionaryCommand(['mdict-sendmsg-restore', searchWord])
+  return runAhkDictionaryCommand(['mdict-sendmsg-restore', searchWord], configuredAutoHotkeyPath)
 }
 
-export async function cycleMDictDictionary() {
-  return runAhkDictionaryCommand(['mdict-cycle-post'])
+export async function cycleMDictDictionary(configuredAutoHotkeyPath) {
+  return runAhkDictionaryCommand(['mdict-cycle-post'], configuredAutoHotkeyPath)
 }
 
-export async function getMDictInputText() {
-  return runAhkDictionaryCommand(['mdict-gettext'])
+export async function getMDictInputText(configuredAutoHotkeyPath) {
+  return runAhkDictionaryCommand(['mdict-gettext'], configuredAutoHotkeyPath)
 }
 
-export async function lookupWebsterAndRead(word) {
+export async function lookupWebsterAndRead(word, configuredAutoHotkeyPath) {
   const searchWord = normalizeWord(word)
   if (!searchWord) {
     return { ok: false, reason: 'empty-word' }
   }
 
-  return runAhkDictionaryCommand(['webster-both', searchWord])
+  return runAhkDictionaryCommand(['webster-both', searchWord], configuredAutoHotkeyPath)
 }
 
-export async function lookupWebster(word) {
+export async function lookupWebster(word, configuredAutoHotkeyPath) {
   const searchWord = normalizeWord(word)
   if (!searchWord) {
     return { ok: false, reason: 'empty-word' }
   }
 
-  return runAhkDictionaryCommand(['webster', searchWord])
+  return runAhkDictionaryCommand(['webster', searchWord], configuredAutoHotkeyPath)
 }
 
-export async function findDictionaryWindows() {
-  const result = await runAhkDictionaryCommand(['list'])
+export async function findDictionaryWindows(configuredAutoHotkeyPath) {
+  const result = await runAhkDictionaryCommand(['list'], configuredAutoHotkeyPath)
   return {
     ...result,
     windows: Array.isArray(result?.windows) ? result.windows : [],

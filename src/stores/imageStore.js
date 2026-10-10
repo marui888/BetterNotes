@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export const IMAGE_SUFFIX_OPTIONS = ['删除', '其它']
+export const IMAGE_SUFFIX_OTHER = '其它'
 
 export const useImageStore = create((set) => ({
   imageFile: null,
@@ -8,7 +8,7 @@ export const useImageStore = create((set) => ({
   selectedImagePath: null,
   noteDraft: '',
   imageInfo: null,
-  suffixOption: IMAGE_SUFFIX_OPTIONS[0],
+  suffixOption: '删除',
   customSuffix: '',
 
   setImageFile: (imageFile) => set({ imageFile }),

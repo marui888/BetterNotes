@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('videoApi', {
   openVideoFile: (options) => ipcRenderer.invoke('video:openFile', options),
+  importNotesText: () => ipcRenderer.invoke('video:importNotesText'),
   getVideoFileInfo: (filePath, options) => ipcRenderer.invoke('video:getFileInfo', filePath, options),
   resolveVideoPath: (filePath) => ipcRenderer.invoke('video:resolveVideoPath', filePath),
   readNotes: (filePath) => ipcRenderer.invoke('video:readNotes', filePath),
@@ -12,7 +13,9 @@ contextBridge.exposeInMainWorld('videoApi', {
   selectLegacyNoteFolder: (options) => ipcRenderer.invoke('video:selectLegacyNoteFolder', options),
   loadLegacyNoteSources: (sources) => ipcRenderer.invoke('video:loadLegacyNoteSources', sources),
   saveLegacyNoteContent: (payload) => ipcRenderer.invoke('video:saveLegacyNoteContent', payload),
-  saveNotes: (filePath, notes) => ipcRenderer.invoke('video:saveNotes', filePath, notes),
+  saveNotes: (filePath, notes, expectedModifiedTime) => (
+    ipcRenderer.invoke('video:saveNotes', filePath, notes, expectedModifiedTime)
+  ),
   listMp4Files: (folderPath) => ipcRenderer.invoke('video:listMp4Files', folderPath),
   showFileInFolder: (filePath) => ipcRenderer.invoke('video:showFileInFolder', filePath),
   renameFile: (payload) => ipcRenderer.invoke('video:renameFile', payload),
@@ -46,6 +49,7 @@ contextBridge.exposeInMainWorld('textApi', {
   selectFolder: () => ipcRenderer.invoke('text:selectFolder'),
   openTextFileExternal: (filePath) => ipcRenderer.invoke('text:openExternal', filePath),
   readClipboardText: () => ipcRenderer.invoke('text:readClipboardText'),
+  writeClipboardText: (text) => ipcRenderer.invoke('text:writeClipboardText', text),
   getMDictInputText: () => ipcRenderer.invoke('text:getMDictInputText'),
   lookupMDict: (word) => ipcRenderer.invoke('text:lookupMDict', word),
   lookupMDictRestore: (word) => ipcRenderer.invoke('text:lookupMDictRestore', word),
@@ -56,6 +60,65 @@ contextBridge.exposeInMainWorld('textApi', {
   captureWebsterOutput: () => ipcRenderer.invoke('text:captureWebsterOutput'),
   detectWebsterBlueText: () => ipcRenderer.invoke('text:detectWebsterBlueText'),
   clickWebsterBlueText: (areaIndex) => ipcRenderer.invoke('text:clickWebsterBlueText', areaIndex),
+})
+
+contextBridge.exposeInMainWorld('wordLibraryApi', {
+  getStatus: () => ipcRenderer.invoke('wordLibrary:getStatus'),
+  listSources: () => ipcRenderer.invoke('wordLibrary:listSources'),
+  getFilterOptions: () => ipcRenderer.invoke('wordLibrary:getFilterOptions'),
+  query: (filters, options) => ipcRenderer.invoke('wordLibrary:query', filters, options),
+  saveFilterFile: (filters) => ipcRenderer.invoke('wordLibrary:saveFilterFile', filters),
+  loadFilterFile: () => ipcRenderer.invoke('wordLibrary:loadFilterFile'),
+  listStudyPlans: () => ipcRenderer.invoke('wordLibrary:listStudyPlans'),
+  deleteStudyPlan: (planId) => ipcRenderer.invoke('wordLibrary:deleteStudyPlan', planId),
+  createStudyPlan: (payload) => ipcRenderer.invoke('wordLibrary:createStudyPlan', payload),
+  refreshStudyPlanScope: (planId) => ipcRenderer.invoke('wordLibrary:refreshStudyPlanScope', planId),
+  listStudyPlanItems: (planId, options) => (
+    ipcRenderer.invoke('wordLibrary:listStudyPlanItems', planId, options)
+  ),
+  getStudyPlanItemOccurrences: (planId, planItemId) => (
+    ipcRenderer.invoke('wordLibrary:getStudyPlanItemOccurrences', planId, planItemId)
+  ),
+  getActiveStudySession: () => ipcRenderer.invoke('wordLibrary:getActiveStudySession'),
+  startStudySession: (planId) => ipcRenderer.invoke('wordLibrary:startStudySession', planId),
+  applyStudyReviewAction: (sessionId, action) => (
+    ipcRenderer.invoke('wordLibrary:applyStudyReviewAction', sessionId, action)
+  ),
+  reviewTo: (planId, planItemId) => ipcRenderer.invoke('wordLibrary:reviewTo', planId, planItemId),
+  endStudySession: (sessionId) => ipcRenderer.invoke('wordLibrary:endStudySession', sessionId),
+  listStudyReviewHistory: (planId, options) => (
+    ipcRenderer.invoke('wordLibrary:listStudyReviewHistory', planId, options)
+  ),
+  listStudyReviewEvents: (sessionId) => (
+    ipcRenderer.invoke('wordLibrary:listStudyReviewEvents', sessionId)
+  ),
+  addSource: () => ipcRenderer.invoke('wordLibrary:addSource'),
+  refreshSources: (enabledSourceIds) => ipcRenderer.invoke('wordLibrary:refreshSources', enabledSourceIds),
+  deleteSource: (sourceId) => ipcRenderer.invoke('wordLibrary:deleteSource', sourceId),
+})
+
+contextBridge.exposeInMainWorld('mixedNotesApi', {
+  listSources: () => ipcRenderer.invoke('mixedNotes:listSources'),
+  getFilterOptions: () => ipcRenderer.invoke('mixedNotes:getFilterOptions'),
+  query: (filters, options) => ipcRenderer.invoke('mixedNotes:query', filters, options),
+  saveFilterFile: (filters) => ipcRenderer.invoke('mixedNotes:saveFilterFile', filters),
+  loadFilterFile: () => ipcRenderer.invoke('mixedNotes:loadFilterFile'),
+  listStudyPlans: () => ipcRenderer.invoke('mixedNotes:listStudyPlans'),
+  deleteStudyPlan: (id) => ipcRenderer.invoke('mixedNotes:deleteStudyPlan', id),
+  createStudyPlan: (payload) => ipcRenderer.invoke('mixedNotes:createStudyPlan', payload),
+  refreshStudyPlanScope: (id) => ipcRenderer.invoke('mixedNotes:refreshStudyPlanScope', id),
+  listStudyPlanItems: (id, options) => ipcRenderer.invoke('mixedNotes:listStudyPlanItems', id, options),
+  getStudyPlanItemOccurrences: (planId, itemId) => ipcRenderer.invoke('mixedNotes:getStudyPlanItemOccurrences', planId, itemId),
+  getActiveStudySession: () => ipcRenderer.invoke('mixedNotes:getActiveStudySession'),
+  startStudySession: (id) => ipcRenderer.invoke('mixedNotes:startStudySession', id),
+  applyStudyReviewAction: (id, action) => ipcRenderer.invoke('mixedNotes:applyStudyReviewAction', id, action),
+  reviewTo: (planId, itemId) => ipcRenderer.invoke('mixedNotes:reviewTo', planId, itemId),
+  endStudySession: (id) => ipcRenderer.invoke('mixedNotes:endStudySession', id),
+  listStudyReviewHistory: (id, options) => ipcRenderer.invoke('mixedNotes:listStudyReviewHistory', id, options),
+  listStudyReviewEvents: (id) => ipcRenderer.invoke('mixedNotes:listStudyReviewEvents', id),
+  addSource: () => ipcRenderer.invoke('mixedNotes:addSource'),
+  refreshSources: (ids) => ipcRenderer.invoke('mixedNotes:refreshSources', ids),
+  deleteSource: (id) => ipcRenderer.invoke('mixedNotes:deleteSource', id),
 })
 
 contextBridge.exposeInMainWorld('appApi', {

@@ -47,6 +47,59 @@ const CONTROL_HOT_ZONE_WIDTH = 120
 const MIN_TIMING_OFFSET = -5
 const MAX_TIMING_OFFSET = 5
 const DOCK_POSITIONS = ['left', 'center', 'right']
+const ENGLISH_WORD_PATTERN = /[A-Za-z]+(?:['’\-][A-Za-z]+)*/g
+
+const getCaretTextPositionFromPoint = (x, y) => {
+  if (typeof document.caretPositionFromPoint === 'function') {
+    const position = document.caretPositionFromPoint(x, y)
+    if (position) {
+      return {
+        node: position.offsetNode,
+        offset: position.offset,
+      }
+    }
+  }
+
+  if (typeof document.caretRangeFromPoint === 'function') {
+    const range = document.caretRangeFromPoint(x, y)
+    if (range) {
+      return {
+        node: range.startContainer,
+        offset: range.startOffset,
+      }
+    }
+  }
+
+  return null
+}
+
+const getEnglishWordFromPoint = (x, y, pointerTarget) => {
+  const textElement = pointerTarget?.closest?.('.rolling-subtitle-row strong')
+  if (!textElement) return null
+
+  const caret = getCaretTextPositionFromPoint(x, y)
+  if (!caret || caret.node?.nodeType !== Node.TEXT_NODE || !textElement.contains(caret.node)) return null
+
+  const text = caret.node.textContent || ''
+  const offset = clamp(Number(caret.offset) || 0, 0, text.length)
+  ENGLISH_WORD_PATTERN.lastIndex = 0
+
+  let match = ENGLISH_WORD_PATTERN.exec(text)
+  while (match) {
+    const start = match.index
+    const end = start + match[0].length
+    if (offset >= start && offset <= end) {
+      return {
+        anchorKey: `${textElement.closest('.rolling-subtitle-row')?.dataset.cueIndex || ''}:${start}`,
+        word: match[0],
+      }
+    }
+    if (start > offset) break
+    match = ENGLISH_WORD_PATTERN.exec(text)
+  }
+
+  return null
+}
 
 const hasPanelRect = (value) => ['x', 'y', 'width', 'height'].every((key) => (
   value?.[key] !== null
@@ -130,6 +183,7 @@ export default function RollingSubtitlePanel({
   onReadingAnchorChange,
   onReadingViewportChange,
   onReadingScrollStart,
+  onEnglishWordLookup,
 }) {
   const listRef = useRef(null)
   const trackRef = useRef(null)
@@ -165,6 +219,9 @@ export default function RollingSubtitlePanel({
   const readingSettleTimerRef = useRef(null)
   const readingFrameRef = useRef(0)
   const readingWheelDeltaRef = useRef(0)
+  const wordPointerFrameRef = useRef(0)
+  const pendingWordPointerRef = useRef(null)
+  const wordProbeDismissTimerRef = useRef(null)
   const [rect, setRect] = useState(DEFAULT_RECT)
   const [fontSizeByView, setFontSizeByView] = useState(() => {
     const initialFontSize = clamp(Number(defaultFontSize) || DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE)
@@ -184,6 +241,8 @@ export default function RollingSubtitlePanel({
   const [checkboxHotZoneActive, setCheckboxHotZoneActive] = useState(false)
   const [controlHotZoneActive, setControlHotZoneActive] = useState(false)
   const [selectedCueIds, setSelectedCueIds] = useState(() => new Set())
+  const [hoveredEnglishWord, setHoveredEnglishWord] = useState(null)
+  const [englishWordLookupPending, setEnglishWordLookupPending] = useState(false)
   const selectedCues = useMemo(() => (
     cues.filter((cue) => selectedCueIds.has(cue.id))
   ), [cues, selectedCueIds])
@@ -1178,6 +1237,98 @@ export default function RollingSubtitlePanel({
     ))
   }
 
+  const cancelWordProbeDismiss = () => {
+    if (!wordProbeDismissTimerRef.current) return
+    window.clearTimeout(wordProbeDismissTimerRef.current)
+    wordProbeDismissTimerRef.current = null
+  }
+
+  const clearHoveredEnglishWord = () => {
+    cancelWordProbeDismiss()
+    pendingWordPointerRef.current = null
+    setHoveredEnglishWord(null)
+  }
+
+  const scheduleWordProbeDismiss = () => {
+    cancelWordProbeDismiss()
+    wordProbeDismissTimerRef.current = window.setTimeout(() => {
+      wordProbeDismissTimerRef.current = null
+      pendingWordPointerRef.current = null
+      setHoveredEnglishWord(null)
+    }, 400)
+  }
+
+  const updateHoveredEnglishWord = (event) => {
+    updateCheckboxHotZone(event)
+    if (!subtitlePickActive) {
+      if (hoveredEnglishWord) clearHoveredEnglishWord()
+      return
+    }
+
+    pendingWordPointerRef.current = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      target: event.target,
+    }
+    if (wordPointerFrameRef.current) return
+
+    wordPointerFrameRef.current = window.requestAnimationFrame(() => {
+      wordPointerFrameRef.current = 0
+      const pointer = pendingWordPointerRef.current
+      const panel = listRef.current?.parentElement
+      if (!pointer || !panel) {
+        setHoveredEnglishWord(null)
+        return
+      }
+
+      const wordMatch = getEnglishWordFromPoint(pointer.clientX, pointer.clientY, pointer.target)
+      if (!wordMatch) {
+        scheduleWordProbeDismiss()
+        return
+      }
+
+      cancelWordProbeDismiss()
+      const bounds = panel.getBoundingClientRect()
+      const localX = pointer.clientX - bounds.left
+      const localY = pointer.clientY - bounds.top
+      setHoveredEnglishWord((current) => (
+        current?.anchorKey === wordMatch.anchorKey
+          ? current
+          : {
+            ...wordMatch,
+            x: localX,
+            y: localY,
+            placeRight: localX < Math.min(140, bounds.width * 0.35),
+            placeBelow: localY < 52,
+          }
+      ))
+    })
+  }
+
+  const lookupHoveredEnglishWord = async () => {
+    const word = hoveredEnglishWord?.word
+    if (!word || englishWordLookupPending || !onEnglishWordLookup) return
+
+    setEnglishWordLookupPending(true)
+    try {
+      await onEnglishWordLookup(word)
+    } finally {
+      setEnglishWordLookupPending(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!subtitlePickActive) clearHoveredEnglishWord()
+  }, [subtitlePickActive])
+
+  useEffect(() => () => {
+    if (wordPointerFrameRef.current) {
+      window.cancelAnimationFrame(wordPointerFrameRef.current)
+      wordPointerFrameRef.current = 0
+    }
+    cancelWordProbeDismiss()
+  }, [])
+
   const updateControlHotZone = (event) => {
     const panelBounds = event.currentTarget.getBoundingClientRect()
     const hotZoneActive = event.clientX >= panelBounds.right - CONTROL_HOT_ZONE_WIDTH
@@ -1386,8 +1537,11 @@ export default function RollingSubtitlePanel({
       </div>
       <div
         className={effectiveSubtitleHidden ? 'rolling-subtitle-list hidden' : 'rolling-subtitle-list'}
-        onPointerLeave={() => setCheckboxHotZoneActive(false)}
-        onPointerMove={updateCheckboxHotZone}
+        onPointerLeave={() => {
+          setCheckboxHotZoneActive(false)
+          scheduleWordProbeDismiss()
+        }}
+        onPointerMove={updateHoveredEnglishWord}
         onWheel={handleReadingWheel}
         ref={listRef}
       >
@@ -1442,6 +1596,26 @@ export default function RollingSubtitlePanel({
           })}
         </div>
       </div>
+      {subtitlePickActive && hoveredEnglishWord ? (
+        <button
+          aria-label={`Look up ${hoveredEnglishWord.word} in MDict`}
+          className="rolling-subtitle-word-probe"
+          disabled={englishWordLookupPending}
+          onClick={lookupHoveredEnglishWord}
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerEnter={cancelWordProbeDismiss}
+          onPointerLeave={scheduleWordProbeDismiss}
+          style={{
+            left: hoveredEnglishWord.x,
+            top: hoveredEnglishWord.y,
+            transform: `translate(${hoveredEnglishWord.placeRight ? '12px' : 'calc(-100% - 12px)'}, ${hoveredEnglishWord.placeBelow ? '12px' : 'calc(-100% - 12px)'})`,
+          }}
+          title={`Look up ${hoveredEnglishWord.word} in MDict`}
+          type="button"
+        >
+          {hoveredEnglishWord.word}
+        </button>
+      ) : null}
       <div
         className="rolling-subtitle-resize-handle ne"
         onPointerDown={(event) => startDrag(event, 'resize-ne')}

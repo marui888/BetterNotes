@@ -299,6 +299,72 @@ function parseTime(timeText) {
   return hours * 3600 + minutes * 60 + seconds
 }
 
+function parseImportedTextNotes(text, videoDuration) {
+  const fullTimeLinePattern = /^\d{2}:[0-5]\d:[0-5]\d$/
+  const shortTimeLinePattern = /^[0-5]\d:[0-5]\d$/
+  const invisibleCharactersPattern = /[\u200B-\u200D\u2060\uFEFF]/g
+  const blocks = []
+  let currentBlock = null
+  let skipped = 0
+  let sourceIndex = 0
+
+  const finishCurrentBlock = () => {
+    if (!currentBlock) return
+    const content = currentBlock.contentLines.join('\n')
+    const startSeconds = parseTime(currentBlock.timeText)
+    if (
+      !content
+      || !Number.isFinite(startSeconds)
+      || startSeconds < 0
+      || startSeconds >= videoDuration
+    ) {
+      skipped += 1
+      currentBlock = null
+      return
+    }
+
+    const endSeconds = Math.min(startSeconds + 10, videoDuration)
+    if (endSeconds <= startSeconds) {
+      skipped += 1
+      currentBlock = null
+      return
+    }
+
+    blocks.push({
+      content,
+      endSeconds,
+      sourceIndex: currentBlock.sourceIndex,
+      startSeconds,
+    })
+    currentBlock = null
+  }
+
+  String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .forEach((rawLine) => {
+      const line = rawLine.replace(invisibleCharactersPattern, '').trim()
+      if (fullTimeLinePattern.test(line) || shortTimeLinePattern.test(line)) {
+        finishCurrentBlock()
+        currentBlock = {
+          contentLines: [],
+          sourceIndex,
+          timeText: shortTimeLinePattern.test(line) ? `00:${line}` : line,
+        }
+        sourceIndex += 1
+        return
+      }
+      if (currentBlock && line) currentBlock.contentLines.push(line)
+    })
+  finishCurrentBlock()
+
+  blocks.sort((first, second) => (
+    first.startSeconds - second.startSeconds
+    || first.sourceIndex - second.sourceIndex
+  ))
+  return { blocks, skipped }
+}
+
 function splitPath(filePath) {
   const value = filePath || ''
   const lastSlash = Math.max(value.lastIndexOf('\\'), value.lastIndexOf('/'))
@@ -317,6 +383,23 @@ function joinPath(folderPath, fileName) {
   if (!folderPath || !fileName) return ''
   const separator = folderPath.endsWith('\\') || folderPath.endsWith('/') ? '' : '\\'
   return `${folderPath}${separator}${fileName}`
+}
+
+function getVideoJsonPath(filePath) {
+  const value = String(filePath || '')
+  return value ? value.replace(/\.[^./\\]+$/, '.json') : ''
+}
+
+function findDefaultNoteForExternal(externalNote, defaultNotes) {
+  if (externalNote?.defaultNoteId) {
+    const noteById = defaultNotes.find((note) => note.id === externalNote.defaultNoteId)
+    if (noteById) return noteById
+  }
+  const noteIndex = Number(externalNote?.noteIndex)
+  if (!Number.isInteger(noteIndex) || noteIndex < 0) return null
+  return defaultNotes.find((note) => Number(note.noteIndex) === noteIndex)
+    || defaultNotes[noteIndex]
+    || null
 }
 
 function createNumericJid() {
@@ -495,16 +578,28 @@ function removeFileExtension(fileName) {
   return dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName
 }
 
-function matchesSubtitleSuffix(subtitle, suffix) {
-  const cleanSuffix = String(suffix || '').trim().toLowerCase()
-  if (!cleanSuffix) return false
+function parseSubtitleLanguagePriority(value) {
+  const seen = new Set()
+  return String(value || '')
+    .split(/[;；]/)
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((language) => {
+      if (!language || seen.has(language)) return false
+      seen.add(language)
+      return true
+    })
+}
 
-  const subtitleName = String(subtitle?.fileName || subtitle?.filePath || '').toLowerCase()
-  const suffixes = cleanSuffix.endsWith('.vtt')
-    ? [cleanSuffix, `${cleanSuffix.slice(0, -4)}.srt`]
-    : [cleanSuffix]
-
-  return suffixes.some((candidate) => subtitleName.endsWith(candidate))
+function findPreferredSubtitleLanguage(languageOptions, priorityValue) {
+  const languageMap = new Map(languageOptions.map((entry) => [
+    String(entry.language || 'default').trim().toLowerCase(),
+    entry,
+  ]))
+  for (const language of parseSubtitleLanguagePriority(priorityValue)) {
+    const matchedLanguage = languageMap.get(language)
+    if (matchedLanguage) return matchedLanguage
+  }
+  return null
 }
 
 function normalizeSubtitleLanguages(info) {
@@ -565,6 +660,7 @@ export default function VideoMode() {
   const notesPoolSourceButtonRef = useRef(null)
   const notesPoolSourceMenuRef = useRef(null)
   const externalNoteEditorRef = useRef(null)
+  const externalNoteEditBaselineRef = useRef(null)
   const directoryListRef = useRef(null)
   const noteEditorRef = useRef(null)
   const leaveGuardHandlerRef = useRef(null)
@@ -579,6 +675,9 @@ export default function VideoMode() {
   const readingResumeHandledRef = useRef(false)
   const playingViewRef = useRef(normalizePlayingView(null))
   const videoOpenSourceRef = useRef('default')
+  const defaultNotesOwnerPathRef = useRef('')
+  const defaultNotesModifiedTimeRef = useRef(0)
+  const defaultNotesReadyRef = useRef(false)
   const activeVideoPathRef = useRef('')
   const activeVideoGenerationRef = useRef(0)
   const loadedVideoStateRef = useRef(createLoadedVideoState())
@@ -659,7 +758,7 @@ export default function VideoMode() {
   const videoNotesPoolFontSize = settings.general.videoNotesPoolFontSize || 11
   const locateNotePastLimitSec = settings.general.locateNotePastLimitSec ?? 100
   const locateNoteFutureLimitSec = settings.general.locateNoteFutureLimitSec ?? 10
-  const playAllSubtitleSuffix = useSettingsStore((state) => state.settings.general.playAllSubtitleSuffix)
+  const subtitleLanguagePriority = useSettingsStore((state) => state.settings.general.subtitleLanguagePriority)
   const subtitleConvertPromptTimeoutSec = useSettingsStore((state) => state.settings.general.subtitleConvertPromptTimeoutSec)
   const mode = useAppStore((state) => state.mode)
   const dirty = useAppStore((state) => state.dirtyByMode.video)
@@ -976,6 +1075,67 @@ export default function VideoMode() {
     () => new Set(externalNotes.map((note) => note.sourceJsonPath).filter(Boolean)).size,
     [externalNotes]
   )
+
+  useEffect(() => {
+    const sharedJsonPath = getVideoJsonPath(defaultNotesOwnerPathRef.current)
+    if (!sharedJsonPath || !defaultNotesReadyRef.current) return
+
+    setExternalNotes((current) => {
+      const sharedNotes = current.filter((note) => isSameFilePath(note.sourceJsonPath, sharedJsonPath))
+      if (sharedNotes.length === 0) return current
+
+      const byDefaultId = new Map(sharedNotes
+        .filter((note) => note.defaultNoteId)
+        .map((note) => [note.defaultNoteId, note]))
+      const byOriginalIndex = new Map(sharedNotes.map((note) => [Number(note.noteIndex), note]))
+      const syncedNotes = notes.map((defaultNote, index) => {
+        const previous = byDefaultId.get(defaultNote.id)
+          || byOriginalIndex.get(Number(defaultNote.noteIndex))
+          || byOriginalIndex.get(index)
+        return {
+          ...(previous || {}),
+          id: previous?.id || `${sharedJsonPath}#shared-${defaultNote.id}`,
+          sourceJsonPath: sharedJsonPath,
+          sourceJsonName: splitPath(sharedJsonPath).fileName,
+          sourceVideoPath: defaultNotesOwnerPathRef.current,
+          sourceVideoName: splitPath(defaultNotesOwnerPathRef.current).fileName,
+          defaultNoteId: defaultNote.id,
+          noteIndex: index,
+          start: defaultNote.start,
+          end: defaultNote.end,
+          content: defaultNote.content,
+          raw: previous?.raw || defaultNote.raw || {},
+        }
+      })
+      const next = []
+      let inserted = false
+      current.forEach((note) => {
+        if (isSameFilePath(note.sourceJsonPath, sharedJsonPath)) {
+          if (!inserted) {
+            next.push(...syncedNotes)
+            inserted = true
+          }
+          return
+        }
+        next.push(note)
+      })
+      return next
+    })
+    if (
+      selectedExternalNote
+      && isSameFilePath(selectedExternalNote.sourceJsonPath, sharedJsonPath)
+      && !dirtyExternalNoteIds.has(selectedExternalNote.id)
+    ) {
+      const defaultNote = findDefaultNoteForExternal(selectedExternalNote, notes)
+      if (defaultNote) {
+        setExternalNoteDraftContent(defaultNote.content || '')
+        externalNoteEditBaselineRef.current = {
+          noteId: selectedExternalNote.id,
+          content: defaultNote.content || '',
+        }
+      }
+    }
+  }, [notes])
   const selectedExternalNoteSources = useMemo(
     () => externalNoteSources.filter((source) => source.selected),
     [externalNoteSources]
@@ -1258,6 +1418,28 @@ export default function VideoMode() {
     }, timeout)
   }
 
+  const lookupSubtitleWordInMDict = async (word) => {
+    const searchWord = String(word || '').trim()
+    if (!searchWord) return { ok: false, reason: 'empty-word' }
+
+    const mdictApi = window.textApi?.lookupMDictRestore || window.textApi?.lookupMDict
+    if (!mdictApi) {
+      window.debugApi?.log(`Subtitle MDict lookup failed for "${searchWord}": API is not available.`)
+      return { ok: false, reason: 'api-not-available' }
+    }
+
+    try {
+      const result = await mdictApi(searchWord)
+      if (!result?.ok) {
+        window.debugApi?.log(`Subtitle MDict lookup failed for "${searchWord}": ${result?.reason || 'unknown error'}.`)
+      }
+      return result
+    } catch (error) {
+      window.debugApi?.log(`Subtitle MDict lookup failed for "${searchWord}": ${error?.message || String(error)}`)
+      return { ok: false, reason: 'lookup-failed' }
+    }
+  }
+
   useEffect(() => () => {
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current)
@@ -1425,6 +1607,55 @@ export default function VideoMode() {
   const getDuration = () => {
     const duration = playerRef.current?.duration?.()
     return Number.isFinite(duration) ? duration : Number.POSITIVE_INFINITY
+  }
+
+  const importNotesFromText = async () => {
+    if (!videoFile?.filePath) {
+      showAutoMessage('Load a video before importing notes.', 'Import Notes', 1600)
+      return
+    }
+
+    const playerDuration = Number(playerRef.current?.duration?.())
+    const duration = Number.isFinite(playerDuration) && playerDuration > 0
+      ? playerDuration
+      : Number(videoDurationSeconds)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      showAutoMessage('Video duration is not available yet.', 'Import Notes', 1600)
+      return
+    }
+
+    const result = await window.videoApi?.importNotesText?.()
+    if (!result?.ok) {
+      if (!result?.canceled) {
+        showAutoMessage('Unable to read the TXT file.', 'Import Notes', 1600)
+      }
+      return
+    }
+
+    const { blocks, skipped } = parseImportedTextNotes(result.text, duration)
+    if (blocks.length === 0) {
+      showAutoMessage(`Imported: 0 | Skipped: ${skipped}`, 'Import Notes', 1600)
+      return
+    }
+
+    const importId = Date.now()
+    const importedNotes = blocks.map((block, index) => ({
+      id: `${videoFile.filePath}-txt-${importId}-${index}-${Math.random().toString(16).slice(2)}`,
+      sourceVideoPath: videoFile.filePath,
+      sourceVideoName: videoFile.fileName || '',
+      start: formatTime(block.startSeconds),
+      end: formatTime(block.endSeconds),
+      content: block.content,
+      raw: {},
+    }))
+    setNotes([...notes, ...importedNotes])
+    setNotesFilterOn(false)
+    setDirty(APP_MODES.VIDEO, true)
+    showAutoMessage(
+      `Imported: ${importedNotes.length} | Skipped: ${skipped}`,
+      'Import Notes',
+      1800,
+    )
   }
 
   const refreshVideoDurationText = () => {
@@ -1694,8 +1925,13 @@ export default function VideoMode() {
   }
 
   const saveVideoNotes = async ({ silent = false, notesOverride = null } = {}) => {
-    if (!videoFile?.filePath || !window.videoApi?.saveNotes) {
-      showAutoMessage('No video file to save.')
+    const notesOwnerPath = defaultNotesOwnerPathRef.current
+    if (!notesOwnerPath || !defaultNotesReadyRef.current || !window.videoApi?.saveNotes) {
+      showAutoMessage(
+        'No Default file is associated with the Notes list.',
+        'Save Notes',
+        1800,
+      )
       return false
     }
 
@@ -1707,16 +1943,105 @@ export default function VideoMode() {
       Content: note.content,
     }))
 
-    const result = await window.videoApi.saveNotes(videoFile.filePath, payload)
+    const result = await window.videoApi.saveNotes(
+      notesOwnerPath,
+      payload,
+      defaultNotesModifiedTimeRef.current,
+    )
     if (!result?.ok) {
-      showAutoMessage('No video file to save.')
+      showAutoMessage(
+        result?.reason === 'note-file-conflict'
+          ? 'The JSON file changed on disk. Reload it before saving.'
+          : 'Unable to save the Notes file.',
+        'Save Notes',
+        2200,
+      )
       return false
     }
 
+    defaultNotesModifiedTimeRef.current = Number(result.jsonModifiedTime) || 0
+
+    const normalizedSavedNotes = notesToSave.map((note, index) => ({
+      ...note,
+      noteIndex: index,
+      sourceVideoPath: notesOwnerPath,
+      sourceVideoName: splitPath(notesOwnerPath).fileName,
+      raw: payload[index],
+    }))
+    setNotes(normalizedSavedNotes)
+
+    const sharedJsonPath = getVideoJsonPath(notesOwnerPath)
+    setExternalNotes((current) => {
+      if (!sharedJsonPath || !current.some((note) => isSameFilePath(note.sourceJsonPath, sharedJsonPath))) {
+        return current
+      }
+
+      const existingByOriginalIndex = new Map(current
+        .filter((note) => isSameFilePath(note.sourceJsonPath, sharedJsonPath))
+        .map((note) => [Number(note.noteIndex), note]))
+      const existingByDefaultId = new Map(current
+        .filter((note) => isSameFilePath(note.sourceJsonPath, sharedJsonPath) && note.defaultNoteId)
+        .map((note) => [note.defaultNoteId, note]))
+      const syncedNotes = normalizedSavedNotes.map((note, index) => {
+        const previous = existingByDefaultId.get(note.id)
+          || existingByOriginalIndex.get(Number(notesToSave[index]?.noteIndex))
+          || existingByOriginalIndex.get(index)
+        return {
+          ...(previous || {}),
+          id: previous?.id || `${sharedJsonPath}#${index}`,
+          sourceJsonPath: sharedJsonPath,
+          sourceJsonName: splitPath(sharedJsonPath).fileName,
+          sourceVideoPath: notesOwnerPath,
+          sourceVideoName: splitPath(notesOwnerPath).fileName,
+          defaultNoteId: note.id,
+          noteIndex: index,
+          start: note.start,
+          end: note.end,
+          content: note.content,
+          raw: payload[index],
+        }
+      })
+      const next = []
+      let inserted = false
+      current.forEach((note) => {
+        if (isSameFilePath(note.sourceJsonPath, sharedJsonPath)) {
+          if (!inserted) {
+            next.push(...syncedNotes)
+            inserted = true
+          }
+          return
+        }
+        next.push(note)
+      })
+      return next
+    })
+    const sharedExternalNoteIds = new Set(externalNotes
+      .filter((note) => isSameFilePath(note.sourceJsonPath, sharedJsonPath))
+      .map((note) => note.id))
+    if (sharedExternalNoteIds.size > 0) {
+      setDirtyExternalNoteIds((current) => {
+        const next = new Set(current)
+        sharedExternalNoteIds.forEach((noteId) => next.delete(noteId))
+        return next
+      })
+    }
+    if (
+      selectedExternalNote
+      && isSameFilePath(selectedExternalNote.sourceJsonPath, sharedJsonPath)
+    ) {
+      const syncedSelectedNote = findDefaultNoteForExternal(selectedExternalNote, normalizedSavedNotes)
+      setExternalNoteDraftContent(syncedSelectedNote?.content || '')
+      externalNoteEditBaselineRef.current = {
+        noteId: selectedExternalNote.id,
+        content: syncedSelectedNote?.content || '',
+      }
+    }
+
     if (Number.isFinite(Number(result.jsonModifiedTime))) {
+      const savedFileName = splitPath(notesOwnerPath).fileName
       setDirectoryMp4Files(directoryMp4Files.map((entry) => {
         const normalizedEntry = normalizeMp4FileEntry(entry)
-        return normalizedEntry.fileName === videoFile.fileName
+        return normalizedEntry.fileName === savedFileName
           ? { ...normalizedEntry, jsonModifiedTime: Number(result.jsonModifiedTime) }
           : normalizedEntry
       }))
@@ -1732,7 +2057,7 @@ export default function VideoMode() {
     const leaveResult = await confirmActiveNoteContentBeforeLeave()
     if (!leaveResult.canLeave) return false
 
-    if (!dirty && !leaveResult.defaultContentSynced) return true
+    if (!useAppStore.getState().dirtyByMode.video && !leaveResult.defaultContentSynced) return true
 
     const decision = await showActionDialog({
       title: 'Video notes changed',
@@ -1798,6 +2123,9 @@ export default function VideoMode() {
     setCurEnd('')
 
     if (videoOpenSourceRef.current === 'default') {
+      defaultNotesOwnerPathRef.current = ''
+      defaultNotesModifiedTimeRef.current = 0
+      defaultNotesReadyRef.current = false
       setNotes([])
       setSelectedNoteId(null)
       setNoteDraft('')
@@ -1821,6 +2149,7 @@ export default function VideoMode() {
       leftTab,
       rightToolTab,
       selectedNoteIndex: notes.findIndex((note) => note.id === selectedNoteId),
+      defaultNotesOwnerPath: defaultNotesOwnerPathRef.current,
       playbackTime: getPlayerTime(),
       mainMiddleView: {
         toggleView: {
@@ -1977,6 +2306,11 @@ export default function VideoMode() {
     const restoredLoadedVideoState = normalizeLoadedVideoState(snapshot.loadedVideoState, snapshot)
     const restoredVideoOpenSource = restoredLoadedVideoState.activeSource
     const restoredActiveVideo = restoredLoadedVideoState.sources[restoredVideoOpenSource]
+    const restoredDefaultNotesOwnerPath = typeof snapshot.defaultNotesOwnerPath === 'string'
+      && snapshot.defaultNotesOwnerPath
+      ? snapshot.defaultNotesOwnerPath
+      : restoredLoadedVideoState.sources.default.filePath
+    defaultNotesOwnerPathRef.current = restoredDefaultNotesOwnerPath
     loadedVideoStateRef.current = restoredLoadedVideoState
     videoOpenSourceRef.current = restoredVideoOpenSource
     setVideoOpenSource(restoredVideoOpenSource)
@@ -1995,12 +2329,14 @@ export default function VideoMode() {
     }
     if (
       restoredVideoOpenSource === 'pool'
-      && restoredLoadedVideoState.sources.default.filePath
+      && restoredDefaultNotesOwnerPath
       && window.videoApi?.readNotes
     ) {
-      const defaultFilePath = restoredLoadedVideoState.sources.default.filePath
+      const defaultFilePath = restoredDefaultNotesOwnerPath
       window.videoApi.readNotes(defaultFilePath).then((result) => {
         if (canceled || !result?.ok) return
+        defaultNotesModifiedTimeRef.current = Number(result.noteModifiedTime) || 0
+        defaultNotesReadyRef.current = true
         const restoredDefaultNotes = (Array.isArray(result.notes) ? result.notes : []).map((note, index) => ({
           id: `${defaultFilePath}-${index}`,
           noteIndex: index,
@@ -2050,20 +2386,12 @@ export default function VideoMode() {
       return null
     }
 
-    if (languageOptions.length === 1) {
-      return languageOptions[0]
-    }
-
-    if (options.playAllAuto) {
-      const matchedLanguage = languageOptions.find((entry) => (
-        matchesSubtitleSuffix(entry.subtitle, playAllSubtitleSuffix)
-        || matchesSubtitleSuffix(entry.srtSubtitle, playAllSubtitleSuffix)
-      ))
-      if (matchedLanguage) return matchedLanguage
-    }
+    const matchedLanguage = findPreferredSubtitleLanguage(languageOptions, subtitleLanguagePriority)
+    if (matchedLanguage) return matchedLanguage
 
     const selectedLanguage = await showSubtitleChoiceDialog(languageOptions.map((entry) => ({
       ...entry,
+      label: entry.language || 'default',
       filePath: getSubtitleLanguageKey(entry.language),
       fileName: entry.subtitle?.fileName || entry.srtSubtitle?.fileName || '',
     })), {
@@ -2260,6 +2588,9 @@ export default function VideoMode() {
       addRecentFolder(APP_MODES.VIDEO, info.folderPath)
     }
     if (nextVideoOpenSource === 'default') {
+      defaultNotesOwnerPathRef.current = info.filePath
+      defaultNotesModifiedTimeRef.current = Number(info.noteModifiedTime) || 0
+      defaultNotesReadyRef.current = true
       const loadedNotes = (info.notes || []).map((note, index) => ({
         id: `${info.filePath}-${index}`,
         noteIndex: index,
@@ -2498,6 +2829,9 @@ export default function VideoMode() {
           : note
       )))
     }
+    if (isSameFilePath(defaultNotesOwnerPathRef.current, filePath)) {
+      defaultNotesOwnerPathRef.current = result.filePath
+    }
     showAutoMessage('File renamed.', 'Rename MP4 File', 1100)
   }
 
@@ -2505,7 +2839,7 @@ export default function VideoMode() {
     const leaveResult = await confirmActiveNoteContentBeforeLeave()
     if (!leaveResult.canLeave) return false
 
-    if (!dirty && !leaveResult.defaultContentSynced) return true
+    if (!useAppStore.getState().dirtyByMode.video && !leaveResult.defaultContentSynced) return true
 
     const decision = await showActionDialog({
       title: 'Video notes changed',
@@ -2625,7 +2959,20 @@ export default function VideoMode() {
 
     if (result?.canceled) return
 
-    const loadedNotes = Array.isArray(result?.notes) ? result.notes : []
+    const sharedJsonPath = getVideoJsonPath(defaultNotesOwnerPathRef.current)
+    const loadedNotes = (Array.isArray(result?.notes) ? result.notes : []).map((externalNote) => {
+      if (!isSameFilePath(externalNote.sourceJsonPath, sharedJsonPath)) return externalNote
+      const defaultNote = findDefaultNoteForExternal(externalNote, notes)
+      return defaultNote
+        ? {
+            ...externalNote,
+            defaultNoteId: defaultNote.id,
+            start: defaultNote.start,
+            end: defaultNote.end,
+            content: defaultNote.content,
+          }
+        : externalNote
+    })
     const sourceResults = Array.isArray(result?.sourceResults) ? result.sourceResults : []
     const loadedSourceRecords = sourceResults
       .filter((source) => source.ok)
@@ -2776,7 +3123,20 @@ export default function VideoMode() {
         return
       }
 
-      const loadedNotes = Array.isArray(result.notes) ? result.notes : []
+      const sharedJsonPath = getVideoJsonPath(defaultNotesOwnerPathRef.current)
+      const loadedNotes = (Array.isArray(result.notes) ? result.notes : []).map((externalNote) => {
+        if (!isSameFilePath(externalNote.sourceJsonPath, sharedJsonPath)) return externalNote
+        const defaultNote = findDefaultNoteForExternal(externalNote, notes)
+        return defaultNote
+          ? {
+              ...externalNote,
+              defaultNoteId: defaultNote.id,
+              start: defaultNote.start,
+              end: defaultNote.end,
+              content: defaultNote.content,
+            }
+          : externalNote
+      })
       const sourceResults = Array.isArray(result.sourceResults) ? result.sourceResults : []
       const successfulSources = sourceResults
         .filter((source) => source.ok)
@@ -2829,10 +3189,21 @@ export default function VideoMode() {
 
   const updateExternalNoteDraftContent = (noteId, content) => {
     setExternalNoteDraftContent(content)
+    const externalNote = externalNotes.find((item) => item.id === noteId)
+    const sharedJsonPath = getVideoJsonPath(defaultNotesOwnerPathRef.current)
+    if (externalNote && isSameFilePath(externalNote.sourceJsonPath, sharedJsonPath)) {
+      const defaultNote = findDefaultNoteForExternal(externalNote, notes)
+      if (defaultNote) {
+        updateNote(defaultNote.id, { content })
+        if (defaultNote.id === selectedNoteId) setNoteDraft(content)
+        setDirty(APP_MODES.VIDEO, true)
+      }
+    }
     setDirtyExternalNoteIds((current) => {
       const next = new Set(current)
       const note = externalNotes.find((item) => item.id === noteId)
-      if (note && content !== (note.content || '')) {
+      const savedContent = note?.raw?.Content ?? note?.raw?.content ?? note?.content ?? ''
+      if (note && content !== savedContent) {
         next.add(noteId)
       } else {
         next.delete(noteId)
@@ -2843,6 +3214,27 @@ export default function VideoMode() {
 
   const updateExternalNoteFromMainEditor = (noteId, changes) => {
     if (!noteId) return
+
+    const externalNote = externalNotes.find((note) => note.id === noteId)
+    const sharedJsonPath = getVideoJsonPath(defaultNotesOwnerPathRef.current)
+    if (externalNote && isSameFilePath(externalNote.sourceJsonPath, sharedJsonPath)) {
+      const defaultNote = findDefaultNoteForExternal(externalNote, notes)
+      if (defaultNote) {
+        updateNote(defaultNote.id, changes)
+        if (defaultNote.id === selectedNoteId) {
+          if (Object.prototype.hasOwnProperty.call(changes, 'content')) {
+            setNoteDraft(changes.content || '')
+          }
+          if (Object.prototype.hasOwnProperty.call(changes, 'start')) {
+            setSelectedStart(changes.start || '')
+          }
+          if (Object.prototype.hasOwnProperty.call(changes, 'end')) {
+            setSelectedEnd(changes.end || '')
+          }
+        }
+        setDirty(APP_MODES.VIDEO, true)
+      }
+    }
 
     setExternalNotes((current) => current.map((note) => (
       note.id === noteId ? { ...note, ...changes } : note
@@ -2865,11 +3257,41 @@ export default function VideoMode() {
       return false
     }
 
+    const sharedJsonPath = getVideoJsonPath(defaultNotesOwnerPathRef.current)
+    if (isSameFilePath(externalNote.sourceJsonPath, sharedJsonPath)) {
+      const defaultNote = findDefaultNoteForExternal(externalNote, notes)
+      if (!defaultNote) {
+        showAutoMessage('The shared Default note is no longer available.', 'Save Note', 1800)
+        return false
+      }
+      const nextNotes = notes.map((note) => (
+        note.id === defaultNote.id
+          ? { ...note, start: externalNote.start, end: externalNote.end, content }
+          : note
+      ))
+      const saved = await saveVideoNotes({ silent: true, notesOverride: nextNotes })
+      if (!saved) return false
+
+      setExternalNoteDraftContent(content)
+      externalNoteEditBaselineRef.current = {
+        noteId: externalNote.id,
+        content,
+      }
+      setDirtyExternalNoteIds((current) => {
+        const next = new Set(current)
+        next.delete(externalNote.id)
+        return next
+      })
+      showAutoMessage('Action message.', 'Message', 900)
+      return true
+    }
+
     const result = await window.videoApi.saveLegacyNoteContent({
       sourceJsonPath: externalNote.sourceJsonPath,
       noteIndex: externalNote.noteIndex,
       matchStart: externalNote.raw?.Start || externalNote.raw?.start || externalNote.start,
       matchEnd: externalNote.raw?.End || externalNote.raw?.end || externalNote.end,
+      matchContent: externalNote.raw?.Content ?? externalNote.raw?.content ?? externalNote.content,
       start: externalNote.start,
       end: externalNote.end,
       content,
@@ -2877,12 +3299,22 @@ export default function VideoMode() {
 
     if (!result?.ok) {
       const reason = result?.reason || 'save-legacy-note-failed'
-      showAutoMessage('Action message.', 'Message', 1600)
+      showAutoMessage(
+        reason === 'note-content-conflict'
+          ? 'This note changed on disk. Reload Notes Pool before saving.'
+          : 'Unable to save this note.',
+        'Save Note',
+        2000,
+      )
       window.debugApi?.log(`Save legacy video note failed: ${externalNote.sourceJsonPath}#${externalNote.noteIndex} (${reason})`)
       return false
     }
 
     const savedContent = result.note?.content ?? content
+    externalNoteEditBaselineRef.current = {
+      noteId: externalNote.id,
+      content: savedContent,
+    }
     setExternalNotes((current) => current.map((note) => (
       note.id === externalNote.id
         ? {
@@ -2907,7 +3339,22 @@ export default function VideoMode() {
 
   const cancelExternalNoteEdit = (externalNote = selectedExternalNote) => {
     if (externalNote) {
-      const savedContent = externalNote.raw?.Content ?? externalNote.raw?.content ?? externalNote.content ?? ''
+      const editBaseline = externalNoteEditBaselineRef.current?.noteId === externalNote.id
+        ? externalNoteEditBaselineRef.current.content
+        : null
+      const savedContent = editBaseline
+        ?? externalNote.raw?.Content
+        ?? externalNote.raw?.content
+        ?? externalNote.content
+        ?? ''
+      const sharedJsonPath = getVideoJsonPath(defaultNotesOwnerPathRef.current)
+      if (isSameFilePath(externalNote.sourceJsonPath, sharedJsonPath)) {
+        const defaultNote = findDefaultNoteForExternal(externalNote, notes)
+        if (defaultNote) {
+          updateNote(defaultNote.id, { content: savedContent })
+          if (defaultNote.id === selectedNoteId) setNoteDraft(savedContent)
+        }
+      }
       setExternalNotes((current) => current.map((note) => (
         note.id === externalNote.id ? { ...note, content: savedContent } : note
       )))
@@ -2918,6 +3365,7 @@ export default function VideoMode() {
         return next
       })
     }
+    externalNoteEditBaselineRef.current = null
     setExpandedExternalNoteId('')
   }
 
@@ -2999,10 +3447,20 @@ export default function VideoMode() {
       if (!canLeave) return false
     }
 
+    const sharedJsonPath = getVideoJsonPath(defaultNotesOwnerPathRef.current)
+    const sharedDefaultNote = isSameFilePath(externalNote.sourceJsonPath, sharedJsonPath)
+      ? findDefaultNoteForExternal(externalNote, notes)
+      : null
+    const selectedContent = sharedDefaultNote?.content ?? externalNote.content ?? ''
+
     setSubtitleNotePreviewContent(null)
     setSelectedExternalNoteId(externalNote.id)
     setExpandedExternalNoteId(externalNote.id)
-    setExternalNoteDraftContent(externalNote.content || '')
+    setExternalNoteDraftContent(selectedContent)
+    externalNoteEditBaselineRef.current = {
+      noteId: externalNote.id,
+      content: selectedContent,
+    }
     return true
   }
 
@@ -3568,12 +4026,62 @@ export default function VideoMode() {
 
     updateReplaceDialog({ busy: true })
     const results = []
-    for (const item of plan) {
+    const sharedJsonPath = getVideoJsonPath(defaultNotesOwnerPathRef.current)
+    const sharedPlan = plan.filter((item) => isSameFilePath(item.note.sourceJsonPath, sharedJsonPath))
+    const separatePlan = plan.filter((item) => !isSameFilePath(item.note.sourceJsonPath, sharedJsonPath))
+
+    if (sharedPlan.length > 0) {
+      let sharedNotesValid = true
+      let nextNotes = notes
+      sharedPlan.forEach((item) => {
+        const defaultNote = findDefaultNoteForExternal(item.note, nextNotes)
+        if (!defaultNote) {
+          sharedNotesValid = false
+          return
+        }
+        nextNotes = nextNotes.map((note) => (
+          note.id === defaultNote.id ? { ...note, content: item.nextContent } : note
+        ))
+      })
+
+      const nextSelectedNote = nextNotes.find((note) => note.id === selectedNoteId)
+      if (nextSelectedNote) setNoteDraft(nextSelectedNote.content || '')
+
+      const sharedSaved = sharedNotesValid
+        ? await saveVideoNotes({ silent: true, notesOverride: nextNotes })
+        : false
+      sharedPlan.forEach((item) => {
+        const defaultNote = findDefaultNoteForExternal(item.note, nextNotes)
+        results.push({
+          ...item,
+          result: sharedSaved && defaultNote
+            ? {
+                ok: true,
+                noteIndex: defaultNote.noteIndex,
+                note: {
+                  content: item.nextContent,
+                  start: defaultNote.start,
+                  end: defaultNote.end,
+                  raw: {
+                    ...(defaultNote.raw || {}),
+                    Start: defaultNote.start,
+                    End: defaultNote.end,
+                    Content: item.nextContent,
+                  },
+                },
+              }
+            : { ok: false, reason: 'shared-default-save-failed' },
+        })
+      })
+    }
+
+    for (const item of separatePlan) {
       const result = await window.videoApi?.saveLegacyNoteContent?.({
         sourceJsonPath: item.note.sourceJsonPath,
         noteIndex: item.note.noteIndex,
         matchStart: item.note.raw?.Start || item.note.raw?.start || item.note.start,
         matchEnd: item.note.raw?.End || item.note.raw?.end || item.note.end,
+        matchContent: item.note.raw?.Content ?? item.note.raw?.content ?? item.note.content,
         start: item.note.start,
         end: item.note.end,
         content: item.nextContent,
@@ -4769,6 +5277,14 @@ export default function VideoMode() {
                   >
                     <i className="fa-solid fa-arrows-rotate" aria-hidden="true" />
                   </button>
+                  <button
+                    className="notes-icon-button"
+                    data-tooltip="Import notes from TXT"
+                    onClick={importNotesFromText}
+                    type="button"
+                  >
+                    <i className="fa-solid fa-file-import" aria-hidden="true" />
+                  </button>
                 </div>
                 <div className="notes-action-group notes-action-group-spaced">
                   <button
@@ -5099,6 +5615,7 @@ export default function VideoMode() {
               onReadingAnchorChange={handleSubtitleReadingAnchorChange}
               onReadingScrollStart={handleSubtitleReadingScrollStart}
               onReadingViewportChange={handleSubtitleReadingViewportChange}
+              onEnglishWordLookup={lookupSubtitleWordInMDict}
               fontSizeStepRequest={rollingSubtitleFontStepRequest}
             />
           ) : null}

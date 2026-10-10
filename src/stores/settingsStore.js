@@ -17,6 +17,7 @@ export const DEFAULT_APP_SETTINGS = {
     shortcutHintFontSize: 12,
     monthlyNotesFolder: '',
     specialTextFolder: '',
+    autoHotkeyPath: '',
     keywordFolder: '',
     defaultKeywordFile: '',
     extraSubtitleFolder: '',
@@ -29,15 +30,23 @@ export const DEFAULT_APP_SETTINGS = {
     videoNotesPoolFontSize: 11,
     locateNotePastLimitSec: 100,
     locateNoteFutureLimitSec: 10,
-    playAllSubtitleSuffix: '.en.vtt',
+    subtitleLanguagePriority: 'en-orig;en',
     subtitleConvertPromptTimeoutSec: 5,
     imageAutoLoadDelayMs: 500,
+    imageViewCount: 1,
+    imageSuffixOptions: ['删除'],
     locallyMoveFolder: 'tempPictures',
     picModeWideMoveFolder: '',
     textAutoPlayAll: false,
     textAutoLookupDelayMs: 1500,
-    wordsReviewFontSize: 13,
+    toggleViewFontSize: 13,
+    occurrenceFontSize: 14,
+    occurrenceMinFontSize: 10,
     websterSpellOut: true,
+    reviewToDicts: {
+      mdict: false,
+      webster: false,
+    },
     textAutoPlayDicts: {
       mdict: true,
       webster: true,
@@ -205,6 +214,49 @@ function normalizeShortcutBuckets(value) {
   }
 }
 
+function normalizeSubtitleLanguagePriority(value) {
+  const source = typeof value === 'string'
+    ? value
+    : DEFAULT_APP_SETTINGS.general.subtitleLanguagePriority
+  const seen = new Set()
+  return source
+    .split(/[;；]/)
+    .map((entry) => {
+      let language = entry.trim().toLowerCase()
+      language = language.replace(/\.(?:vtt|srt)$/i, '').replace(/^\./, '')
+      return language || (entry.trim() ? 'default' : '')
+    })
+    .filter((language) => {
+      if (!language || seen.has(language)) return false
+      seen.add(language)
+      return true
+    })
+    .join(';')
+}
+
+function normalizeImageSuffixOptions(value) {
+  const source = Array.isArray(value)
+    ? value
+    : DEFAULT_APP_SETTINGS.general.imageSuffixOptions
+  const seen = new Set()
+
+  return source.reduce((options, entry) => {
+    const suffix = typeof entry === 'string' ? entry.trim() : ''
+    const comparable = suffix.replace(/^_+/, '').toLocaleLowerCase()
+    if (
+      !suffix
+      || !comparable
+      || suffix === '其它'
+      || '<>:"/\\|?*'.split('').some((character) => suffix.includes(character))
+      || seen.has(comparable)
+    ) return options
+
+    seen.add(comparable)
+    options.push(suffix)
+    return options
+  }, [])
+}
+
 export function normalizeAppSettings(value) {
   const defaultMode = Object.values(APP_MODES).includes(value?.general?.defaultMode)
     ? value.general.defaultMode
@@ -226,6 +278,9 @@ export function normalizeAppSettings(value) {
   const specialTextFolder = typeof value?.general?.specialTextFolder === 'string'
     ? value.general.specialTextFolder
     : DEFAULT_APP_SETTINGS.general.specialTextFolder
+  const autoHotkeyPath = typeof value?.general?.autoHotkeyPath === 'string'
+    ? value.general.autoHotkeyPath.trim()
+    : DEFAULT_APP_SETTINGS.general.autoHotkeyPath
   const keywordFolder = typeof value?.general?.keywordFolder === 'string'
     ? value.general.keywordFolder
     : DEFAULT_APP_SETTINGS.general.keywordFolder
@@ -235,9 +290,11 @@ export function normalizeAppSettings(value) {
   const extraSubtitleFolder = typeof value?.general?.extraSubtitleFolder === 'string'
     ? value.general.extraSubtitleFolder.trim()
     : DEFAULT_APP_SETTINGS.general.extraSubtitleFolder
-  const playAllSubtitleSuffix = typeof value?.general?.playAllSubtitleSuffix === 'string'
-    ? value.general.playAllSubtitleSuffix
-    : DEFAULT_APP_SETTINGS.general.playAllSubtitleSuffix
+  const subtitleLanguagePriority = normalizeSubtitleLanguagePriority(
+    typeof value?.general?.subtitleLanguagePriority === 'string'
+      ? value.general.subtitleLanguagePriority
+      : value?.general?.playAllSubtitleSuffix
+  )
   const subtitleDisplayMode = value?.general?.subtitleDisplayMode === 'rolling'
     ? 'rolling'
     : DEFAULT_APP_SETTINGS.general.subtitleDisplayMode
@@ -287,6 +344,11 @@ export function normalizeAppSettings(value) {
   const imageAutoLoadDelayMs = Number.isFinite(rawImageAutoLoadDelayMs)
     ? Math.max(100, Math.min(10000, Math.round(rawImageAutoLoadDelayMs)))
     : DEFAULT_APP_SETTINGS.general.imageAutoLoadDelayMs
+  const rawImageViewCount = Number(value?.general?.imageViewCount)
+  const imageViewCount = Number.isFinite(rawImageViewCount)
+    ? Math.max(1, Math.min(3, Math.round(rawImageViewCount)))
+    : DEFAULT_APP_SETTINGS.general.imageViewCount
+  const imageSuffixOptions = normalizeImageSuffixOptions(value?.general?.imageSuffixOptions)
   const rawLocallyMoveFolder = typeof value?.general?.locallyMoveFolder === 'string'
     ? value.general.locallyMoveFolder.trim()
     : typeof value?.general?.pictureMoveFolderName === 'string'
@@ -298,10 +360,22 @@ export function normalizeAppSettings(value) {
   const picModeWideMoveFolder = typeof value?.general?.picModeWideMoveFolder === 'string'
     ? value.general.picModeWideMoveFolder.trim()
     : ''
-  const rawWordsReviewFontSize = Number(value?.general?.wordsReviewFontSize)
-  const wordsReviewFontSize = Number.isFinite(rawWordsReviewFontSize)
-    ? Math.max(10, Math.min(32, Math.round(rawWordsReviewFontSize)))
-    : DEFAULT_APP_SETTINGS.general.wordsReviewFontSize
+  const rawToggleViewFontSize = Number(value?.general?.toggleViewFontSize)
+  const toggleViewFontSize = Number.isFinite(rawToggleViewFontSize)
+    ? Math.max(10, Math.min(32, Math.round(rawToggleViewFontSize)))
+    : DEFAULT_APP_SETTINGS.general.toggleViewFontSize
+  const rawOccurrenceFontSize = Number(value?.general?.occurrenceFontSize)
+  const occurrenceFontSize = Number.isFinite(rawOccurrenceFontSize)
+    ? Math.max(10, Math.min(32, Math.round(rawOccurrenceFontSize)))
+    : DEFAULT_APP_SETTINGS.general.occurrenceFontSize
+  const rawOccurrenceMinFontSize = Number(value?.general?.occurrenceMinFontSize)
+  const occurrenceMinFontSize = Math.min(
+    occurrenceFontSize,
+    Number.isFinite(rawOccurrenceMinFontSize)
+      ? Math.max(8, Math.min(32, Math.round(rawOccurrenceMinFontSize)))
+      : DEFAULT_APP_SETTINGS.general.occurrenceMinFontSize
+  )
+  const reviewToDicts = value?.general?.reviewToDicts
   const textAutoPlayDicts = value?.general?.textAutoPlayDicts
 
   return {
@@ -312,6 +386,7 @@ export function normalizeAppSettings(value) {
       shortcutHintFontSize,
       monthlyNotesFolder,
       specialTextFolder,
+      autoHotkeyPath,
       keywordFolder,
       defaultKeywordFile,
       extraSubtitleFolder,
@@ -324,15 +399,23 @@ export function normalizeAppSettings(value) {
       videoNotesPoolFontSize,
       locateNotePastLimitSec,
       locateNoteFutureLimitSec,
-      playAllSubtitleSuffix,
+      subtitleLanguagePriority,
       subtitleConvertPromptTimeoutSec,
       imageAutoLoadDelayMs,
+      imageViewCount,
+      imageSuffixOptions,
       locallyMoveFolder,
       picModeWideMoveFolder,
       textAutoPlayAll: value?.general?.textAutoPlayAll === true,
       textAutoLookupDelayMs,
-      wordsReviewFontSize,
+      toggleViewFontSize,
+      occurrenceFontSize,
+      occurrenceMinFontSize,
       websterSpellOut: value?.general?.websterSpellOut !== false,
+      reviewToDicts: {
+        mdict: reviewToDicts?.mdict === true,
+        webster: reviewToDicts?.webster === true,
+      },
       textAutoPlayDicts: {
         mdict: textAutoPlayDicts?.mdict !== false,
         webster: textAutoPlayDicts?.webster !== false,

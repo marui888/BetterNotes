@@ -3,10 +3,6 @@
 $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 $env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binarie"
 
-
-
-
-
 ## 需求 prj_annotation_lab
 
 - [ ] 如何手动写了一段讲义稿，写了一道数学题的方法2，或者写了一道完整的题目（题干和答案），拍照后，保存为图片文件。如果要把这个文件加入到“体系”中，生成B Entity时， Label属性 如何设置呢？如果是以前的一道题的方法2， 如何在“体系”中查询到以前那道题，并让题干与方法2关联起来呢？
@@ -38,7 +34,6 @@ $env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-bu
 - [√] 自动播放下一个文件“之前”，先提示是否保存笔记。
 
 
-
 - [√] 各个模式直接切换是是否保留状态（例如：
   - 视频模式：打开的文件夹，打开的文件，是否正在播放，播放视频位置，播放速度，音量，当前选中的notes是哪一条，当前的 Note Content 输入框的内容等等。视图状态（哪个TAB子页是激活的）。脏数据状态 等等。
   - 文本模式：打开的单词列表文件中当前选中的单词， 当前编辑区 独立编辑框的内容，是否正在AutoPlay，正在播放哪个文件夹下的，哪个文件，播放到哪个单词了。是处于REVIEW模式还是INPUT模式。视图状态（哪个TAB子页是激活的）。脏数据状态 等等。
@@ -49,16 +44,13 @@ $env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-bu
 
 这有涉及到另外一个问题：哪些状态时需要持久化的。再次打开APP是可以选择恢复（
 就是上次打开的文件，或notes的位置，视频播放位置；或者单词文件，单词列表中的哪个单词；哪个图片文件夹，文件就可以了）
-  
 
 - [√] 视频模式下，有视频正在播放时，如果切换到其它模式，是否关闭视频，还是让视频背景播放。从上面的分析看，这个问题就简单了：如果有视频播放，提示是否继续播放（从用户的角度看，就是在背景播放，因为已经切换到了其它模式的UI）。
 
 - 如果关闭程序，有脏数据，则一个模式一个模式询问用户是否保存。 
 
 
-
 ## 问题
-
 
 ### //mr:: 2026_08_30 21_18_24
 

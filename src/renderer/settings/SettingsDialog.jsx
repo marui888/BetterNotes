@@ -307,6 +307,25 @@ export default function SettingsDialog({ onClose }) {
     }))
   }
 
+  const chooseAutoHotkeyFolder = async () => {
+    if (!window.appApi?.selectFolder) {
+      setMessage('Folder API unavailable')
+      return
+    }
+
+    const result = await window.appApi.selectFolder()
+    if (!result?.ok || result.canceled) return
+
+    setMessage('')
+    setDraft((current) => ({
+      ...current,
+      general: {
+        ...current.general,
+        autoHotkeyPath: result.folderPath || '',
+      },
+    }))
+  }
+
   const chooseKeywordFolder = async () => {
     if (!window.appApi?.selectFolder) {
       setMessage('Folder API unavailable')
@@ -832,18 +851,19 @@ export default function SettingsDialog({ onClose }) {
                         }))
                       }}
                     />
-                    <label htmlFor="settings-play-all-subtitle-suffix">PlayAll Subtitle Suffix</label>
+                    <label htmlFor="settings-subtitle-languages">Subtitle Languages</label>
                     <input
-                      id="settings-play-all-subtitle-suffix"
-                      placeholder=".en.vtt"
-                      value={draft.general.playAllSubtitleSuffix}
+                      id="settings-subtitle-languages"
+                      placeholder="en-orig;default;en"
+                      title="Semicolon-separated subtitle language priority"
+                      value={draft.general.subtitleLanguagePriority}
                       onChange={(event) => {
                         setMessage('')
                         setDraft((current) => ({
                           ...current,
                           general: {
                             ...current.general,
-                            playAllSubtitleSuffix: event.target.value,
+                            subtitleLanguagePriority: event.target.value,
                           },
                         }))
                       }}
@@ -936,6 +956,31 @@ export default function SettingsDialog({ onClose }) {
                 <section className="settings-section">
                   <div className="settings-section-title">Text</div>
                   <div className="settings-form-grid">
+                    <label htmlFor="settings-autohotkey-path">AHK Path</label>
+                    <div className="settings-folder-row">
+                      <input
+                        id="settings-autohotkey-path"
+                        placeholder="C:\\AutoHotkey"
+                        value={draft.general.autoHotkeyPath}
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              autoHotkeyPath: event.target.value,
+                            },
+                          }))
+                        }}
+                      />
+                      <button
+                        data-tooltip="Choose AutoHotkey folder"
+                        onClick={chooseAutoHotkeyFolder}
+                        type="button"
+                      >
+                        <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                      </button>
+                    </div>
                     <label htmlFor="settings-text-auto-play-all">AutoPlay All</label>
                     <label className="settings-checkbox-row" htmlFor="settings-text-auto-play-all">
                       <input
@@ -973,25 +1018,107 @@ export default function SettingsDialog({ onClose }) {
                         }))
                       }}
                     />
-                    <label htmlFor="settings-words-review-font-size">Words Review Font Size</label>
+                    <label htmlFor="settings-toggle-view-font-size">ToggleView FontSize</label>
                     <input
-                      id="settings-words-review-font-size"
+                      id="settings-toggle-view-font-size"
                       min="10"
                       max="32"
                       step="1"
                       type="number"
-                      value={draft.general.wordsReviewFontSize}
+                      value={draft.general.toggleViewFontSize}
                       onChange={(event) => {
                         setMessage('')
                         setDraft((current) => ({
                           ...current,
                           general: {
                             ...current.general,
-                            wordsReviewFontSize: event.target.value,
+                            toggleViewFontSize: event.target.value,
                           },
                         }))
                       }}
                     />
+                    <label htmlFor="settings-occurrence-font-size">Occurrence FontSize</label>
+                    <input
+                      id="settings-occurrence-font-size"
+                      min="10"
+                      max="32"
+                      step="1"
+                      type="number"
+                      value={draft.general.occurrenceFontSize}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            occurrenceFontSize: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                    <label htmlFor="settings-occurrence-min-font-size">Occurrence Min FontSize</label>
+                    <input
+                      id="settings-occurrence-min-font-size"
+                      min="8"
+                      max="32"
+                      step="1"
+                      type="number"
+                      value={draft.general.occurrenceMinFontSize}
+                      onChange={(event) => {
+                        setMessage('')
+                        setDraft((current) => ({
+                          ...current,
+                          general: {
+                            ...current.general,
+                            occurrenceMinFontSize: event.target.value,
+                          },
+                        }))
+                      }}
+                    />
+                    <label htmlFor="settings-review-to-mdict">Review To MDict</label>
+                    <label className="settings-checkbox-row" htmlFor="settings-review-to-mdict">
+                      <input
+                        checked={draft.general.reviewToDicts?.mdict === true}
+                        id="settings-review-to-mdict"
+                        type="checkbox"
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              reviewToDicts: {
+                                ...(current.general.reviewToDicts || {}),
+                                mdict: event.target.checked,
+                              },
+                            },
+                          }))
+                        }}
+                      />
+                      <span>Enabled</span>
+                    </label>
+                    <label htmlFor="settings-review-to-webster">Review To Webster</label>
+                    <label className="settings-checkbox-row" htmlFor="settings-review-to-webster">
+                      <input
+                        checked={draft.general.reviewToDicts?.webster === true}
+                        id="settings-review-to-webster"
+                        type="checkbox"
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              reviewToDicts: {
+                                ...(current.general.reviewToDicts || {}),
+                                webster: event.target.checked,
+                              },
+                            },
+                          }))
+                        }}
+                      />
+                      <span>Enabled</span>
+                    </label>
                     <label htmlFor="settings-webster-spell-out">Webster Spell Out</label>
                     <label className="settings-checkbox-row" htmlFor="settings-webster-spell-out">
                       <input

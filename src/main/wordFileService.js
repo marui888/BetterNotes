@@ -75,21 +75,21 @@ function decodeTextBuffer(buffer, filePath = '') {
 
 function splitWordLine(line, index) {
   const parts = String(line ?? '').split('|')
-  const markers = parts.slice(1, 7)
-  while (markers.length < 6) markers.push('')
+  const markers = parts.length > 1 ? parts.slice(1, -1).slice(0, 5) : []
+  while (markers.length < 5) markers.push('')
 
   return {
     id: `line-${index}`,
     word: parts[0] || '',
     markers,
-    annotation: parts.length > 7 ? parts.slice(7).join('|') : '',
+    annotation: parts.length > 1 ? parts.at(-1) : '',
     raw: line,
   }
 }
 
 function joinWordRecord(record) {
-  const markers = Array.isArray(record?.markers) ? record.markers.slice(0, 6) : []
-  while (markers.length < 6) markers.push('')
+  const markers = Array.isArray(record?.markers) ? record.markers.slice(0, 5) : []
+  while (markers.length < 5) markers.push('')
 
   return [
     record?.word || '',
@@ -127,7 +127,7 @@ export async function listTxtFilesInFolder(folderPath, options = {}) {
     .sort((a, b) => a.fileName.localeCompare(b.fileName, 'en', { sensitivity: 'base' }))
 }
 
-export async function readWordFile(filePath) {
+export async function readWordFile(filePath, options = {}) {
   const normalizedPath = normalizeFilePath(filePath)
   if (!isTxtFile(normalizedPath) || !(await fileExists(normalizedPath))) {
     return { ok: false, reason: 'invalid-text-file' }
@@ -153,7 +153,9 @@ export async function readWordFile(filePath) {
     encodingConfidence: decoded.confidence,
     encodingSource: decoded.source,
     records: lines.map(splitWordLine),
-    txtFiles: await listTxtFilesInFolder(parsedPath.dir, { filterMode }),
+    txtFiles: options.includeTxtFiles === false
+      ? []
+      : await listTxtFilesInFolder(parsedPath.dir, { filterMode }),
   }
 }
 

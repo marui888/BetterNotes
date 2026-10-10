@@ -8,6 +8,75 @@ import { convertSrtToVtt } from './main/srtToVtt';
 import { captureWebsterOutput, doubleClickWebsterClientPoint } from './main/websterCapture';
 import { appendTextLine, appendUtf8TextLine, convertFolderTxtToUtf8, listTxtFilesInFolder, readWordFile, saveWordFile } from './main/wordFileService';
 import { cycleMDictDictionary, findDictionaryWindows, getMDictInputText, lookupMDict, lookupMDictRestore, lookupWebster, lookupWebsterAndRead } from './main/dictionaryAhkBridge';
+import {
+  closeWordLibraryDatabase,
+  getWordLibraryDatabasePath,
+  getWordLibraryDatabaseStatus,
+  initializeWordLibraryDatabase,
+} from './main/wordLibraryDatabase';
+import {
+  addWordLibrarySource,
+  applyStudyReviewAction,
+  applyWordLibrarySourceSelection,
+  createStableWordFilter,
+  createStudyPlan,
+  deleteStudyPlan,
+  deleteWordLibrarySource,
+  endStudySession,
+  getActiveStudySession,
+  getStudyPlanItemOccurrences,
+  getWordLibrarySource,
+  listWordLibraryFilterOptions,
+  listWordLibrarySources,
+  listStudyPlanItems,
+  listStudyPlans,
+  listStudyReviewEvents,
+  listStudyReviewHistory,
+  queryWordLibrary,
+  reindexWordLibraryFile,
+  previewStableWordFilter,
+  refreshStudyPlanScope,
+  reviewStudyPlanTo,
+  scanWordLibrarySource,
+  startStudySession,
+} from './main/wordLibraryService';
+import {
+  readWordFilterFile,
+  saveWordFilterFile,
+  WORD_FILTER_FILE_SUFFIX,
+} from './main/wordFilterFileService';
+import {
+  addMixedNoteSource,
+  applyMixedNoteSourceSelection,
+  applyMixedReviewAction,
+  createMixedStudyPlan,
+  createStableMixedNoteFilter,
+  deleteMixedNoteSource,
+  deleteMixedStudyPlan,
+  endMixedStudySession,
+  getActiveMixedStudySession,
+  getMixedNoteSource,
+  getMixedPlanItemOccurrences,
+  initializeMixedNoteSchema,
+  listMixedNoteFilterOptions,
+  listMixedNoteSources,
+  listMixedStudyPlanItems,
+  listMixedStudyPlans,
+  listMixedStudyReviewEvents,
+  listMixedStudyReviewHistory,
+  previewStableMixedNoteFilter,
+  queryMixedNotes,
+  refreshMixedStudyPlanScope,
+  reviewMixedStudyPlanTo,
+  scanMixedNoteSource,
+  startMixedStudySession,
+  validateMixedNoteSourceSelection,
+} from './main/mixedNoteLibraryService';
+import {
+  MIXED_NOTE_FILTER_SUFFIX,
+  readMixedNoteFilterFile,
+  saveMixedNoteFilterFile,
+} from './main/mixedNoteFilterFileService';
 
 const startupStartMs = Date.now()
 
@@ -60,6 +129,7 @@ const DEFAULT_APP_SETTINGS = {
     shortcutHintFontSize: 12,
     monthlyNotesFolder: '',
     specialTextFolder: '',
+    autoHotkeyPath: '',
     keywordFolder: '',
     defaultKeywordFile: '',
     extraSubtitleFolder: '',
@@ -72,15 +142,23 @@ const DEFAULT_APP_SETTINGS = {
     videoNotesPoolFontSize: 11,
     locateNotePastLimitSec: 100,
     locateNoteFutureLimitSec: 10,
-    playAllSubtitleSuffix: '.en.vtt',
+    subtitleLanguagePriority: 'en-orig;en',
     subtitleConvertPromptTimeoutSec: 5,
     imageAutoLoadDelayMs: 500,
+    imageViewCount: 1,
+    imageSuffixOptions: ['删除'],
     locallyMoveFolder: 'tempPictures',
     picModeWideMoveFolder: '',
     textAutoPlayAll: false,
     textAutoLookupDelayMs: 1500,
-    wordsReviewFontSize: 13,
+    toggleViewFontSize: 13,
+    occurrenceFontSize: 14,
+    occurrenceMinFontSize: 10,
     websterSpellOut: true,
+    reviewToDicts: {
+      mdict: false,
+      webster: false,
+    },
     textAutoPlayDicts: {
       mdict: true,
       webster: true,
@@ -226,6 +304,49 @@ function normalizeShortcutBuckets(value) {
   }
 }
 
+function normalizeSubtitleLanguagePriority(value) {
+  const source = typeof value === 'string'
+    ? value
+    : DEFAULT_APP_SETTINGS.general.subtitleLanguagePriority
+  const seen = new Set()
+  return source
+    .split(/[;；]/)
+    .map((entry) => {
+      let language = entry.trim().toLowerCase()
+      language = language.replace(/\.(?:vtt|srt)$/i, '').replace(/^\./, '')
+      return language || (entry.trim() ? 'default' : '')
+    })
+    .filter((language) => {
+      if (!language || seen.has(language)) return false
+      seen.add(language)
+      return true
+    })
+    .join(';')
+}
+
+function normalizeImageSuffixOptions(value) {
+  const source = Array.isArray(value)
+    ? value
+    : DEFAULT_APP_SETTINGS.general.imageSuffixOptions
+  const seen = new Set()
+
+  return source.reduce((options, entry) => {
+    const suffix = typeof entry === 'string' ? entry.trim() : ''
+    const comparable = suffix.replace(/^_+/, '').toLocaleLowerCase()
+    if (
+      !suffix
+      || !comparable
+      || suffix === '其它'
+      || '<>:"/\\|?*'.split('').some((character) => suffix.includes(character))
+      || seen.has(comparable)
+    ) return options
+
+    seen.add(comparable)
+    options.push(suffix)
+    return options
+  }, [])
+}
+
 function normalizeAppSettings(value) {
   const defaultMode = ['video', 'image', 'text', 'search'].includes(value?.general?.defaultMode)
     ? value.general.defaultMode
@@ -247,6 +368,9 @@ function normalizeAppSettings(value) {
   const specialTextFolder = typeof value?.general?.specialTextFolder === 'string'
     ? normalizeFilePath(value.general.specialTextFolder)
     : DEFAULT_APP_SETTINGS.general.specialTextFolder
+  const autoHotkeyPath = typeof value?.general?.autoHotkeyPath === 'string'
+    ? normalizeFilePath(value.general.autoHotkeyPath)
+    : DEFAULT_APP_SETTINGS.general.autoHotkeyPath
   const keywordFolder = typeof value?.general?.keywordFolder === 'string'
     ? normalizeFilePath(value.general.keywordFolder)
     : DEFAULT_APP_SETTINGS.general.keywordFolder
@@ -256,9 +380,11 @@ function normalizeAppSettings(value) {
   const extraSubtitleFolder = typeof value?.general?.extraSubtitleFolder === 'string'
     ? normalizeFilePath(value.general.extraSubtitleFolder)
     : DEFAULT_APP_SETTINGS.general.extraSubtitleFolder
-  const playAllSubtitleSuffix = typeof value?.general?.playAllSubtitleSuffix === 'string'
-    ? value.general.playAllSubtitleSuffix
-    : DEFAULT_APP_SETTINGS.general.playAllSubtitleSuffix
+  const subtitleLanguagePriority = normalizeSubtitleLanguagePriority(
+    typeof value?.general?.subtitleLanguagePriority === 'string'
+      ? value.general.subtitleLanguagePriority
+      : value?.general?.playAllSubtitleSuffix
+  )
   const subtitleDisplayMode = value?.general?.subtitleDisplayMode === 'rolling'
     ? 'rolling'
     : DEFAULT_APP_SETTINGS.general.subtitleDisplayMode
@@ -308,6 +434,11 @@ function normalizeAppSettings(value) {
   const imageAutoLoadDelayMs = Number.isFinite(rawImageAutoLoadDelayMs)
     ? Math.max(100, Math.min(10000, Math.round(rawImageAutoLoadDelayMs)))
     : DEFAULT_APP_SETTINGS.general.imageAutoLoadDelayMs
+  const rawImageViewCount = Number(value?.general?.imageViewCount)
+  const imageViewCount = Number.isFinite(rawImageViewCount)
+    ? Math.max(1, Math.min(3, Math.round(rawImageViewCount)))
+    : DEFAULT_APP_SETTINGS.general.imageViewCount
+  const imageSuffixOptions = normalizeImageSuffixOptions(value?.general?.imageSuffixOptions)
   const rawLocallyMoveFolder = typeof value?.general?.locallyMoveFolder === 'string'
     ? value.general.locallyMoveFolder.trim()
     : typeof value?.general?.pictureMoveFolderName === 'string'
@@ -319,10 +450,22 @@ function normalizeAppSettings(value) {
   const picModeWideMoveFolder = typeof value?.general?.picModeWideMoveFolder === 'string'
     ? normalizeFilePath(value.general.picModeWideMoveFolder)
     : ''
-  const rawWordsReviewFontSize = Number(value?.general?.wordsReviewFontSize)
-  const wordsReviewFontSize = Number.isFinite(rawWordsReviewFontSize)
-    ? Math.max(10, Math.min(32, Math.round(rawWordsReviewFontSize)))
-    : DEFAULT_APP_SETTINGS.general.wordsReviewFontSize
+  const rawToggleViewFontSize = Number(value?.general?.toggleViewFontSize)
+  const toggleViewFontSize = Number.isFinite(rawToggleViewFontSize)
+    ? Math.max(10, Math.min(32, Math.round(rawToggleViewFontSize)))
+    : DEFAULT_APP_SETTINGS.general.toggleViewFontSize
+  const rawOccurrenceFontSize = Number(value?.general?.occurrenceFontSize)
+  const occurrenceFontSize = Number.isFinite(rawOccurrenceFontSize)
+    ? Math.max(10, Math.min(32, Math.round(rawOccurrenceFontSize)))
+    : DEFAULT_APP_SETTINGS.general.occurrenceFontSize
+  const rawOccurrenceMinFontSize = Number(value?.general?.occurrenceMinFontSize)
+  const occurrenceMinFontSize = Math.min(
+    occurrenceFontSize,
+    Number.isFinite(rawOccurrenceMinFontSize)
+      ? Math.max(8, Math.min(32, Math.round(rawOccurrenceMinFontSize)))
+      : DEFAULT_APP_SETTINGS.general.occurrenceMinFontSize
+  )
+  const reviewToDicts = value?.general?.reviewToDicts
   const textAutoPlayDicts = value?.general?.textAutoPlayDicts
 
   return {
@@ -333,6 +476,7 @@ function normalizeAppSettings(value) {
       shortcutHintFontSize,
       monthlyNotesFolder,
       specialTextFolder,
+      autoHotkeyPath,
       keywordFolder,
       defaultKeywordFile,
       extraSubtitleFolder,
@@ -345,15 +489,23 @@ function normalizeAppSettings(value) {
       videoNotesPoolFontSize,
       locateNotePastLimitSec,
       locateNoteFutureLimitSec,
-      playAllSubtitleSuffix,
+      subtitleLanguagePriority,
       subtitleConvertPromptTimeoutSec,
       imageAutoLoadDelayMs,
+      imageViewCount,
+      imageSuffixOptions,
       locallyMoveFolder,
       picModeWideMoveFolder,
       textAutoPlayAll: value?.general?.textAutoPlayAll === true,
       textAutoLookupDelayMs,
-      wordsReviewFontSize,
+      toggleViewFontSize,
+      occurrenceFontSize,
+      occurrenceMinFontSize,
       websterSpellOut: value?.general?.websterSpellOut !== false,
+      reviewToDicts: {
+        mdict: reviewToDicts?.mdict === true,
+        webster: reviewToDicts?.webster === true,
+      },
       textAutoPlayDicts: {
         mdict: textAutoPlayDicts?.mdict !== false,
         webster: textAutoPlayDicts?.webster !== false,
@@ -1152,6 +1304,7 @@ async function listImageFilesInFolder(folderPath) {
       return {
         fileName: entry.name,
         filePath,
+        fileUrl: pathToFileURL(filePath).toString(),
         type: path.extname(entry.name).slice(1).toUpperCase(),
         modifiedTime: stat.mtimeMs,
         createdTime: stat.birthtimeMs,
@@ -1252,6 +1405,7 @@ async function buildVideoFileInfo(filePath, options = {}) {
   const fileName = path.basename(filePath)
   const notePath = getVideoNotePath(filePath)
   const notes = options.loadNotes === false ? [] : await readJsonFile(notePath, [])
+  const noteStat = options.loadNotes === false ? null : await fs.stat(notePath).catch(() => null)
   const mp4Files = options.loadDirectoryMp4Files === false
     ? []
     : await listMp4FilesInFolder(folderPath)
@@ -1264,6 +1418,7 @@ async function buildVideoFileInfo(filePath, options = {}) {
     folderPath,
     fileUrl: pathToFileURL(filePath).toString(),
     notePath,
+    noteModifiedTime: noteStat?.isFile() ? noteStat.mtimeMs : 0,
     notes: Array.isArray(notes) ? notes : [],
     mp4Files,
     subtitleLanguages: subtitleInfo.subtitleLanguages,
@@ -1336,6 +1491,13 @@ async function saveLegacyVideoNoteContent(payload = {}) {
     return { ok: false, reason: 'invalid-note-item', sourceJsonPath, noteIndex: targetIndex }
   }
 
+  if (
+    Object.prototype.hasOwnProperty.call(payload, 'matchContent')
+    && normalized?.content !== String(payload.matchContent ?? '')
+  ) {
+    return { ok: false, reason: 'note-content-conflict', sourceJsonPath, noteIndex: targetIndex }
+  }
+
   if ('Content' in target || !('content' in target)) {
     target.Content = content
   } else {
@@ -1359,10 +1521,12 @@ async function saveLegacyVideoNoteContent(payload = {}) {
   }
 
   await fs.writeFile(sourceJsonPath, JSON.stringify(rawNotes, null, 2), 'utf8')
+  const noteStat = await fs.stat(sourceJsonPath)
 
   return {
     ok: true,
     sourceJsonPath,
+    jsonModifiedTime: noteStat.mtimeMs,
     noteIndex: targetIndex,
     note: normalizeLegacyVideoNote(target),
   }
@@ -1878,21 +2042,18 @@ function dockWindowForTextMode(options = {}) {
     return { ok: false, reason: 'window-not-ready' }
   }
 
-  if (!windowLayoutBeforeTextMode) {
-    const bounds = mainWindow.getBounds()
-    const display = screen.getDisplayMatching(bounds)
+  const currentBounds = mainWindow.getBounds()
+  const currentDisplay = screen.getDisplayMatching(currentBounds)
 
+  if (!windowLayoutBeforeTextMode) {
     windowLayoutBeforeTextMode = {
-      bounds,
-      displayId: display.id,
+      bounds: currentBounds,
+      displayId: currentDisplay.id,
       wasMaximized: mainWindow.isMaximized(),
     }
   }
 
-  const dockDisplay = screen.getAllDisplays().find(
-    (display) => display.id === windowLayoutBeforeTextMode.displayId
-  ) || screen.getDisplayMatching(windowLayoutBeforeTextMode.bounds)
-  const workArea = dockDisplay.workArea
+  const workArea = currentDisplay.workArea
   const scale = Number.isFinite(Number(options?.scale)) ? Number(options.scale) : 1
   const width = Math.max(320, Math.min(workArea.width, Math.round((workArea.width / 4) * scale)))
 
@@ -1959,6 +2120,31 @@ function restoreWindowAfterTextMode() {
 }
 
 function registerIpcHandlers() {
+  const withConfiguredAutoHotkey = async (operation) => {
+    const settings = await readAppSettings()
+    return operation(settings.general.autoHotkeyPath)
+  }
+
+  const refreshWordLibraryFileAfterWrite = async (filePath) => {
+    try {
+      const result = await reindexWordLibraryFile(filePath)
+      for (const warning of result.warnings || []) {
+        appendDebugInfo(
+          `[Word Library Warning] Empty word skipped: ${warning.filePath}, line ${warning.lineNumber}`
+        )
+      }
+      if (result.indexed) {
+        appendDebugInfo(
+          `[Word Library] TXT index refreshed: ${filePath}; occurrences ${result.occurrenceCount}`
+        )
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] TXT was saved but its index refresh failed: ${filePath}\n${error?.stack || error}`)
+      return { ok: false, reason: 'word-library-file-reindex-failed' }
+    }
+  }
+
   ipcMain.handle('video:openFile', async (_event, options = {}) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
@@ -1970,6 +2156,31 @@ function registerIpcHandlers() {
     }
 
     return buildVideoFileInfo(result.filePaths[0], options)
+  })
+
+  ipcMain.handle('video:importNotesText', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: 'Text Files', extensions: ['txt'] }],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, canceled: true }
+    }
+
+    try {
+      const textResult = await readWordFile(result.filePaths[0])
+      if (!textResult?.ok) return textResult
+      return {
+        ok: true,
+        filePath: textResult.filePath,
+        fileName: textResult.fileName,
+        encoding: textResult.encoding,
+        text: (textResult.records || []).map((record) => record.raw || '').join('\n'),
+      }
+    } catch (error) {
+      return { ok: false, reason: error.code || error.message || 'read-text-failed' }
+    }
   })
 
   ipcMain.handle('video:getFileInfo', async (_event, filePath, options = {}) => buildVideoFileInfo(filePath, options))
@@ -1984,10 +2195,13 @@ function registerIpcHandlers() {
 
   ipcMain.handle('video:readNotes', async (_event, filePath) => {
     const notePath = getVideoNotePath(filePath)
+    const notes = await readJsonFile(notePath, [])
+    const noteStat = await fs.stat(notePath).catch(() => null)
     return {
       ok: true,
       notePath,
-      notes: await readJsonFile(notePath, []),
+      noteModifiedTime: noteStat?.isFile() ? noteStat.mtimeMs : 0,
+      notes,
     }
   })
 
@@ -2069,8 +2283,19 @@ function registerIpcHandlers() {
     }
   })
 
-  ipcMain.handle('video:saveNotes', async (_event, filePath, notes) => {
+  ipcMain.handle('video:saveNotes', async (_event, filePath, notes, expectedModifiedTime) => {
     const notePath = getVideoNotePath(filePath)
+    const noteStatBeforeSave = await fs.stat(notePath).catch(() => null)
+    const currentModifiedTime = noteStatBeforeSave?.isFile() ? noteStatBeforeSave.mtimeMs : 0
+    const expectedTime = Number(expectedModifiedTime)
+    if (Number.isFinite(expectedTime) && Math.abs(currentModifiedTime - expectedTime) > 0.5) {
+      return {
+        ok: false,
+        reason: 'note-file-conflict',
+        notePath,
+        currentModifiedTime,
+      }
+    }
     await fs.writeFile(notePath, JSON.stringify(notes || [], null, 2), 'utf8')
     const noteStat = await fs.stat(notePath)
     return { ok: true, notePath, jsonModifiedTime: noteStat.mtimeMs }
@@ -2210,11 +2435,28 @@ function registerIpcHandlers() {
     txtFiles: await listTxtFilesInFolder(folderPath),
   }))
 
-  ipcMain.handle('text:saveFile', async (_event, filePath, records) => saveWordFile(filePath, records))
+  ipcMain.handle('text:saveFile', async (_event, filePath, records) => {
+    const result = await saveWordFile(filePath, records)
+    if (!result?.ok) return result
+    return { ...result, libraryIndex: await refreshWordLibraryFileAfterWrite(result.filePath) }
+  })
 
-  ipcMain.handle('text:convertFolderTxtToUtf8', async (_event, folderPath) => convertFolderTxtToUtf8(folderPath))
+  ipcMain.handle('text:convertFolderTxtToUtf8', async (_event, folderPath) => {
+    const result = await convertFolderTxtToUtf8(folderPath)
+    if (!result?.ok) return result
+    const convertedFiles = (result.details || [])
+      .filter((item) => item.status === 'converted' && item.targetFileName)
+    for (const item of convertedFiles) {
+      await refreshWordLibraryFileAfterWrite(path.join(result.folderPath, item.targetFileName))
+    }
+    return result
+  })
 
-  ipcMain.handle('text:appendLine', async (_event, filePath, line) => appendTextLine(filePath, line))
+  ipcMain.handle('text:appendLine', async (_event, filePath, line) => {
+    const result = await appendTextLine(filePath, line)
+    if (!result?.ok) return result
+    return { ...result, libraryIndex: await refreshWordLibraryFileAfterWrite(result.filePath) }
+  })
 
   ipcMain.handle('text:appendSpecialTextLine', async (_event, filePath, line) => {
     const normalizedPath = normalizeFilePath(filePath)
@@ -2223,9 +2465,11 @@ function registerIpcHandlers() {
 
     const result = await appendUtf8TextLine(targetPath, line)
     if (!result?.ok) return result
+    const libraryIndex = await refreshWordLibraryFileAfterWrite(result.filePath)
 
     return {
       ...result,
+      libraryIndex,
       originalPath: normalizedPath,
       renamed: targetPath !== normalizedPath,
       txtFiles: await listTxtFilesInFolder(path.dirname(targetPath)),
@@ -2238,7 +2482,13 @@ function registerIpcHandlers() {
     if (!targetPath) return { ok: false, reason: 'monthly-notes-folder-not-set' }
 
     const result = await appendUtf8TextLine(targetPath, payload?.line || '')
-    return { ...result, targetPath, kind }
+    if (!result?.ok) return { ...result, targetPath, kind }
+    return {
+      ...result,
+      targetPath,
+      kind,
+      libraryIndex: await refreshWordLibraryFileAfterWrite(result.filePath),
+    }
   })
 
   ipcMain.handle('text:selectFolder', async () => selectFolderDialog())
@@ -2254,21 +2504,43 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('text:readClipboardText', async () => clipboard.readText() || '')
-  ipcMain.handle('text:getMDictInputText', async () => getMDictInputText())
-  ipcMain.handle('text:lookupMDict', async (_event, word) => lookupMDict(word))
-  ipcMain.handle('text:lookupMDictRestore', async (_event, word) => lookupMDictRestore(word))
-  ipcMain.handle('text:cycleMDictDictionary', async () => cycleMDictDictionary())
-  ipcMain.handle('text:lookupWebster', async (_event, word) => lookupWebster(word))
-  ipcMain.handle('text:lookupWebsterAndRead', async (_event, word) => lookupWebsterAndRead(word))
-  ipcMain.handle('text:findDictionaryWindows', async () => findDictionaryWindows())
-  ipcMain.handle('text:captureWebsterOutput', async () => captureWebsterOutput())
+  ipcMain.handle('text:writeClipboardText', async (_event, text) => {
+    clipboard.writeText(String(text ?? ''))
+    return { ok: true }
+  })
+  ipcMain.handle('text:getMDictInputText', async () => (
+    withConfiguredAutoHotkey((autoHotkeyPath) => getMDictInputText(autoHotkeyPath))
+  ))
+  ipcMain.handle('text:lookupMDict', async (_event, word) => (
+    withConfiguredAutoHotkey((autoHotkeyPath) => lookupMDict(word, autoHotkeyPath))
+  ))
+  ipcMain.handle('text:lookupMDictRestore', async (_event, word) => (
+    withConfiguredAutoHotkey((autoHotkeyPath) => lookupMDictRestore(word, autoHotkeyPath))
+  ))
+  ipcMain.handle('text:cycleMDictDictionary', async () => (
+    withConfiguredAutoHotkey((autoHotkeyPath) => cycleMDictDictionary(autoHotkeyPath))
+  ))
+  ipcMain.handle('text:lookupWebster', async (_event, word) => (
+    withConfiguredAutoHotkey((autoHotkeyPath) => lookupWebster(word, autoHotkeyPath))
+  ))
+  ipcMain.handle('text:lookupWebsterAndRead', async (_event, word) => (
+    withConfiguredAutoHotkey((autoHotkeyPath) => lookupWebsterAndRead(word, autoHotkeyPath))
+  ))
+  ipcMain.handle('text:findDictionaryWindows', async () => (
+    withConfiguredAutoHotkey((autoHotkeyPath) => findDictionaryWindows(autoHotkeyPath))
+  ))
+  ipcMain.handle('text:captureWebsterOutput', async () => (
+    withConfiguredAutoHotkey((autoHotkeyPath) => captureWebsterOutput(autoHotkeyPath))
+  ))
   ipcMain.handle('text:detectWebsterBlueText', async () => {
-    const captureInfo = await captureWebsterOutput()
+    const captureInfo = await withConfiguredAutoHotkey((autoHotkeyPath) => captureWebsterOutput(autoHotkeyPath))
     if (!captureInfo?.ok) return captureInfo
     return detectWebsterBlueTextAsync(captureInfo)
   })
   ipcMain.handle('text:clickWebsterBlueText', async (_event, areaIndex = 1) => {
-    const captureInfo = await captureWebsterOutput()
+    const settings = await readAppSettings()
+    const autoHotkeyPath = settings.general.autoHotkeyPath
+    const captureInfo = await captureWebsterOutput(autoHotkeyPath)
     if (!captureInfo?.ok) return captureInfo
 
     const detection = await detectWebsterBlueTextAsync(captureInfo)
@@ -2283,7 +2555,7 @@ function registerIpcHandlers() {
       return { ok: false, reason: 'webster-blue-area-not-found', areaIndex: index, detection }
     }
 
-    const clickResult = await doubleClickWebsterClientPoint(area.clientX, area.clientY)
+    const clickResult = await doubleClickWebsterClientPoint(area.clientX, area.clientY, autoHotkeyPath)
     return {
       ...clickResult,
       areaIndex: index,
@@ -2291,6 +2563,576 @@ function registerIpcHandlers() {
       detection,
     }
   })
+
+  ipcMain.handle('wordLibrary:getStatus', async () => {
+    try {
+      return getWordLibraryDatabaseStatus()
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Status check failed: ${error?.message || error}`)
+      return { ok: false, ready: false, reason: 'word-library-status-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:listSources', async () => {
+    try {
+      return { ok: true, sources: listWordLibrarySources() }
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not list Sources: ${error?.stack || error}`)
+      return { ok: false, reason: 'list-sources-failed', sources: [] }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:getFilterOptions', async () => {
+    try {
+      return { ok: true, ...listWordLibraryFilterOptions() }
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not load filter options: ${error?.stack || error}`)
+      return { ok: false, reason: 'load-filter-options-failed', sources: [], files: [], tags: [] }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:query', async (_event, filters, options) => {
+    try {
+      return { ok: true, ...queryWordLibrary(filters, options) }
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Library query failed: ${error?.stack || error}`)
+      return { ok: false, reason: 'word-library-query-failed', words: [], total: 0 }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:saveFilterFile', async (_event, filters) => {
+    try {
+      const stableFilter = createStableWordFilter(filters)
+      if (!stableFilter.ok) {
+        appendDebugInfo(`[Word Library Error] Filter was not saved: ${stableFilter.reason}`)
+        return stableFilter
+      }
+      const selection = await dialog.showSaveDialog(mainWindow, {
+        title: 'Save Word Filter',
+        defaultPath: `word-filter${WORD_FILTER_FILE_SUFFIX}`,
+        filters: [{ name: 'Better Notes Word Filter', extensions: ['json'] }],
+      })
+      if (selection.canceled || !selection.filePath) return { ok: false, canceled: true }
+
+      const result = await saveWordFilterFile(selection.filePath, stableFilter.conditions)
+      if (result.ok) {
+        appendDebugInfo(`[Word Library] Filter saved: ${result.filePath}`)
+      } else {
+        appendDebugInfo(`[Word Library Error] Filter was not saved: ${result.reason}`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not save Filter file: ${error?.stack || error}`)
+      return { ok: false, reason: 'save-word-filter-file-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:loadFilterFile', async () => {
+    const selection = await dialog.showOpenDialog(mainWindow, {
+      title: 'Load Word Filter',
+      properties: ['openFile'],
+      filters: [{ name: 'Better Notes Word Filter', extensions: ['json'] }],
+    })
+    if (selection.canceled || selection.filePaths.length === 0) return { ok: false, canceled: true }
+
+    try {
+      const loaded = await readWordFilterFile(selection.filePaths[0])
+      if (!loaded.ok) {
+        appendDebugInfo(
+          `[Word Library Error] Filter file is invalid: ${loaded.filePath} (${loaded.reason})`
+        )
+        return loaded
+      }
+      const preview = previewStableWordFilter(loaded.definition)
+      if (!preview.ok) {
+        appendDebugInfo(
+          `[Word Library Error] Filter references could not be resolved: ${loaded.filePath} (${preview.reason})`
+        )
+        return { ...preview, filePath: loaded.filePath, fileName: loaded.fileName }
+      }
+      appendDebugInfo(
+        `[Word Library] Filter loaded: ${loaded.filePath}; ${preview.matchedCount} matching words.`
+      )
+      return {
+        ok: true,
+        filePath: loaded.filePath,
+        fileName: loaded.fileName,
+        definition: loaded.definition,
+        filters: preview.filters,
+        matchedCount: preview.matchedCount,
+      }
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not load Filter file: ${error?.stack || error}`)
+      return { ok: false, reason: 'load-word-filter-file-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:listStudyPlans', async () => {
+    try {
+      return { ok: true, plans: listStudyPlans() }
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not list Study Plans: ${error?.stack || error}`)
+      return { ok: false, reason: 'list-study-plans-failed', plans: [] }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:deleteStudyPlan', async (_event, planId) => {
+    try {
+      const plan = listStudyPlans().find((item) => item.id === Number(planId))
+      if (!plan) return { ok: false, reason: 'study-plan-not-found' }
+      const hasActiveSession = Boolean(getActiveStudySession().session?.planId === plan.id)
+      const confirmation = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['Delete', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+        title: 'Delete Study Plan',
+        message: `Delete Study Plan "${plan.name}"?`,
+        detail: `${hasActiveSession ? 'Its active Review session will also be deleted.\n\n' : ''}`
+          + 'The plan, plan items, Review sessions, and Review history will be permanently deleted. '
+          + 'Filter files, Sources, TXT files, and the word index will not be changed.',
+      })
+      if (confirmation.response !== 0) return { ok: false, canceled: true }
+
+      const result = deleteStudyPlan(plan.id)
+      if (result.ok) {
+        appendDebugInfo(`[Word Library] Study Plan deleted: ${plan.name}.`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not delete Study Plan: ${error?.stack || error}`)
+      return { ok: false, reason: 'delete-study-plan-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:createStudyPlan', async (_event, payload) => {
+    try {
+      const loaded = await readWordFilterFile(payload?.filterFilePath)
+      if (!loaded.ok) {
+        appendDebugInfo(
+          `[Word Library Error] Study Plan Filter could not be loaded: ${loaded.filePath} (${loaded.reason})`
+        )
+        return loaded
+      }
+      const result = createStudyPlan(payload?.name, loaded.definition, loaded.filePath)
+      if (result.ok) {
+        appendDebugInfo(
+          `[Word Library] Study Plan created: ${result.plan.name}; ${result.addedCount} words; `
+          + `${result.occurrenceSnapshotCount || 0} occurrence snapshots.`
+        )
+      } else {
+        appendDebugInfo(`[Word Library Error] Study Plan was not created: ${result.reason}`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not create Study Plan: ${error?.stack || error}`)
+      return { ok: false, reason: 'create-study-plan-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:refreshStudyPlanScope', async (_event, planId) => {
+    try {
+      const result = refreshStudyPlanScope(planId)
+      if (result.ok) {
+        appendDebugInfo(
+          `[Word Library] Study Plan scope refreshed: ${result.plan.name}; `
+          + `${result.addedCount} new of ${result.matchedCount} matched words; `
+          + `${result.occurrenceSnapshotCount || 0} occurrence snapshots.`
+        )
+      } else {
+        appendDebugInfo(`[Word Library Error] Study Plan scope was not refreshed: ${result.reason}`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not refresh Study Plan scope: ${error?.stack || error}`)
+      return { ok: false, reason: 'refresh-study-plan-scope-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:listStudyPlanItems', async (_event, planId, options) => {
+    try {
+      return listStudyPlanItems(planId, options)
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not load Study Plan items: ${error?.stack || error}`)
+      return { ok: false, reason: 'list-study-plan-items-failed', items: [], total: 0 }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:getStudyPlanItemOccurrences', async (_event, planId, planItemId) => {
+    try {
+      const result = getStudyPlanItemOccurrences(planId, planItemId)
+      if (!result.ok) {
+        appendDebugInfo(`[Word Library Error] Plan occurrence snapshots are unavailable: ${result.reason}`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not load Plan occurrence snapshots: ${error?.stack || error}`)
+      return { ok: false, reason: 'load-plan-occurrence-snapshots-failed', occurrences: [] }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:getActiveStudySession', async () => {
+    try {
+      const result = getActiveStudySession()
+      if (result.recovered) {
+        appendDebugInfo(`[Word Library Warning] Study Session recovered safely: ${result.reason}`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not load active Study Session: ${error?.stack || error}`)
+      return { ok: false, reason: 'get-active-study-session-failed', session: null }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:startStudySession', async (_event, planId) => {
+    try {
+      const result = startStudySession(planId)
+      if (result.ok) {
+        appendDebugInfo(
+          result.resumed
+            ? `[Word Library] Study Session continued: ${result.session.planName}; `
+              + `${result.session.remainingCount} words remaining.`
+            : `[Word Library] Study Session started: ${result.session.planName}; `
+              + `${result.session.queueLength} words.`
+        )
+      } else {
+        appendDebugInfo(`[Word Library] Study Session was not started: ${result.reason}`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not start Study Session: ${error?.stack || error}`)
+      return { ok: false, reason: 'start-study-session-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:applyStudyReviewAction', async (_event, sessionId, action) => {
+    try {
+      const result = applyStudyReviewAction(sessionId, action)
+      if (result.ok) {
+        appendDebugInfo(
+          `[Word Library] Review action: ${result.action || action}; `
+          + `session ${sessionId}; remaining ${result.session?.remainingCount || 0}.`
+        )
+      } else {
+        appendDebugInfo(`[Word Library Error] Review action failed: ${result.reason}`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Review action failed: ${error?.stack || error}`)
+      return { ok: false, reason: 'study-review-action-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:reviewTo', async (_event, planId, planItemId) => {
+    try {
+      const activeSession = getActiveStudySession().session
+      let replaceActiveSession = false
+      if (activeSession && activeSession.planId !== Number(planId)) {
+        const confirmation = await dialog.showMessageBox(mainWindow, {
+          type: 'question',
+          buttons: ['End and Review To', 'Cancel'],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+          title: 'Change Review Plan',
+          message: `End the active Review for "${activeSession.planName}"?`,
+          detail: 'The active session must end before Review can start from the selected word in another plan.',
+        })
+        if (confirmation.response !== 0) return { ok: false, canceled: true }
+        replaceActiveSession = true
+      }
+
+      const result = reviewStudyPlanTo(planId, planItemId, { replaceActiveSession })
+      if (result.ok) {
+        appendDebugInfo(
+          `[Word Library] Review To: ${result.session.planName}; item ${planItemId}; `
+          + `${result.session.remainingCount} words remaining.`
+        )
+      } else {
+        appendDebugInfo(`[Word Library Error] Review To failed: ${result.reason}`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Review To failed: ${error?.stack || error}`)
+      return { ok: false, reason: 'review-to-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:endStudySession', async (_event, sessionId) => {
+    try {
+      const result = endStudySession(sessionId)
+      if (result.ok) {
+        appendDebugInfo(`[Word Library] Study Session ended: ${result.session.planName}.`)
+      } else {
+        appendDebugInfo(`[Word Library Error] Study Session was not ended: ${result.reason}`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not end Study Session: ${error?.stack || error}`)
+      return { ok: false, reason: 'end-study-session-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:listStudyReviewHistory', async (_event, planId, options) => {
+    try {
+      return listStudyReviewHistory(planId, options)
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not load Review history: ${error?.stack || error}`)
+      return { ok: false, reason: 'list-study-review-history-failed', sessions: [] }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:listStudyReviewEvents', async (_event, sessionId) => {
+    try {
+      return listStudyReviewEvents(sessionId)
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not load Review events: ${error?.stack || error}`)
+      return { ok: false, reason: 'list-study-review-events-failed', events: [] }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:addSource', async () => {
+    const selection = await dialog.showOpenDialog(mainWindow, {
+      title: 'Add Word Library Source',
+      properties: ['openDirectory'],
+    })
+    if (selection.canceled || selection.filePaths.length === 0) {
+      return { ok: false, canceled: true }
+    }
+
+    try {
+      const result = await addWordLibrarySource(selection.filePaths[0])
+      if (result.ok) {
+        appendDebugInfo(
+          result.alreadyExists
+            ? `[Word Library] Source already exists: ${result.source.folderPath}`
+            : `[Word Library] Source added as a candidate: ${result.source.folderPath}`
+        )
+      } else {
+        appendDebugInfo(`[Word Library Error] Source was not added: ${result.reason}`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not add Source: ${error?.stack || error}`)
+      return { ok: false, reason: 'add-source-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:refreshSources', async (_event, enabledSourceIds) => {
+    try {
+      const selection = applyWordLibrarySourceSelection(enabledSourceIds)
+      const enabledSources = selection.sources.filter((source) => source.isEnabled)
+      const scans = []
+
+      appendDebugInfo(`[Word Library] Start / Refresh: ${enabledSources.length} effective Sources.`)
+      for (const source of enabledSources) {
+        try {
+          appendDebugInfo(`[Word Library] Source indexing started: ${source.folderPath}`)
+          const scanResult = await scanWordLibrarySource(source.id)
+          for (const warning of scanResult.warnings || []) {
+            appendDebugInfo(
+              `[Word Library Warning] Empty word skipped: ${warning.filePath}, line ${warning.lineNumber}`
+            )
+          }
+          for (const failure of scanResult.failures || []) {
+            appendDebugInfo(`[Word Library Error] TXT index failed: ${failure.filePath} (${failure.reason})`)
+          }
+          appendDebugInfo(
+            `[Word Library] Source indexed: ${source.folderPath}; `
+            + `TXT ${scanResult.fileCount}, occurrences ${scanResult.occurrenceCount}, `
+            + `warnings ${scanResult.warningCount}, failures ${scanResult.failureCount}`
+          )
+          scans.push({ sourceId: source.id, sourceName: source.displayName, ...scanResult })
+        } catch (error) {
+          appendDebugInfo(`[Word Library Error] Source indexing failed: ${source.folderPath}\n${error?.stack || error}`)
+          scans.push({
+            ok: false,
+            sourceId: source.id,
+            sourceName: source.displayName,
+            reason: 'source-index-failed',
+          })
+        }
+      }
+
+      return {
+        ok: true,
+        status: scans.some((scan) => !scan.ok || scan.failureCount > 0) ? 'partial' : 'ready',
+        enabledSourceIds: selection.enabledSourceIds,
+        scans,
+      }
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Start / Refresh failed: ${error?.stack || error}`)
+      return { ok: false, reason: 'refresh-sources-failed' }
+    }
+  })
+
+  ipcMain.handle('wordLibrary:deleteSource', async (_event, sourceId) => {
+    try {
+      const source = getWordLibrarySource(sourceId)
+      if (!source) return { ok: false, reason: 'source-not-found' }
+
+      const confirmation = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['Delete', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+        title: 'Delete Source',
+        message: `Delete Source "${source.displayName}"?`,
+        detail: `${source.folderPath}\n\nOnly its database registration and index will be deleted. The folder and TXT files will not be changed.`,
+      })
+      if (confirmation.response !== 0) return { ok: false, canceled: true }
+
+      const result = deleteWordLibrarySource(sourceId)
+      if (result.ok) {
+        appendDebugInfo(`[Word Library] Source deleted from database: ${source.folderPath}`)
+      }
+      return result
+    } catch (error) {
+      appendDebugInfo(`[Word Library Error] Could not delete Source: ${error?.stack || error}`)
+      return { ok: false, reason: 'delete-source-failed' }
+    }
+  })
+
+  ipcMain.handle('mixedNotes:listSources', async () => ({ ok: true, sources: listMixedNoteSources() }))
+  ipcMain.handle('mixedNotes:getFilterOptions', async () => ({ ok: true, ...listMixedNoteFilterOptions() }))
+  ipcMain.handle('mixedNotes:query', async (_event, filters, options) => ({
+    ok: true, ...queryMixedNotes(filters, options),
+  }))
+  ipcMain.handle('mixedNotes:addSource', async () => {
+    const selection = await dialog.showOpenDialog(mainWindow, {
+      title: 'Add Mixed Notes Source', properties: ['openDirectory'],
+    })
+    if (selection.canceled || !selection.filePaths[0]) return { ok: false, canceled: true }
+    const result = await addMixedNoteSource(selection.filePaths[0])
+    appendDebugInfo(`[Mixed Notes] ${result.alreadyExists ? 'Source already exists' : 'Candidate Source added'}: ${selection.filePaths[0]}`)
+    return result
+  })
+  ipcMain.handle('mixedNotes:refreshSources', async (_event, enabledIds) => {
+    const preflight = await validateMixedNoteSourceSelection(enabledIds)
+    if (!preflight.ok) {
+      if (preflight.reason === 'mixed-source-folder-overlap') {
+        const detail = `${preflight.parentFolder}\ncontains\n${preflight.childFolder}`
+        appendDebugInfo(`[Mixed Notes Error] Start / Refresh stopped. Source folders overlap:\n${detail}`)
+        await dialog.showMessageBox(mainWindow, {
+          type: 'error', buttons: ['OK'], defaultId: 0, noLink: true,
+          title: 'Mixed Notes Source Conflict',
+          message: 'Source folders must not contain each other.',
+          detail,
+        })
+        return { ...preflight, message: 'Source folders must not contain each other.' }
+      }
+      if (preflight.reason === 'mixed-note-duplicate-file-names') {
+        const groups = preflight.duplicateFileNames || []
+        const fullDetail = groups.map((matches) => (
+          `${matches[0]?.fileName || 'Unknown file'} - ${matches.length} files\n`
+          + matches.map((file) => file.filePath).join('\n')
+        )).join('\n\n')
+        const duplicateNameCount = groups.length
+        const dialogItems = groups.slice(0, 5).map((matches) => (
+          `${matches[0]?.fileName || 'Unknown file'} - ${matches.length} files`
+        )).join('\n')
+        const dialogDetail = `${duplicateNameCount} file name${duplicateNameCount === 1 ? ' has' : 's have'} duplicates.\n\n`
+          + dialogItems
+          + (groups.length > 5 ? `\n\n...and ${groups.length - 5} more duplicate file names.` : '')
+          + '\n\nSee Debug Info for the complete list and full paths.'
+        appendDebugInfo(`[Mixed Notes Error] Start / Refresh stopped. Duplicate TXT file names:\n${fullDetail}`)
+        await dialog.showMessageBox(mainWindow, {
+          type: 'error', buttons: ['OK'], defaultId: 0, noLink: true,
+          title: 'Duplicate Mixed Notes Files',
+          message: 'Duplicate TXT file names were found.',
+          detail: dialogDetail,
+        })
+        return { ...preflight, duplicateFileNames: undefined, message: 'Duplicate TXT file names were found.' }
+      }
+      const errorDetail = preflight.error || preflight.reason || 'Unknown preflight error'
+      appendDebugInfo(`[Mixed Notes Error] Start / Refresh preflight failed: ${errorDetail}`)
+      await dialog.showMessageBox(mainWindow, {
+        type: 'error', buttons: ['OK'], defaultId: 0, noLink: true,
+        title: 'Mixed Notes Preflight Failed', message: 'Could not validate Mixed Notes Sources.', detail: errorDetail,
+      })
+      return { ...preflight, message: `Could not validate Sources: ${errorDetail}` }
+    }
+
+    const selection = applyMixedNoteSourceSelection(enabledIds)
+    const enabled = selection.sources.filter((source) => source.isEnabled)
+    const manifests = new Map(preflight.manifests.map((manifest) => [manifest.sourceId, manifest.files]))
+    const scans = []
+    appendDebugInfo(`[Mixed Notes] Start / Refresh preflight passed: ${enabled.length} effective Sources, ${preflight.fileCount} unique TXT files.`)
+    for (const source of enabled) {
+      try {
+        const result = await scanMixedNoteSource(source.id, manifests.get(source.id) || [])
+        scans.push({ sourceId: source.id, sourceName: source.displayName, ...result })
+        appendDebugInfo(`[Mixed Notes] Indexed ${source.folderPath}: TXT ${result.fileCount || 0}, records ${result.occurrenceCount || 0}, plain lines ${result.plainLineCount || 0}.`)
+        for (const failure of result.failures || []) {
+          appendDebugInfo(`[Mixed Notes Error] TXT index failed: ${failure.filePath} (${failure.reason})`)
+        }
+      } catch (error) {
+        scans.push({ ok: false, sourceId: source.id, sourceName: source.displayName, reason: 'source-index-failed' })
+        appendDebugInfo(`[Mixed Notes Error] Source indexing failed: ${source.folderPath}\n${error?.stack || error}`)
+      }
+    }
+    return { ok: true, enabledSourceIds: selection.enabledSourceIds, scans }
+  })
+  ipcMain.handle('mixedNotes:deleteSource', async (_event, sourceId) => {
+    const source = getMixedNoteSource(sourceId)
+    if (!source) return { ok: false, reason: 'source-not-found' }
+    const confirmation = await dialog.showMessageBox(mainWindow, {
+      type: 'warning', buttons: ['Delete', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
+      title: 'Delete Mixed Notes Source', message: `Delete Source "${source.displayName}"?`,
+      detail: `${source.folderPath}\n\nOnly its database registration and index will be deleted. TXT files will not be changed.`,
+    })
+    if (confirmation.response !== 0) return { ok: false, canceled: true }
+    return deleteMixedNoteSource(sourceId)
+  })
+  ipcMain.handle('mixedNotes:saveFilterFile', async (_event, filters) => {
+    const stable = createStableMixedNoteFilter(filters)
+    if (!stable.ok) return stable
+    const selection = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save Mixed Notes Filter', defaultPath: `mixed-note-filter${MIXED_NOTE_FILTER_SUFFIX}`,
+      filters: [{ name: 'Better Notes Mixed Note Filter', extensions: ['json'] }],
+    })
+    if (selection.canceled || !selection.filePath) return { ok: false, canceled: true }
+    return saveMixedNoteFilterFile(selection.filePath, stable.conditions)
+  })
+  ipcMain.handle('mixedNotes:loadFilterFile', async () => {
+    const selection = await dialog.showOpenDialog(mainWindow, {
+      title: 'Load Mixed Notes Filter', properties: ['openFile'],
+      filters: [{ name: 'Better Notes Mixed Note Filter', extensions: ['json'] }],
+    })
+    if (selection.canceled || !selection.filePaths[0]) return { ok: false, canceled: true }
+    const loaded = await readMixedNoteFilterFile(selection.filePaths[0])
+    if (!loaded.ok) return loaded
+    const preview = previewStableMixedNoteFilter(loaded.definition)
+    return preview.ok ? { ok: true, filePath: loaded.filePath, fileName: loaded.fileName,
+      definition: loaded.definition, filters: preview.filters, matchedCount: preview.matchedCount } : preview
+  })
+  ipcMain.handle('mixedNotes:listStudyPlans', async () => ({ ok: true, plans: listMixedStudyPlans() }))
+  ipcMain.handle('mixedNotes:deleteStudyPlan', async (_event, planId) => {
+    const plan = listMixedStudyPlans().find((item) => item.id === Number(planId))
+    if (!plan) return { ok: false, reason: 'study-plan-not-found' }
+    const confirmation = await dialog.showMessageBox(mainWindow, {
+      type: 'warning', buttons: ['Delete', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
+      title: 'Delete Mixed Notes Study Plan', message: `Delete Study Plan "${plan.name}"?`,
+      detail: 'The plan, Review sessions, and Review history will be deleted. Sources and TXT files will not change.',
+    })
+    return confirmation.response === 0 ? deleteMixedStudyPlan(planId) : { ok: false, canceled: true }
+  })
+  ipcMain.handle('mixedNotes:createStudyPlan', async (_event, payload) => {
+    const loaded = await readMixedNoteFilterFile(payload?.filterFilePath)
+    return loaded.ok ? createMixedStudyPlan(payload?.name, loaded.definition, loaded.filePath) : loaded
+  })
+  ipcMain.handle('mixedNotes:refreshStudyPlanScope', async (_event, id) => refreshMixedStudyPlanScope(id))
+  ipcMain.handle('mixedNotes:listStudyPlanItems', async (_event, id, options) => listMixedStudyPlanItems(id, options))
+  ipcMain.handle('mixedNotes:getStudyPlanItemOccurrences', async (_event, planId, itemId) => getMixedPlanItemOccurrences(planId, itemId))
+  ipcMain.handle('mixedNotes:getActiveStudySession', async () => getActiveMixedStudySession())
+  ipcMain.handle('mixedNotes:startStudySession', async (_event, id) => startMixedStudySession(id))
+  ipcMain.handle('mixedNotes:applyStudyReviewAction', async (_event, id, action) => applyMixedReviewAction(id, action))
+  ipcMain.handle('mixedNotes:reviewTo', async (_event, planId, itemId) => reviewMixedStudyPlanTo(planId, itemId))
+  ipcMain.handle('mixedNotes:endStudySession', async (_event, id) => endMixedStudySession(id))
+  ipcMain.handle('mixedNotes:listStudyReviewHistory', async (_event, id, options) => listMixedStudyReviewHistory(id, options))
+  ipcMain.handle('mixedNotes:listStudyReviewEvents', async (_event, id) => listMixedStudyReviewEvents(id))
 
   ipcMain.handle('debug:show', async () => {
     createDebugWindow()
@@ -2466,6 +3308,17 @@ app.whenReady().then(async () => {
 
   registerIpcHandlers();
   logStartup('ipc registered')
+  try {
+    const databasePath = getWordLibraryDatabasePath(app)
+    const databaseResult = initializeWordLibraryDatabase(databasePath)
+    initializeMixedNoteSchema()
+    appendDebugInfo(
+      `[Word Library] Database ready: ${databaseResult.databasePath} (schema v${databaseResult.schemaVersion})`
+    )
+  } catch (error) {
+    console.error('Word Library database initialization failed:', error)
+    appendDebugInfo(`[Word Library Error] Database initialization failed: ${error?.stack || error}`)
+  }
   const startupLastSession = await readLastSessionState()
   createWindow(startupLastSession?.ok ? startupLastSession.sessionState : null);
   buildAppMenu();
@@ -2514,6 +3367,11 @@ app.whenReady().then(async () => {
 app.on('will-quit', () => {
   appQuitting = true
   globalShortcut.unregisterAll()
+  try {
+    closeWordLibraryDatabase()
+  } catch (error) {
+    console.error('Word Library database close failed:', error)
+  }
 })
 
 // Quit when all windows are closed, except on macOS. There, it's common

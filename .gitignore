@@ -85,7 +85,7 @@ typings/
 # Webpack
 .webpack/
 
-# Vite
+# Vitegit
 .vite/
 
 # Electron-Forge

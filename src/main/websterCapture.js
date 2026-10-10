@@ -3,12 +3,15 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { getDictionaryToolsRoot } from './toolPaths'
+import {
+  enqueueDictionaryAhkOperation,
+  getDictionaryToolsRoot,
+  resolveConfiguredAutoHotkeyPath,
+} from './toolPaths'
 
 const execFileAsync = promisify(execFile)
 const DICTIONARY_TOOLS_ROOT = getDictionaryToolsRoot()
 
-const AHK_EXE_PATH = 'D:\\AutoHotKey\\AutoHotkey.exe'
 const DICTIONARY_AHK_PATH = path.join(DICTIONARY_TOOLS_ROOT, 'dictionary-bridge.ahk')
 const DICTIONARY_RESULT_PATH = path.join(DICTIONARY_TOOLS_ROOT, 'dictionary-bridge-result.json')
 const WEBSTER_OUTPUT_IMAGE_PATH = path.join(DICTIONARY_TOOLS_ROOT, 'webster-output.png')
@@ -23,6 +26,17 @@ async function readAhkResultJson() {
   }
 }
 
+async function clearAhkResultJson() {
+  await fs.rm(DICTIONARY_RESULT_PATH, { force: true })
+}
+
+async function readCurrentAhkResult(command) {
+  const result = await readAhkResultJson()
+  return result?.command === command
+    ? result
+    : { ok: false, reason: 'stale-ahk-result', ahkResult: result }
+}
+
 function isRectResult(result) {
   return result?.ok
     && result.command === 'webster-output-rect'
@@ -32,40 +46,48 @@ function isRectResult(result) {
     && Number.isFinite(result.height)
 }
 
-async function runAhkOutputRect() {
-  try {
-    await execFileAsync(AHK_EXE_PATH, [DICTIONARY_AHK_PATH, 'webster-output-rect', 'silent'], {
-      cwd: process.cwd(),
-      timeout: 5000,
-      windowsHide: true,
-    })
-  } catch (error) {
-    const ahkResult = await readAhkResultJson()
-    return {
-      ok: false,
-      reason: ahkResult?.reason || (error.killed ? 'webster-output-rect-timeout' : 'webster-output-rect-failed'),
-      detail: error.message,
-      exitCode: error.code,
-      signal: error.signal,
-      ahkResult,
-      paths: {
-        cwd: process.cwd(),
-        ahkExePath: AHK_EXE_PATH,
-        ahkScriptPath: DICTIONARY_AHK_PATH,
-        resultPath: DICTIONARY_RESULT_PATH,
-      },
-    }
-  }
+async function runAhkOutputRect(configuredAutoHotkeyPath) {
+  return enqueueDictionaryAhkOperation(async () => {
+    const resolvedPath = await resolveConfiguredAutoHotkeyPath(configuredAutoHotkeyPath)
+    if (!resolvedPath.ok) return resolvedPath
 
-  try {
-    const result = await readAhkResultJson()
-    if (!isRectResult(result)) {
-      return { ok: false, reason: result?.reason || 'invalid-webster-output-rect', rectResult: result }
+    await clearAhkResultJson()
+    try {
+      await execFileAsync(resolvedPath.executablePath, [DICTIONARY_AHK_PATH, 'webster-output-rect', 'silent'], {
+        cwd: process.cwd(),
+        timeout: 5000,
+        windowsHide: true,
+      })
+    } catch (error) {
+      const ahkResult = await readCurrentAhkResult('webster-output-rect')
+      return {
+        ok: false,
+        reason: ahkResult?.reason === 'stale-ahk-result'
+          ? error.killed ? 'webster-output-rect-timeout' : 'webster-output-rect-failed'
+          : ahkResult?.reason || (error.killed ? 'webster-output-rect-timeout' : 'webster-output-rect-failed'),
+        detail: error.message,
+        exitCode: error.code,
+        signal: error.signal,
+        ahkResult,
+        paths: {
+          cwd: process.cwd(),
+          ahkExePath: resolvedPath.executablePath,
+          ahkScriptPath: DICTIONARY_AHK_PATH,
+          resultPath: DICTIONARY_RESULT_PATH,
+        },
+      }
     }
-    return { ok: true, rect: result }
-  } catch (error) {
-    return { ok: false, reason: 'read-webster-output-rect-failed', detail: error.message }
-  }
+
+    try {
+      const result = await readCurrentAhkResult('webster-output-rect')
+      if (!isRectResult(result)) {
+        return { ok: false, reason: result?.reason || 'invalid-webster-output-rect', rectResult: result }
+      }
+      return { ok: true, rect: result }
+    } catch (error) {
+      return { ok: false, reason: 'read-webster-output-rect-failed', detail: error.message }
+    }
+  })
 }
 
 function findDisplayForRect(rect) {
@@ -79,8 +101,8 @@ function findDisplayForRect(rect) {
   )) || screen.getDisplayNearestPoint({ x: centerX, y: centerY })
 }
 
-export async function captureWebsterOutput() {
-  const rectResult = await runAhkOutputRect()
+export async function captureWebsterOutput(configuredAutoHotkeyPath) {
+  const rectResult = await runAhkOutputRect(configuredAutoHotkeyPath)
   if (!rectResult.ok) return rectResult
 
   const rect = rectResult.rect
@@ -144,68 +166,84 @@ export async function captureWebsterOutput() {
   }
 }
 
-export async function captureWebsterOutputForDetection() {
-  return captureWebsterOutput()
+export async function captureWebsterOutputForDetection(configuredAutoHotkeyPath) {
+  return captureWebsterOutput(configuredAutoHotkeyPath)
 }
 
-export async function clickWebsterScreenPoint(screenX, screenY) {
+export async function clickWebsterScreenPoint(screenX, screenY, configuredAutoHotkeyPath) {
   const x = Math.round(Number(screenX))
   const y = Math.round(Number(screenY))
   if (!Number.isFinite(x) || !Number.isFinite(y)) {
     return { ok: false, reason: 'invalid-webster-click-position', screenX, screenY }
   }
 
-  try {
-    await execFileAsync(AHK_EXE_PATH, [DICTIONARY_AHK_PATH, 'webster-click', String(x), String(y)], {
-      cwd: process.cwd(),
-      timeout: 5000,
-      windowsHide: true,
-    })
-  } catch (error) {
-    const ahkResult = await readAhkResultJson()
-    return {
-      ok: false,
-      reason: ahkResult?.reason || (error.killed ? 'webster-click-timeout' : 'webster-click-failed'),
-      detail: error.message,
-      exitCode: error.code,
-      signal: error.signal,
-      ahkResult,
-    }
-  }
+  return enqueueDictionaryAhkOperation(async () => {
+    const resolvedPath = await resolveConfiguredAutoHotkeyPath(configuredAutoHotkeyPath)
+    if (!resolvedPath.ok) return resolvedPath
 
-  const ahkResult = await readAhkResultJson()
-  return ahkResult?.ok
-    ? { ok: true, screenX: x, screenY: y, ahkResult }
-    : { ok: false, reason: ahkResult?.reason || 'invalid-webster-click-result', screenX: x, screenY: y, ahkResult }
+    await clearAhkResultJson()
+    try {
+      await execFileAsync(resolvedPath.executablePath, [DICTIONARY_AHK_PATH, 'webster-click', String(x), String(y)], {
+        cwd: process.cwd(),
+        timeout: 5000,
+        windowsHide: true,
+      })
+    } catch (error) {
+      const ahkResult = await readCurrentAhkResult('webster-click')
+      return {
+        ok: false,
+        reason: ahkResult?.reason === 'stale-ahk-result'
+          ? error.killed ? 'webster-click-timeout' : 'webster-click-failed'
+          : ahkResult?.reason || (error.killed ? 'webster-click-timeout' : 'webster-click-failed'),
+        detail: error.message,
+        exitCode: error.code,
+        signal: error.signal,
+        ahkResult,
+      }
+    }
+
+    const ahkResult = await readCurrentAhkResult('webster-click')
+    return ahkResult?.ok
+      ? { ok: true, screenX: x, screenY: y, ahkResult }
+      : { ok: false, reason: ahkResult?.reason || 'invalid-webster-click-result', screenX: x, screenY: y, ahkResult }
+  })
 }
 
-export async function doubleClickWebsterClientPoint(clientX, clientY) {
+export async function doubleClickWebsterClientPoint(clientX, clientY, configuredAutoHotkeyPath) {
   const x = Math.round(Number(clientX))
   const y = Math.round(Number(clientY))
   if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0) {
     return { ok: false, reason: 'invalid-webster-client-double-click-position', clientX, clientY }
   }
 
-  try {
-    await execFileAsync(AHK_EXE_PATH, [DICTIONARY_AHK_PATH, 'webster-client-dblclick', String(x), String(y)], {
-      cwd: process.cwd(),
-      timeout: 5000,
-      windowsHide: true,
-    })
-  } catch (error) {
-    const ahkResult = await readAhkResultJson()
-    return {
-      ok: false,
-      reason: ahkResult?.reason || (error.killed ? 'webster-client-double-click-timeout' : 'webster-client-double-click-failed'),
-      detail: error.message,
-      exitCode: error.code,
-      signal: error.signal,
-      ahkResult,
-    }
-  }
+  return enqueueDictionaryAhkOperation(async () => {
+    const resolvedPath = await resolveConfiguredAutoHotkeyPath(configuredAutoHotkeyPath)
+    if (!resolvedPath.ok) return resolvedPath
 
-  const ahkResult = await readAhkResultJson()
-  return ahkResult?.ok
-    ? { ok: true, clientX: x, clientY: y, ahkResult }
-    : { ok: false, reason: ahkResult?.reason || 'invalid-webster-client-double-click-result', clientX: x, clientY: y, ahkResult }
+    await clearAhkResultJson()
+    try {
+      await execFileAsync(resolvedPath.executablePath, [DICTIONARY_AHK_PATH, 'webster-client-dblclick', String(x), String(y)], {
+        cwd: process.cwd(),
+        timeout: 5000,
+        windowsHide: true,
+      })
+    } catch (error) {
+      const ahkResult = await readCurrentAhkResult('webster-client-dblclick')
+      return {
+        ok: false,
+        reason: ahkResult?.reason === 'stale-ahk-result'
+          ? error.killed ? 'webster-client-double-click-timeout' : 'webster-client-double-click-failed'
+          : ahkResult?.reason || (error.killed ? 'webster-client-double-click-timeout' : 'webster-client-double-click-failed'),
+        detail: error.message,
+        exitCode: error.code,
+        signal: error.signal,
+        ahkResult,
+      }
+    }
+
+    const ahkResult = await readCurrentAhkResult('webster-client-dblclick')
+    return ahkResult?.ok
+      ? { ok: true, clientX: x, clientY: y, ahkResult }
+      : { ok: false, reason: ahkResult?.reason || 'invalid-webster-client-double-click-result', clientX: x, clientY: y, ahkResult }
+  })
 }

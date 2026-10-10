@@ -315,6 +315,41 @@
   text-align: center;
 }
 
+.rolling-subtitle-word-probe {
+  position: absolute;
+  z-index: 4;
+  max-width: calc(100% - 16px);
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 6px 10px;
+  color: #fff3cf;
+  background: rgba(20, 20, 20, 0.94);
+  border: 1px solid rgba(255, 216, 77, 0.68);
+  border-radius: 4px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.42);
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.rolling-subtitle-word-probe:hover,
+.rolling-subtitle-word-probe:focus-visible {
+  color: #fff;
+  background: rgba(54, 44, 18, 0.98);
+  border-color: rgba(255, 216, 77, 0.96);
+  outline: none;
+}
+
+.rolling-subtitle-word-probe:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .rolling-subtitle-resize-handle {
   position: absolute;
   z-index: 3;

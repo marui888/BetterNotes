@@ -6,10 +6,11 @@
     "shortcutHintFontSize": 15,
     "monthlyNotesFolder": "",
     "specialTextFolder": "",
-    "keywordFolder": "",
+    "autoHotkeyPath": "C:\\AutoHotkey",
+    "keywordFolder": "F:\\",
     "defaultKeywordFile": "",
     "extraSubtitleFolder": "",
-    "subtitleDisplayMode": "native",
+    "subtitleDisplayMode": "rolling",
     "rollingSubtitleFontSize": 30,
     "pickSubAutoSelectCurrent": false,
     "subtitleCenterViewBlurPx": 18,
@@ -18,15 +19,25 @@
     "videoNotesPoolFontSize": 12,
     "locateNotePastLimitSec": 100,
     "locateNoteFutureLimitSec": 10,
-    "playAllSubtitleSuffix": ".en-orig.vtt",
+    "subtitleLanguagePriority": "en-orig;en;default",
     "subtitleConvertPromptTimeoutSec": 5,
     "imageAutoLoadDelayMs": 250,
+    "imageViewCount": 3,
+    "imageSuffixOptions": [
+      "删除"
+    ],
     "locallyMoveFolder": "tempPictures",
     "picModeWideMoveFolder": "D:\\temp",
     "textAutoPlayAll": true,
-    "textAutoLookupDelayMs": 2500,
-    "wordsReviewFontSize": 30,
+    "textAutoLookupDelayMs": 3000,
+    "toggleViewFontSize": 30,
+    "occurrenceFontSize": 20,
+    "occurrenceMinFontSize": 10,
     "websterSpellOut": true,
+    "reviewToDicts": {
+      "mdict": true,
+      "webster": true
+    },
     "textAutoPlayDicts": {
       "mdict": true,
       "webster": true
@@ -75,12 +86,12 @@
     },
     "image": {
       "image.intoEditingFocus": "Alt+E",
-      "image.previousImage": "Ctrl+ArrowUp",
-      "image.nextImage": "Ctrl+ArrowDown",
-      "image.saveNote": "",
-      "image.renameFile": "",
-      "image.moveFile": "",
-      "image.moveRenameFile": ""
+      "image.previousImage": "Ctrl+ArrowLeft",
+      "image.nextImage": "Ctrl+ArrowRight",
+      "image.saveNote": "F9",
+      "image.renameFile": "F5",
+      "image.moveFile": "F6",
+      "image.moveRenameFile": "F8"
     },
     "text": {
       "text.intoEditingFocus": "Alt+E",
