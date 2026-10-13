@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import iconv from 'iconv-lite';
 import started from 'electron-squirrel-startup';
 import { convertSrtToVtt } from './main/srtToVtt';
 import { captureWebsterOutput, doubleClickWebsterClientPoint } from './main/websterCapture';
@@ -764,6 +765,97 @@ function appendDebugInfo(message) {
   if (debugWindow && !debugWindow.isDestroyed()) {
     debugWindow.webContents.send('debug:append', item)
   }
+}
+
+function formatMixedNoteReportTimestamp(date) {
+  const pad = (value, length = 2) => String(value).padStart(length, '0')
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
+    + `-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}-${pad(date.getMilliseconds(), 3)}`
+}
+
+function formatMixedNoteReportIso(date) {
+  const pad = (value) => String(value).padStart(2, '0')
+  const offsetMinutes = -date.getTimezoneOffset()
+  const sign = offsetMinutes >= 0 ? '+' : '-'
+  const absoluteOffset = Math.abs(offsetMinutes)
+  const offset = `${sign}${pad(Math.floor(absoluteOffset / 60))}:${pad(absoluteOffset % 60)}`
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+    + `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}${offset}`
+}
+
+function safeMixedNoteReportName(value) {
+  const safe = String(value || 'mixed-notes').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim()
+  return safe || 'mixed-notes'
+}
+
+async function writeMixedNoteValidationReports(validationReports) {
+  const started = new Date()
+  const reportFolder = path.join(path.dirname(getWordLibraryDatabasePath(app)), 'reports')
+  await fs.mkdir(reportFolder, { recursive: true })
+  const reportPaths = []
+
+  for (const sourceReport of validationReports) {
+    const lines = [
+      'Mixed Note Batch Formatting Report',
+      `STARTED: ${formatMixedNoteReportIso(started)}`,
+      `SOURCE: ${sourceReport.sourceFolder}`,
+      '',
+    ]
+    let totalErrors = 0
+    let readErrors = 0
+    let validationErrors = 0
+
+    for (const fileReport of sourceReport.files) {
+      lines.push(
+        '='.repeat(78),
+        `FILE: ${fileReport.relativePath}`,
+        'STATUS: ERROR',
+        `TOTAL_LINES: ${fileReport.totalLines}`,
+        `ERROR_COUNT: ${fileReport.errors.length}`,
+        '',
+      )
+      for (const error of fileReport.errors) {
+        totalErrors += 1
+        if (error.stage === 'READ') readErrors += 1
+        else validationErrors += 1
+        lines.push(
+          `ERROR_STAGE: ${error.stage}`,
+          `ERROR_TYPE: ${error.type}`,
+        )
+        if (Number.isInteger(error.lineNumber) && error.lineNumber > 0) {
+          lines.push(`ERROR_LINE: ${error.lineNumber}`)
+        }
+        if (error.rawLine) {
+          lines.push(
+            `ERROR_ORIGINAL: ${error.rawLine}`,
+            `ERROR_ORIGINAL_SEARCH_BASE64: ${iconv.encode(error.rawLine, 'gbk').toString('base64')}`,
+          )
+        }
+        lines.push(`ERROR_MESSAGE: ${error.message}`, '')
+      }
+    }
+
+    const finished = new Date()
+    lines.push(
+      '='.repeat(78),
+      'OVERALL SUMMARY',
+      `FILES_DISCOVERED: ${sourceReport.filesDiscovered}`,
+      `FILES_WITH_ERRORS: ${sourceReport.files.length}`,
+      `READ_ERRORS: ${readErrors}`,
+      `VALIDATION_ERRORS: ${validationErrors}`,
+      `TOTAL_ERRORS: ${totalErrors}`,
+      `FINISHED: ${formatMixedNoteReportIso(finished)}`,
+      '',
+    )
+
+    const sourceName = safeMixedNoteReportName(sourceReport.sourceName || path.basename(sourceReport.sourceFolder))
+    const reportName = `${sourceName}-${sourceReport.sourceId}-formatting-report-${formatMixedNoteReportTimestamp(started)}.txt`
+    const reportPath = path.join(reportFolder, reportName)
+    await fs.writeFile(reportPath, `\uFEFF${lines.join('\n')}`, 'utf8')
+    reportPaths.push(reportPath)
+  }
+
+  return reportPaths
 }
 
 function createDebugWindow() {
@@ -2718,8 +2810,7 @@ function registerIpcHandlers() {
       const result = createStudyPlan(payload?.name, loaded.definition, loaded.filePath)
       if (result.ok) {
         appendDebugInfo(
-          `[Word Library] Study Plan created: ${result.plan.name}; ${result.addedCount} words; `
-          + `${result.occurrenceSnapshotCount || 0} occurrence snapshots.`
+          `[Word Library] Study Plan created: ${result.plan.name}; ${result.addedCount} word references.`
         )
       } else {
         appendDebugInfo(`[Word Library Error] Study Plan was not created: ${result.reason}`)
@@ -2737,8 +2828,7 @@ function registerIpcHandlers() {
       if (result.ok) {
         appendDebugInfo(
           `[Word Library] Study Plan scope refreshed: ${result.plan.name}; `
-          + `${result.addedCount} new of ${result.matchedCount} matched words; `
-          + `${result.occurrenceSnapshotCount || 0} occurrence snapshots.`
+          + `${result.addedCount} new of ${result.matchedCount} matched words.`
         )
       } else {
         appendDebugInfo(`[Word Library Error] Study Plan scope was not refreshed: ${result.reason}`)
@@ -2763,12 +2853,12 @@ function registerIpcHandlers() {
     try {
       const result = getStudyPlanItemOccurrences(planId, planItemId)
       if (!result.ok) {
-        appendDebugInfo(`[Word Library Error] Plan occurrence snapshots are unavailable: ${result.reason}`)
+        appendDebugInfo(`[Word Library Error] Current Plan occurrences are unavailable: ${result.reason}`)
       }
       return result
     } catch (error) {
-      appendDebugInfo(`[Word Library Error] Could not load Plan occurrence snapshots: ${error?.stack || error}`)
-      return { ok: false, reason: 'load-plan-occurrence-snapshots-failed', occurrences: [] }
+      appendDebugInfo(`[Word Library Error] Could not load current Plan occurrences: ${error?.stack || error}`)
+      return { ok: false, reason: 'load-plan-occurrences-failed', occurrences: [] }
     }
   })
 
@@ -3010,7 +3100,21 @@ function registerIpcHandlers() {
     return result
   })
   ipcMain.handle('mixedNotes:refreshSources', async (_event, enabledIds) => {
-    const preflight = await validateMixedNoteSourceSelection(enabledIds)
+    const operation = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Format Check', 'Index', 'Format Check & Index', 'Cancel'],
+      defaultId: 2,
+      cancelId: 3,
+      noLink: true,
+      title: 'Mixed Notes Start / Refresh',
+      message: 'Choose an operation.',
+      detail: 'Format Check validates TXT content without changing the index. Index skips the TXT content format check.',
+    })
+    if (operation.response === 3) return { ok: false, canceled: true }
+
+    const checkFormat = operation.response === 0 || operation.response === 2
+    const shouldIndex = operation.response === 1 || operation.response === 2
+    const preflight = await validateMixedNoteSourceSelection(enabledIds, { checkFormat })
     if (!preflight.ok) {
       if (preflight.reason === 'mixed-source-folder-overlap') {
         const detail = `${preflight.parentFolder}\ncontains\n${preflight.childFolder}`
@@ -3046,6 +3150,49 @@ function registerIpcHandlers() {
         })
         return { ...preflight, duplicateFileNames: undefined, message: 'Duplicate TXT file names were found.' }
       }
+      if (preflight.reason === 'mixed-note-preflight-validation-failed') {
+        const validationReports = preflight.validationReports || []
+        const filesWithErrors = validationReports.reduce((sum, report) => sum + report.files.length, 0)
+        const errorCount = Number(preflight.errorCount || 0)
+        let reportPaths = []
+        let reportWriteError = ''
+        try {
+          reportPaths = await writeMixedNoteValidationReports(validationReports)
+          appendDebugInfo(`[Mixed Notes Error] Start / Refresh stopped before indexing. ${filesWithErrors} TXT files contain ${errorCount} preflight errors.`)
+          reportPaths.forEach((reportPath) => appendDebugInfo(`[Mixed Notes Report] ${reportPath}`))
+        } catch (error) {
+          reportWriteError = error?.message || String(error)
+          appendDebugInfo(`[Mixed Notes Error] Could not write validation report: ${error?.stack || error}`)
+        }
+
+        const buttons = reportPaths.length ? ['Open Report', 'Open Reports Folder', 'OK'] : ['OK']
+        const dialogResult = await dialog.showMessageBox(mainWindow, {
+          type: 'error',
+          buttons,
+          defaultId: buttons.length - 1,
+          cancelId: buttons.length - 1,
+          noLink: true,
+          title: 'Mixed Notes Validation Failed',
+          message: `${filesWithErrors} TXT file${filesWithErrors === 1 ? '' : 's'} contain ${errorCount} error${errorCount === 1 ? '' : 's'}.`,
+          detail: reportPaths.length
+            ? `No Source state or index was changed.\n\nReport${reportPaths.length === 1 ? '' : 's'}:\n${reportPaths.join('\n')}`
+            : `No Source state or index was changed.\n\nThe report could not be written:\n${reportWriteError}`,
+        })
+        if (reportPaths.length && dialogResult.response === 0) {
+          const openError = await shell.openPath(reportPaths[0])
+          if (openError) appendDebugInfo(`[Mixed Notes Error] Could not open report: ${openError}`)
+        } else if (reportPaths.length && dialogResult.response === 1) {
+          const openError = await shell.openPath(path.dirname(reportPaths[0]))
+          if (openError) appendDebugInfo(`[Mixed Notes Error] Could not open reports folder: ${openError}`)
+        }
+        return {
+          ok: false,
+          reason: preflight.reason,
+          errorCount,
+          reportPaths,
+          message: `Mixed Notes validation failed: ${errorCount} error${errorCount === 1 ? '' : 's'} in ${filesWithErrors} TXT file${filesWithErrors === 1 ? '' : 's'}.`,
+        }
+      }
       const errorDetail = preflight.error || preflight.reason || 'Unknown preflight error'
       appendDebugInfo(`[Mixed Notes Error] Start / Refresh preflight failed: ${errorDetail}`)
       await dialog.showMessageBox(mainWindow, {
@@ -3055,11 +3202,27 @@ function registerIpcHandlers() {
       return { ...preflight, message: `Could not validate Sources: ${errorDetail}` }
     }
 
+    if (!shouldIndex) {
+      appendDebugInfo(`[Mixed Notes] Format check passed: ${preflight.sources.length} candidate Sources, ${preflight.fileCount} TXT files. No Source state or index was changed.`)
+      await dialog.showMessageBox(mainWindow, {
+        type: 'info', buttons: ['OK'], defaultId: 0, noLink: true,
+        title: 'Mixed Notes Format Check',
+        message: 'Format check passed.',
+        detail: `${preflight.sources.length} Source${preflight.sources.length === 1 ? '' : 's'} and ${preflight.fileCount} TXT file${preflight.fileCount === 1 ? '' : 's'} checked.\n\nNo Source state or index was changed.`,
+      })
+      return {
+        ok: true,
+        checkedOnly: true,
+        sourceCount: preflight.sources.length,
+        fileCount: preflight.fileCount,
+      }
+    }
+
     const selection = applyMixedNoteSourceSelection(enabledIds)
     const enabled = selection.sources.filter((source) => source.isEnabled)
     const manifests = new Map(preflight.manifests.map((manifest) => [manifest.sourceId, manifest.files]))
     const scans = []
-    appendDebugInfo(`[Mixed Notes] Start / Refresh preflight passed: ${enabled.length} effective Sources, ${preflight.fileCount} unique TXT files.`)
+    appendDebugInfo(`[Mixed Notes] Start / Refresh ${checkFormat ? 'format check and ' : ''}index preflight passed: ${enabled.length} effective Sources, ${preflight.fileCount} unique TXT files.`)
     for (const source of enabled) {
       try {
         const result = await scanMixedNoteSource(source.id, manifests.get(source.id) || [])

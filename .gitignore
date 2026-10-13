@@ -92,4 +92,5 @@ typings/
 out/
 dist/
 data/
+data_bacup/
 doc/

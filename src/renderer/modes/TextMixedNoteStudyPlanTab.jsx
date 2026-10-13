@@ -13,6 +13,7 @@ function createInitialState(initialState) {
     selectedPlanId: Number(initialState?.selectedPlanId) || null,
     offset: Math.max(0, Number(initialState?.offset) || 0),
     expandedItemId: Number(initialState?.expandedItemId) || null,
+    previewItemId: Number(initialState?.previewItemId) || null,
     filterFilePath: String(initialState?.filterFilePath || ''),
     filterFileName: String(initialState?.filterFileName || ''),
     reviewMode: Boolean(initialState?.reviewMode),
@@ -48,7 +49,7 @@ function formatFilterSummary(snapshot = {}) {
   return parts.length > 0 ? parts.join(' · ') : 'All effective Sources'
 }
 
-export default function TextStudyPlanTab({
+export default function TextMixedNoteStudyPlanTab({
   initialState,
   libraryApi,
   showEmptyOccurrences = false,
@@ -56,6 +57,8 @@ export default function TextStudyPlanTab({
   itemLabel = 'word',
   occurrenceFontSize = 14,
   occurrenceMinFontSize = 10,
+  showItemPreviewCard = false,
+  showOccurrenceProperties = true,
   onReviewWordLookup,
   onSessionStateChange,
 }) {
@@ -85,6 +88,7 @@ export default function TextStudyPlanTab({
   const [offset, setOffset] = useState(initialRef.current.offset)
   const [limit, setLimit] = useState(250)
   const [expandedItemId, setExpandedItemId] = useState(initialRef.current.expandedItemId)
+  const [previewItemId, setPreviewItemId] = useState(initialRef.current.previewItemId)
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [newPlanName, setNewPlanName] = useState('')
@@ -111,10 +115,17 @@ export default function TextStudyPlanTab({
   const [reviewOccurrences, setReviewOccurrences] = useState([])
   const [reviewOccurrencesLoading, setReviewOccurrencesLoading] = useState(false)
   const [reviewOccurrencesError, setReviewOccurrencesError] = useState('')
-  const [occurrenceSnapshotRevision, setOccurrenceSnapshotRevision] = useState(0)
+  const [occurrenceDataRevision, setOccurrenceDataRevision] = useState(0)
   const [planItemContextMenu, setPlanItemContextMenu] = useState(null)
   const [reviewPanelRatio, setReviewPanelRatio] = useState(45)
   const [reviewSplitterDragging, setReviewSplitterDragging] = useState(false)
+  const isActiveReview = Boolean(activeSession?.isActive && reviewMode && activeSession.currentItem)
+  const previewItem = showItemPreviewCard
+    ? items.find((item) => item.id === previewItemId) || null
+    : null
+  const cardItem = isActiveReview ? activeSession.currentItem : previewItem
+  const cardPlanId = isActiveReview ? activeSession.planId : selectedPlanId
+  const hasReviewCard = Boolean(cardItem && (isActiveReview || showItemPreviewCard))
 
   useEffect(() => {
     reviewWordLookupRef.current = onReviewWordLookup
@@ -125,6 +136,7 @@ export default function TextStudyPlanTab({
       selectedPlanId,
       offset,
       expandedItemId,
+      previewItemId,
       filterFilePath,
       filterFileName,
       reviewMode,
@@ -134,6 +146,7 @@ export default function TextStudyPlanTab({
     })
   }, [
     expandedItemId,
+    previewItemId,
     filterFileName,
     filterFilePath,
     historyOpen,
@@ -151,6 +164,7 @@ export default function TextStudyPlanTab({
       setItems([])
       setTotal(0)
       setOffset(0)
+      setPreviewItemId(null)
       setLoading(false)
       return null
     }
@@ -163,7 +177,13 @@ export default function TextStudyPlanTab({
       })
       if (!result?.ok) throw new Error(result?.reason || 'list-study-plan-items-failed')
       setSelectedPlan(result.plan || null)
-      setItems(Array.isArray(result.items) ? result.items : [])
+      const nextItems = Array.isArray(result.items) ? result.items : []
+      setItems(nextItems)
+      if (showItemPreviewCard) {
+        setPreviewItemId((current) => (
+          nextItems.some((item) => item.id === current) ? current : nextItems[0]?.id || null
+        ))
+      }
       setTotal(Number(result.total || 0))
       setLimit(Number(result.limit || 250))
       setOffset(Number(result.offset || 0))
@@ -172,6 +192,7 @@ export default function TextStudyPlanTab({
     } catch (error) {
       setItems([])
       setTotal(0)
+      setPreviewItemId(null)
       setMessage(`Could not load Study Plan: ${error?.message || error}`)
       return null
     } finally {
@@ -308,9 +329,9 @@ export default function TextStudyPlanTab({
   }, [planItemContextMenu])
 
   useEffect(() => {
-    const planId = activeSession?.planId
-    const planItemId = activeSession?.currentItem?.id
-    if (!reviewMode || !planId || !planItemId) {
+    const planId = cardPlanId
+    const planItemId = cardItem?.id
+    if (!hasReviewCard || !planId || !planItemId) {
       setReviewOccurrences([])
       setReviewOccurrencesError('')
       setReviewOccurrencesLoading(false)
@@ -324,16 +345,12 @@ export default function TextStudyPlanTab({
       setReviewOccurrencesError('')
       try {
         const result = await api?.getStudyPlanItemOccurrences?.(planId, planItemId)
-        if (!result?.ok) throw new Error(result?.reason || 'load-plan-occurrence-snapshots-failed')
+        if (!result?.ok) throw new Error(result?.reason || 'load-plan-occurrences-failed')
         if (!canceled) setReviewOccurrences(Array.isArray(result.occurrences) ? result.occurrences : [])
       } catch (error) {
         if (!canceled) {
           setReviewOccurrences([])
-          setReviewOccurrencesError(
-            error?.message === 'occurrence-snapshot-not-available'
-              ? 'Occurrence snapshot is not available. Refresh Scope to create it.'
-              : `Could not load occurrence snapshots: ${error?.message || error}`
-          )
+          setReviewOccurrencesError(`Could not load occurrences: ${error?.message || error}`)
         }
       } finally {
         if (!canceled) setReviewOccurrencesLoading(false)
@@ -344,10 +361,10 @@ export default function TextStudyPlanTab({
       canceled = true
     }
   }, [
-    activeSession?.currentItem?.id,
-    activeSession?.planId,
-    occurrenceSnapshotRevision,
-    reviewMode,
+    cardItem?.id,
+    cardPlanId,
+    hasReviewCard,
+    occurrenceDataRevision,
   ])
 
   useEffect(() => {
@@ -363,7 +380,7 @@ export default function TextStudyPlanTab({
 
   useEffect(() => {
     const occurrenceList = occurrenceListRef.current
-    if (!reviewMode || !activeSession?.currentItem?.id || !occurrenceList) return undefined
+    if (!hasReviewCard || !cardItem?.id || !occurrenceList) return undefined
 
     let frameId = 0
     const fitOccurrenceContent = () => {
@@ -396,10 +413,10 @@ export default function TextStudyPlanTab({
       resizeObserver.disconnect()
     }
   }, [
-    activeSession?.currentItem?.id,
+    cardItem?.id,
+    hasReviewCard,
     resolvedOccurrenceFontSize,
     resolvedOccurrenceMinFontSize,
-    reviewMode,
     reviewOccurrences,
     reviewOccurrencesError,
     reviewOccurrencesLoading,
@@ -512,7 +529,7 @@ export default function TextStudyPlanTab({
       const result = await api?.refreshStudyPlanScope?.(selectedPlanId)
       if (!result?.ok) throw new Error(result?.reason || 'refresh-study-plan-scope-failed')
       await loadPlans(selectedPlanId, 0)
-      setOccurrenceSnapshotRevision((current) => current + 1)
+      setOccurrenceDataRevision((current) => current + 1)
       setMessage(
         `Scope refreshed: ${result.addedCount || 0} new ${itemPlural}; ${result.matchedCount || 0} currently matched.`
       )
@@ -718,8 +735,6 @@ export default function TextStudyPlanTab({
     || selectedPlan?.filterSnapshot?.filterSnapshot
     || selectedPlan?.filterSnapshot
     || {}
-  const hasReviewCard = Boolean(activeSession?.isActive && reviewMode && activeSession.currentItem)
-
   return (
     <div
       className={[
@@ -881,19 +896,19 @@ export default function TextStudyPlanTab({
         )}
       </section>
 
-      {activeSession?.isActive ? (
+      {hasReviewCard ? (
         <section
-          className={reviewMode ? 'text-study-review active' : 'text-study-review paused'}
+          className={isActiveReview ? 'text-study-review active' : 'text-study-review preview'}
           ref={reviewPanelRef}
         >
-          {reviewMode && activeSession.currentItem ? (
+          {cardItem ? (
             <div className="text-study-review-card">
               <div className="text-study-review-top">
                 <div className="text-study-review-word-info">
                   <div className="text-study-review-word">
-                    <strong>{activeSession.currentItem.displayWord}</strong>
+                    <strong>{cardItem.displayWord}</strong>
                     <span>
-                      {visibleReviewOccurrences.length}/{activeSession.currentItem.occurrenceCount} occurrences
+                      {visibleReviewOccurrences.length}/{cardItem.occurrenceCount} occurrences
                     </span>
                   </div>
                 </div>
@@ -902,26 +917,26 @@ export default function TextStudyPlanTab({
                     <button
                       data-tooltip="Send the current word to the selected Review dictionaries"
                       disabled={reviewBusy}
-                      onClick={() => onReviewWordLookup?.(activeSession.currentItem.displayWord)}
+                      onClick={() => onReviewWordLookup?.(cardItem.displayWord)}
                       type="button"
                     >To Dict</button>
                   ) : null}
                   <button
                     data-tooltip="Mark Reviewed and move to the next word"
-                    disabled={reviewBusy}
+                    disabled={!isActiveReview || reviewBusy}
                     onClick={() => handleReviewAction('reviewed')}
                     type="button"
                   >Reviewed</button>
                   <button
-                    className={activeSession.currentItem.isSpecial ? 'active' : ''}
+                    className={cardItem.isSpecial ? 'active' : ''}
                     data-tooltip="Special words may appear again in later Review sessions"
-                    disabled={reviewBusy}
+                    disabled={!isActiveReview || reviewBusy}
                     onClick={() => handleReviewAction('toggle-special')}
                     type="button"
                   >Special</button>
                   <button
                     data-tooltip="Skip only in this Review session"
-                    disabled={reviewBusy}
+                    disabled={!isActiveReview || reviewBusy}
                     onClick={() => handleReviewAction('skip')}
                     type="button"
                   >Skip</button>
@@ -935,7 +950,7 @@ export default function TextStudyPlanTab({
                     <div className="text-study-review-occurrence-message">Loading...</div>
                   ) : !reviewOccurrencesLoading && visibleReviewOccurrences.length === 0 ? (
                     <div className="text-study-review-occurrence-message">
-                      No occurrence with properties or notes.
+                      {showOccurrenceProperties ? 'No occurrence with properties or notes.' : 'No occurrences.'}
                     </div>
                   ) : visibleReviewOccurrences.map((occurrence) => {
                     const properties = (occurrence.markers || []).filter(Boolean)
@@ -948,10 +963,12 @@ export default function TextStudyPlanTab({
                         <div className="text-study-review-occurrence-source">
                           {occurrence.sourceName} / {occurrence.relativePath} · Line {occurrence.lineNumber}
                         </div>
-                        <div className="text-study-review-occurrence-field">
-                          <strong>Prop</strong>
-                          <span>{properties.length > 0 ? properties.join(' · ') : '(empty)'}</span>
-                        </div>
+                        {showOccurrenceProperties ? (
+                          <div className="text-study-review-occurrence-field">
+                            <strong>Prop</strong>
+                            <span>{properties.length > 0 ? properties.join(' · ') : '(empty)'}</span>
+                          </div>
+                        ) : null}
                         <div className="text-study-review-occurrence-field note">
                           <strong>Note</strong>
                           <span>{occurrence.annotation || '(empty)'}</span>
@@ -1069,7 +1086,7 @@ export default function TextStudyPlanTab({
                 className={[
                   'text-study-plan-item',
                   expanded ? 'expanded' : '',
-                  activeSession?.currentItem?.id === item.id ? 'reviewing' : '',
+                  cardItem?.id === item.id ? 'reviewing' : '',
                 ].filter(Boolean).join(' ')}
                 key={item.id}
                 onContextMenu={(event) => {
@@ -1079,7 +1096,13 @@ export default function TextStudyPlanTab({
               >
                 <button
                   className="text-study-plan-item-head"
-                  onClick={() => setExpandedItemId(expanded ? null : item.id)}
+                  onClick={() => {
+                    setExpandedItemId(expanded ? null : item.id)
+                    if (showItemPreviewCard && !isActiveReview) {
+                      setPreviewItemId(item.id)
+                      setOccurrenceDataRevision((current) => current + 1)
+                    }
+                  }}
                   type="button"
                 >
                   <span>{item.itemOrder}</span>

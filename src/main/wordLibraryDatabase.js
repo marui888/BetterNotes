@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-export const WORD_LIBRARY_SCHEMA_VERSION = 2
+export const WORD_LIBRARY_SCHEMA_VERSION = 3
 
 let database = null
 let currentDatabasePath = ''
@@ -133,28 +133,6 @@ const INITIAL_SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_study_plan_items_queue
     ON study_plan_items(plan_id, status, is_special, item_order);
 
-  CREATE TABLE IF NOT EXISTS study_plan_item_occurrences (
-    id                 INTEGER PRIMARY KEY,
-    plan_item_id       INTEGER NOT NULL REFERENCES study_plan_items(id) ON DELETE CASCADE,
-    source_name        TEXT NOT NULL,
-    source_folder_path TEXT NOT NULL,
-    relative_path      TEXT NOT NULL,
-    file_path          TEXT NOT NULL,
-    line_number        INTEGER NOT NULL,
-    source_word        TEXT NOT NULL,
-    marker_1           TEXT NOT NULL DEFAULT '',
-    marker_2           TEXT NOT NULL DEFAULT '',
-    marker_3           TEXT NOT NULL DEFAULT '',
-    marker_4           TEXT NOT NULL DEFAULT '',
-    marker_5           TEXT NOT NULL DEFAULT '',
-    annotation         TEXT NOT NULL DEFAULT '',
-    raw_line           TEXT NOT NULL DEFAULT '',
-    captured_at        INTEGER NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_study_plan_item_occurrences_item
-    ON study_plan_item_occurrences(plan_item_id, source_name, relative_path, line_number);
-
   CREATE TABLE IF NOT EXISTS study_sessions (
     id          INTEGER PRIMARY KEY,
     plan_id     INTEGER NOT NULL REFERENCES study_plans(id) ON DELETE RESTRICT,
@@ -207,31 +185,12 @@ function migrateDatabase(targetDatabase) {
     }
   }
 
-  if (currentVersion === 1) {
+  if (currentVersion === 1 || currentVersion === 2) {
     targetDatabase.exec('BEGIN IMMEDIATE')
     try {
       targetDatabase.exec(`
-        CREATE TABLE IF NOT EXISTS study_plan_item_occurrences (
-          id                 INTEGER PRIMARY KEY,
-          plan_item_id       INTEGER NOT NULL REFERENCES study_plan_items(id) ON DELETE CASCADE,
-          source_name        TEXT NOT NULL,
-          source_folder_path TEXT NOT NULL,
-          relative_path      TEXT NOT NULL,
-          file_path          TEXT NOT NULL,
-          line_number        INTEGER NOT NULL,
-          source_word        TEXT NOT NULL,
-          marker_1           TEXT NOT NULL DEFAULT '',
-          marker_2           TEXT NOT NULL DEFAULT '',
-          marker_3           TEXT NOT NULL DEFAULT '',
-          marker_4           TEXT NOT NULL DEFAULT '',
-          marker_5           TEXT NOT NULL DEFAULT '',
-          annotation         TEXT NOT NULL DEFAULT '',
-          raw_line           TEXT NOT NULL DEFAULT '',
-          captured_at        INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_study_plan_item_occurrences_item
-          ON study_plan_item_occurrences(plan_item_id, source_name, relative_path, line_number);
-        PRAGMA user_version = 2;
+        DROP TABLE IF EXISTS study_plan_item_occurrences;
+        PRAGMA user_version = 3;
       `)
       targetDatabase.exec('COMMIT')
     } catch (error) {

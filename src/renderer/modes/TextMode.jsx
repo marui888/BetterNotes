@@ -5,7 +5,8 @@ import { registerActions, runAction } from '../actions/actionRegistry'
 import SimpleContextMenu from '../components/SimpleContextMenu'
 import useKeywordInsertion from '../hooks/useKeywordInsertion'
 import TextLibraryTab from './TextLibraryTab'
-import TextStudyPlanTab from './TextStudyPlanTab'
+import TextMixedNoteStudyPlanTab from './TextMixedNoteStudyPlanTab'
+import TextWordStudyPlanTab from './TextWordStudyPlanTab'
 import TextMixedNotesTab from './TextMixedNotesTab'
 import { getAutoPlaySkipReason } from './textWordValidator'
 
@@ -2435,7 +2436,7 @@ export default function TextMode() {
           }}
         />
       ) : activeTab === TEXT_TABS.STUDY ? (
-        <TextStudyPlanTab
+        <TextWordStudyPlanTab
           key="word-study"
           initialState={studyPlanSessionStateRef.current || restoreSessionState?.modes?.text?.studyPlan}
           occurrenceFontSize={occurrenceFontSize}
@@ -2454,7 +2455,7 @@ export default function TextMode() {
           }}
         />
       ) : (
-        <TextStudyPlanTab
+        <TextMixedNoteStudyPlanTab
           key="mixed-study"
           initialState={mixedStudySessionStateRef.current || restoreSessionState?.modes?.text?.mixedStudy}
           libraryApi={window.mixedNotesApi}
@@ -2462,6 +2463,8 @@ export default function TextMode() {
           occurrenceFontSize={occurrenceFontSize}
           occurrenceMinFontSize={occurrenceMinFontSize}
           showEmptyOccurrences
+          showItemPreviewCard
+          showOccurrenceProperties={false}
           showDictionaryAction={false}
           onSessionStateChange={(state) => {
             mixedStudySessionStateRef.current = state

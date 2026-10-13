@@ -139,10 +139,18 @@ export default function TextMixedNotesTab({ initialState, onSessionStateChange }
   }
 
   const startRefresh = async () => {
-    setRefreshing(true); setMessage('Start / Refresh is rebuilding Mixed Notes indexes...')
+    setRefreshing(true); setMessage('Start / Refresh is waiting for an operation...')
     try {
       const result = await api?.refreshSources?.(selectedSourceIds)
+      if (result?.canceled) {
+        setMessage('Start / Refresh canceled.')
+        return
+      }
       if (!result?.ok) throw new Error(result?.message || result?.reason || 'refresh-sources-failed')
+      if (result.checkedOnly) {
+        setMessage(`Format check passed: ${result.sourceCount || 0} Sources, ${result.fileCount || 0} TXT files. No index was changed.`)
+        return
+      }
       const files = (result.scans || []).reduce((sum, scan) => sum + Number(scan.fileCount || 0), 0)
       const records = (result.scans || []).reduce((sum, scan) => sum + Number(scan.occurrenceCount || 0), 0)
       const plain = (result.scans || []).reduce((sum, scan) => sum + Number(scan.plainLineCount || 0), 0)
@@ -277,7 +285,10 @@ export default function TextMixedNotesTab({ initialState, onSessionStateChange }
         return <article className={`text-library-word-group${expanded ? ' expanded' : ''}${containsUnformatted ? ' unformatted' : ''}`} key={word.id}>
           <button className="text-library-word-header" onClick={() => setExpandedWordId(expanded ? null : word.id)} type="button"><i className={expanded ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'} /><strong>{word.displayWord}</strong><span>{word.occurrenceCount}</span></button>
           {expanded ? <div className="text-library-occurrences">{word.occurrences.map((occurrence) => <div className={`text-library-occurrence${occurrence.isPlainLine ? ' unformatted' : ''}`} key={occurrence.id} title={occurrence.filePath}>
-            <div className="text-library-occurrence-head"><span>{occurrence.sourceName} / {occurrence.relativePath} : {occurrence.lineNumber}</span>
+            <div className="text-library-occurrence-head"><span>
+              {occurrence.sourceName} / {occurrence.relativePath} : {occurrence.lineNumber}
+              {occurrence.endLineNumber > occurrence.lineNumber ? `-${occurrence.endLineNumber}` : ''}
+            </span>
               <button aria-label="Copy note and open TXT" className="text-library-small-button" data-tooltip="Copy note and open TXT" onClick={() => openOccurrenceExternally(occurrence)} type="button"><i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" /></button>
             </div>
             {occurrence.markers?.length ? <div className="text-library-occurrence-tags">{occurrence.markers.join(' · ')}</div> : null}

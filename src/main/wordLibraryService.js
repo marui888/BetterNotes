@@ -162,21 +162,7 @@ export function deleteWordLibrarySource(sourceId) {
       }
 
       database.prepare('DELETE FROM sources WHERE id = ?').run(numericId)
-      database.prepare(`
-        DELETE FROM words
-        WHERE NOT EXISTS (
-          SELECT 1 FROM word_occurrences wo WHERE wo.word_id = words.id
-        )
-          AND NOT EXISTS (
-            SELECT 1 FROM study_plan_items spi WHERE spi.word_id = words.id
-          )
-      `).run()
-      database.prepare(`
-        DELETE FROM tags
-        WHERE NOT EXISTS (
-          SELECT 1 FROM word_occurrence_tags wot WHERE wot.tag_id = tags.id
-        )
-      `).run()
+      deleteUnusedIndexRows(database)
       database.exec('COMMIT')
       return { ok: true, source }
     } catch (error) {
@@ -326,15 +312,47 @@ function insertPreparedFile(statements, source, file, now) {
 }
 
 function deleteUnusedIndexRows(database) {
-  database.prepare(`
-    DELETE FROM words
-    WHERE NOT EXISTS (
-      SELECT 1 FROM word_occurrences wo WHERE wo.word_id = words.id
-    )
-      AND NOT EXISTS (
-        SELECT 1 FROM study_plan_items spi WHERE spi.word_id = words.id
-      )
-  `).run()
+  const now = Date.now()
+  const orphanWords = database.prepare(`
+    SELECT id FROM words
+    WHERE NOT EXISTS (SELECT 1 FROM word_occurrences wo WHERE wo.word_id = words.id)
+  `).all()
+  const orphanWordIds = orphanWords.map((row) => Number(row.id))
+  if (orphanWordIds.length > 0) {
+    const placeholders = orphanWordIds.map(() => '?').join(', ')
+    const planItems = database.prepare(`
+      SELECT id, plan_id FROM study_plan_items WHERE word_id IN (${placeholders})
+    `).all(...orphanWordIds)
+    const removedPlanItemIds = new Set(planItems.map((row) => Number(row.id)))
+
+    if (removedPlanItemIds.size > 0) {
+      const activeSessions = database.prepare(`
+        SELECT id, session_json FROM study_sessions WHERE ended_at IS NULL
+      `).all()
+      const updateSession = database.prepare(`
+        UPDATE study_sessions SET session_json = ?, ended_at = ? WHERE id = ?
+      `)
+      for (const session of activeSessions) {
+        const state = parseStudySessionState(session.session_json)
+        if (!state.isValid || !state.queueItemIds.some((id) => removedPlanItemIds.has(id))) continue
+        const removedBeforeCurrent = state.queueItemIds
+          .slice(0, state.currentIndex)
+          .filter((id) => removedPlanItemIds.has(id)).length
+        state.queueItemIds = state.queueItemIds.filter((id) => !removedPlanItemIds.has(id))
+        state.currentIndex = Math.max(0, state.currentIndex - removedBeforeCurrent)
+        const completed = state.currentIndex >= state.queueItemIds.length
+        updateSession.run(JSON.stringify(state), completed ? now : null, session.id)
+      }
+
+      const affectedPlanIds = [...new Set(planItems.map((row) => Number(row.plan_id)))]
+      const touchPlan = database.prepare('UPDATE study_plans SET updated_at = ? WHERE id = ?')
+      affectedPlanIds.forEach((planId) => touchPlan.run(now, planId))
+      database.prepare(`DELETE FROM study_plan_items WHERE word_id IN (${placeholders})`)
+        .run(...orphanWordIds)
+    }
+
+    database.prepare(`DELETE FROM words WHERE id IN (${placeholders})`).run(...orphanWordIds)
+  }
   database.prepare(`
     DELETE FROM tags
     WHERE NOT EXISTS (
@@ -489,23 +507,38 @@ function escapeSqlLike(value) {
   return String(value ?? '').replace(/[\\%_]/g, '\\$&')
 }
 
-const WORD_OCCURRENCE_COMPACT_SQL = `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-  TRIM(wo.source_word), ' ', ''), char(9), ''), char(10), ''), char(11), ''), char(12), ''), char(13), '')`
+// Treat horizontal/vertical control whitespace as spaces before checking the
+// source word. Repeated spaces do not change the formatted result, which is
+// equivalent to collapsing each run to one space without mutating the source.
+const WORD_OCCURRENCE_SPACED_SQL = `TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+  wo.source_word, char(9), ' '), char(10), ' '), char(11), ' '), char(12), ' '), char(13), ' '))`
 const WORD_OCCURRENCE_FORMATTED_SQL = `(
-  ${WORD_OCCURRENCE_COMPACT_SQL} <> ''
-  AND SUBSTR(${WORD_OCCURRENCE_COMPACT_SQL}, 1, 1) GLOB '[A-Za-z]'
-  AND SUBSTR(${WORD_OCCURRENCE_COMPACT_SQL}, -1, 1) GLOB '[A-Za-z]'
-  AND ${WORD_OCCURRENCE_COMPACT_SQL} NOT GLOB '*[^A-Za-z-]*'
+  ${WORD_OCCURRENCE_SPACED_SQL} <> ''
+  AND SUBSTR(${WORD_OCCURRENCE_SPACED_SQL}, 1, 1) GLOB '[A-Za-z]'
+  AND SUBSTR(${WORD_OCCURRENCE_SPACED_SQL}, -1, 1) GLOB '[A-Za-z]'
+  AND ${WORD_OCCURRENCE_SPACED_SQL} NOT GLOB '*[^A-Za-z -]*'
 )`
 const WORD_GROUP_UNFORMATTED_SQL = `MAX(CASE WHEN ${WORD_OCCURRENCE_FORMATTED_SQL} THEN 0 ELSE 1 END)`
 
-function buildLibraryFilterWhere(filters = {}, wordIds = []) {
+function buildLibraryFilterWhere(filters = {}, wordIds = [], options = {}) {
   const sourceId = toOptionalPositiveInteger(filters.sourceId)
   const fileId = toOptionalPositiveInteger(filters.fileId)
   const tagId = toOptionalPositiveInteger(filters.tagId)
   const word = normalizeWordV1(filters.word)
-  const clauses = ['s.is_enabled = 1']
+  const clauses = options.requireEnabled === false ? [] : ['s.is_enabled = 1']
   const parameters = []
+
+  if (options.enforceSourceScope) {
+    const sourceIds = Array.isArray(options.sourceIds)
+      ? options.sourceIds.map(toOptionalPositiveInteger).filter(Boolean)
+      : []
+    if (sourceIds.length > 0) {
+      clauses.push(`s.id IN (${sourceIds.map(() => '?').join(', ')})`)
+      parameters.push(...sourceIds)
+    } else {
+      clauses.push('1 = 0')
+    }
+  }
 
   if (sourceId) {
     clauses.push('s.id = ?')
@@ -532,7 +565,7 @@ function buildLibraryFilterWhere(filters = {}, wordIds = []) {
     parameters.push(...wordIds)
   }
 
-  return { sql: clauses.join('\n AND '), parameters }
+  return { sql: clauses.length > 0 ? clauses.join('\n AND ') : '1 = 1', parameters }
 }
 
 function normalizeRelativePathKey(relativePath) {
@@ -592,13 +625,14 @@ export function createStableWordFilter(filters = {}) {
   return useWordLibraryDatabase((database) => createStableWordFilterInDatabase(database, filters))
 }
 
-function resolveStableWordFilterInDatabase(database, definition) {
+function resolveStableWordFilterInDatabase(database, definition, options = {}) {
   const conditions = definition?.conditions || {}
   const resolved = { sourceId: '', fileId: '', tagId: '', word: '' }
+  const enabledSql = options.requireEnabled === false ? '' : ' AND is_enabled = 1'
 
   if (conditions.source) {
     const source = database.prepare(`
-      SELECT id FROM sources WHERE folder_path_key = ? AND is_enabled = 1
+      SELECT id FROM sources WHERE folder_path_key = ?${enabledSql}
     `).get(createFolderPathKey(conditions.source.folderPath))
     if (!source) return { ok: false, reason: 'word-filter-source-unresolved' }
     resolved.sourceId = Number(source.id)
@@ -606,7 +640,7 @@ function resolveStableWordFilterInDatabase(database, definition) {
 
   if (conditions.file) {
     const source = database.prepare(`
-      SELECT id FROM sources WHERE folder_path_key = ? AND is_enabled = 1
+      SELECT id FROM sources WHERE folder_path_key = ?${enabledSql}
     `).get(createFolderPathKey(conditions.file.sourceFolderPath))
     if (!source) return { ok: false, reason: 'word-filter-file-source-unresolved' }
     const candidates = database.prepare(`
@@ -622,16 +656,18 @@ function resolveStableWordFilterInDatabase(database, definition) {
   }
 
   if (conditions.tag) {
-    const tag = database.prepare(`
-      SELECT t.id
-      FROM tags t
-      JOIN word_occurrence_tags wot ON wot.tag_id = t.id
-      JOIN word_occurrences wo ON wo.id = wot.occurrence_id
-      JOIN source_files sf ON sf.id = wo.source_file_id
-      JOIN sources s ON s.id = sf.source_id
-      WHERE t.name = ? COLLATE NOCASE AND s.is_enabled = 1
-      LIMIT 1
-    `).get(conditions.tag.name)
+    const tag = options.requireEnabled === false
+      ? database.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(conditions.tag.name)
+      : database.prepare(`
+        SELECT t.id
+        FROM tags t
+        JOIN word_occurrence_tags wot ON wot.tag_id = t.id
+        JOIN word_occurrences wo ON wo.id = wot.occurrence_id
+        JOIN source_files sf ON sf.id = wo.source_file_id
+        JOIN sources s ON s.id = sf.source_id
+        WHERE t.name = ? COLLATE NOCASE AND s.is_enabled = 1
+        LIMIT 1
+      `).get(conditions.tag.name)
     if (!tag) return { ok: false, reason: 'word-filter-tag-unresolved' }
     resolved.tagId = Number(tag.id)
   }
@@ -866,55 +902,8 @@ export function queryWordLibrary(filters = {}, options = {}) {
   })
 }
 
-function normalizePlanFilterSnapshot(filters = {}) {
-  return {
-    sourceId: toOptionalPositiveInteger(filters.sourceId) || '',
-    fileId: toOptionalPositiveInteger(filters.fileId) || '',
-    tagId: toOptionalPositiveInteger(filters.tagId) || '',
-    word: String(filters.word || ''),
-  }
-}
-
-function sanitizeNewPlanFilters(database, filters = {}) {
-  const snapshot = normalizePlanFilterSnapshot(filters)
-  if (snapshot.sourceId) {
-    const source = database.prepare(`
-      SELECT id FROM sources WHERE id = ? AND is_enabled = 1
-    `).get(snapshot.sourceId)
-    if (!source) {
-      snapshot.sourceId = ''
-      snapshot.fileId = ''
-    }
-  }
-  if (snapshot.fileId) {
-    const file = database.prepare(`
-      SELECT sf.id, sf.source_id
-      FROM source_files sf
-      JOIN sources s ON s.id = sf.source_id
-      WHERE sf.id = ? AND s.is_enabled = 1
-    `).get(snapshot.fileId)
-    if (!file || (snapshot.sourceId && Number(file.source_id) !== snapshot.sourceId)) {
-      snapshot.fileId = ''
-    }
-  }
-  if (snapshot.tagId) {
-    const tag = database.prepare(`
-      SELECT t.id
-      FROM tags t
-      JOIN word_occurrence_tags wot ON wot.tag_id = t.id
-      JOIN word_occurrences wo ON wo.id = wot.occurrence_id
-      JOIN source_files sf ON sf.id = wo.source_file_id
-      JOIN sources s ON s.id = sf.source_id
-      WHERE t.id = ? AND s.is_enabled = 1
-      LIMIT 1
-    `).get(snapshot.tagId)
-    if (!tag) snapshot.tagId = ''
-  }
-  return snapshot
-}
-
-function selectMatchingWordIds(database, filters) {
-  const where = buildLibraryFilterWhere(filters)
+function selectMatchingWordIds(database, filters, queryOptions = {}) {
+  const where = buildLibraryFilterWhere(filters, [], queryOptions)
   return database.prepare(`
     SELECT DISTINCT w.id
     FROM words w
@@ -926,66 +915,55 @@ function selectMatchingWordIds(database, filters) {
   `).all(...where.parameters).map((row) => Number(row.id))
 }
 
-function replaceStudyPlanOccurrenceSnapshots(database, planId, filters, capturedAt) {
-  database.prepare(`
-    DELETE FROM study_plan_item_occurrences
-    WHERE plan_item_id IN (SELECT id FROM study_plan_items WHERE plan_id = ?)
-  `).run(planId)
+function resolveStudyPlanFilters(database, planRow) {
+  let storedFilter
+  try {
+    storedFilter = JSON.parse(planRow?.source_filter_json || '{}')
+  } catch {
+    return { ok: false, reason: 'invalid-study-plan-filter' }
+  }
+  if (!storedFilter?.filterSnapshot) {
+    return { ok: false, reason: 'invalid-study-plan-filter' }
+  }
 
-  const where = buildLibraryFilterWhere(filters)
+  const resolution = resolveStableWordFilterInDatabase(
+    database,
+    storedFilter.filterSnapshot,
+    { requireEnabled: false }
+  )
+  if (!resolution.ok) return resolution
+
+  const sourceScopeFolderPaths = Array.isArray(storedFilter.sourceScopeFolderPaths)
+    ? storedFilter.sourceScopeFolderPaths
+    : []
+  const findSource = database.prepare('SELECT id FROM sources WHERE folder_path_key = ?')
+  const sourceIds = sourceScopeFolderPaths
+    .map((folderPath) => Number(findSource.get(createFolderPathKey(folderPath))?.id || 0))
+    .filter(Boolean)
+
+  return {
+    ...resolution,
+    queryOptions: {
+      requireEnabled: false,
+      enforceSourceScope: true,
+      sourceIds,
+    },
+  }
+}
+
+function getLiveWordOccurrenceCounts(database, filters, wordIds, queryOptions = {}) {
+  if (!wordIds.length) return new Map()
+  const where = buildLibraryFilterWhere(filters, wordIds, queryOptions)
   const rows = database.prepare(`
-    SELECT
-      spi.id AS plan_item_id,
-      s.display_name AS source_name,
-      s.folder_path,
-      sf.relative_path,
-      sf.file_path,
-      wo.line_number,
-      wo.source_word,
-      wo.marker_1,
-      wo.marker_2,
-      wo.marker_3,
-      wo.marker_4,
-      wo.marker_5,
-      wo.annotation,
-      wo.raw_line
-    FROM study_plan_items spi
-    JOIN words w ON w.id = spi.word_id
+    SELECT wo.word_id, COUNT(DISTINCT wo.id) AS occurrence_count
+    FROM words w
     JOIN word_occurrences wo ON wo.word_id = w.id
     JOIN source_files sf ON sf.id = wo.source_file_id
     JOIN sources s ON s.id = sf.source_id
-    WHERE spi.plan_id = ? AND ${where.sql}
-    ORDER BY spi.item_order, s.display_name COLLATE NOCASE,
-             sf.relative_path COLLATE NOCASE, wo.line_number, wo.id
-  `).all(planId, ...where.parameters)
-
-  const insertSnapshot = database.prepare(`
-    INSERT INTO study_plan_item_occurrences (
-      plan_item_id, source_name, source_folder_path, relative_path, file_path,
-      line_number, source_word, marker_1, marker_2, marker_3, marker_4, marker_5,
-      annotation, raw_line, captured_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-  for (const row of rows) {
-    insertSnapshot.run(
-      Number(row.plan_item_id),
-      row.source_name,
-      row.folder_path,
-      row.relative_path,
-      row.file_path,
-      Number(row.line_number),
-      row.source_word,
-      row.marker_1,
-      row.marker_2,
-      row.marker_3,
-      row.marker_4,
-      row.marker_5,
-      row.annotation,
-      row.raw_line,
-      capturedAt
-    )
-  }
-  return rows.length
+    WHERE ${where.sql}
+    GROUP BY wo.word_id
+  `).all(...where.parameters)
+  return new Map(rows.map((row) => [Number(row.word_id), Number(row.occurrence_count || 0)]))
 }
 
 function normalizeStudyPlanRow(row) {
@@ -1071,6 +1049,9 @@ export function createStudyPlan(name, definition, filterFilePath = '') {
     const resolution = resolveStableWordFilterInDatabase(database, definition)
     if (!resolution.ok) return resolution
     const wordIds = selectMatchingWordIds(database, resolution.filters)
+    const sourceScopeFolderPaths = database.prepare(`
+      SELECT folder_path FROM sources WHERE is_enabled = 1 ORDER BY id
+    `).all().map((row) => row.folder_path)
     const now = Date.now()
 
     database.exec('BEGIN IMMEDIATE')
@@ -1085,7 +1066,8 @@ export function createStudyPlan(name, definition, filterFilePath = '') {
           version: 2,
           filterFilePath: String(filterFilePath || ''),
           filterSnapshot: definition,
-          occurrenceSnapshotVersion: 1,
+          sourceScopeFolderPaths,
+          occurrenceDataModel: 'live-reference-v1',
         }),
         WORD_NORMALIZATION_VERSION,
         now,
@@ -1100,19 +1082,12 @@ export function createStudyPlan(name, definition, filterFilePath = '') {
       wordIds.forEach((wordId, index) => {
         insertItem.run(planId, wordId, index + 1, now, now)
       })
-      const occurrenceSnapshotCount = replaceStudyPlanOccurrenceSnapshots(
-        database,
-        planId,
-        resolution.filters,
-        now
-      )
       database.exec('COMMIT')
 
       return {
         ok: true,
         plan: normalizeStudyPlanRow(getStudyPlanRow(database, planId)),
         addedCount: wordIds.length,
-        occurrenceSnapshotCount,
       }
     } catch (error) {
       database.exec('ROLLBACK')
@@ -1129,43 +1104,9 @@ export function refreshStudyPlanScope(planId) {
     const planRow = database.prepare('SELECT * FROM study_plans WHERE id = ?').get(numericPlanId)
     if (!planRow) return { ok: false, reason: 'study-plan-not-found' }
 
-    let snapshot
-    try {
-      snapshot = JSON.parse(planRow.source_filter_json || '{}')
-    } catch {
-      return { ok: false, reason: 'invalid-study-plan-filter-snapshot' }
-    }
-    let filters
-    if (Number(snapshot?.version) === 2 && snapshot?.filterSnapshot) {
-      const resolution = resolveStableWordFilterInDatabase(database, snapshot.filterSnapshot)
-      if (!resolution.ok) return resolution
-      filters = resolution.filters
-    } else {
-      filters = normalizePlanFilterSnapshot(snapshot?.filters || snapshot)
-      const sanitized = sanitizeNewPlanFilters(database, filters)
-      if (JSON.stringify(sanitized) !== JSON.stringify(filters)) {
-        return { ok: false, reason: 'legacy-study-plan-filter-unresolved' }
-      }
-
-      const stableFilter = createStableWordFilterInDatabase(database, filters)
-      if (!stableFilter.ok) return { ok: false, reason: 'legacy-study-plan-filter-unresolved' }
-      const nowIso = new Date().toISOString()
-      snapshot = {
-        version: 2,
-        filterFilePath: '',
-        filterSnapshot: {
-          type: 'better-notes.word-filter',
-          version: 1,
-          filterId: `legacy-plan-${numericPlanId}`,
-          name: `${planRow.name} Filter`,
-          createdAt: nowIso,
-          updatedAt: nowIso,
-          normalizationVersion: WORD_NORMALIZATION_VERSION,
-          conditions: stableFilter.conditions,
-        },
-      }
-    }
-    const wordIds = selectMatchingWordIds(database, filters)
+    const resolution = resolveStudyPlanFilters(database, planRow)
+    if (!resolution.ok) return resolution
+    const wordIds = selectMatchingWordIds(database, resolution.filters, resolution.queryOptions)
     const now = Date.now()
 
     database.exec('BEGIN IMMEDIATE')
@@ -1188,16 +1129,9 @@ export function refreshStudyPlanScope(planId) {
           nextOrder += 1
         }
       }
-      const occurrenceSnapshotCount = replaceStudyPlanOccurrenceSnapshots(
-        database,
-        numericPlanId,
-        filters,
-        now
-      )
-      snapshot.occurrenceSnapshotVersion = 1
       database.prepare(`
-        UPDATE study_plans SET source_filter_json = ?, updated_at = ? WHERE id = ?
-      `).run(JSON.stringify(snapshot), now, numericPlanId)
+        UPDATE study_plans SET updated_at = ? WHERE id = ?
+      `).run(now, numericPlanId)
       database.exec('COMMIT')
 
       return {
@@ -1205,7 +1139,6 @@ export function refreshStudyPlanScope(planId) {
         plan: normalizeStudyPlanRow(getStudyPlanRow(database, numericPlanId)),
         matchedCount: wordIds.length,
         addedCount,
-        occurrenceSnapshotCount,
       }
     } catch (error) {
       database.exec('ROLLBACK')
@@ -1221,8 +1154,11 @@ export function listStudyPlanItems(planId, options = {}) {
   const offset = Math.max(0, Number(options.offset) || 0)
 
   return useWordLibraryDatabase((database) => {
-    const plan = normalizeStudyPlanRow(getStudyPlanRow(database, numericPlanId))
+    const planRow = getStudyPlanRow(database, numericPlanId)
+    const plan = normalizeStudyPlanRow(planRow)
     if (!plan) return { ok: false, reason: 'study-plan-not-found', items: [], total: 0 }
+    const resolution = resolveStudyPlanFilters(database, planRow)
+    if (!resolution.ok) return { ...resolution, items: [], total: plan.totalCount }
 
     const rows = database.prepare(`
       SELECT
@@ -1237,16 +1173,19 @@ export function listStudyPlanItems(planId, options = {}) {
         w.language,
         w.normalization_version,
         w.normalized_word,
-        w.display_word,
-        COUNT(spio.id) AS occurrence_count
+        w.display_word
       FROM study_plan_items spi
       JOIN words w ON w.id = spi.word_id
-      LEFT JOIN study_plan_item_occurrences spio ON spio.plan_item_id = spi.id
       WHERE spi.plan_id = ?
-      GROUP BY spi.id
       ORDER BY spi.item_order, spi.id
       LIMIT ? OFFSET ?
     `).all(numericPlanId, limit, offset)
+    const occurrenceCounts = getLiveWordOccurrenceCounts(
+      database,
+      resolution.filters,
+      rows.map((row) => Number(row.word_id)),
+      resolution.queryOptions
+    )
 
     return {
       ok: true,
@@ -1264,7 +1203,7 @@ export function listStudyPlanItems(planId, options = {}) {
         normalizationVersion: Number(row.normalization_version),
         normalizedWord: row.normalized_word,
         displayWord: row.display_word,
-        occurrenceCount: Number(row.occurrence_count || 0),
+        occurrenceCount: occurrenceCounts.get(Number(row.word_id)) || 0,
       })),
       total: plan.totalCount,
       limit,
@@ -1281,36 +1220,40 @@ export function getStudyPlanItemOccurrences(planId, planItemId) {
   }
 
   return useWordLibraryDatabase((database) => {
-    const planRow = database.prepare('SELECT source_filter_json FROM study_plans WHERE id = ?')
+    const planRow = database.prepare('SELECT * FROM study_plans WHERE id = ?')
       .get(numericPlanId)
     if (!planRow) return { ok: false, reason: 'study-plan-not-found', occurrences: [] }
-    let snapshot
-    try {
-      snapshot = JSON.parse(planRow.source_filter_json || '{}')
-    } catch {
-      return { ok: false, reason: 'invalid-study-plan-filter-snapshot', occurrences: [] }
-    }
-    if (Number(snapshot?.occurrenceSnapshotVersion) !== 1) {
-      return { ok: false, reason: 'occurrence-snapshot-not-available', occurrences: [] }
-    }
 
     const item = database.prepare(`
-      SELECT id FROM study_plan_items WHERE id = ? AND plan_id = ?
+      SELECT id, word_id FROM study_plan_items WHERE id = ? AND plan_id = ?
     `).get(numericPlanItemId, numericPlanId)
     if (!item) return { ok: false, reason: 'study-plan-item-not-found', occurrences: [] }
+    const resolution = resolveStudyPlanFilters(database, planRow)
+    if (!resolution.ok) return { ...resolution, occurrences: [] }
+    const where = buildLibraryFilterWhere(
+      resolution.filters,
+      [Number(item.word_id)],
+      resolution.queryOptions
+    )
 
     const rows = database.prepare(`
-      SELECT * FROM study_plan_item_occurrences
-      WHERE plan_item_id = ?
-      ORDER BY source_name COLLATE NOCASE, relative_path COLLATE NOCASE, line_number, id
-    `).all(numericPlanItemId)
+      SELECT wo.*, s.display_name AS source_name, s.folder_path,
+             sf.relative_path, sf.file_path
+      FROM words w
+      JOIN word_occurrences wo ON wo.word_id = w.id
+      JOIN source_files sf ON sf.id = wo.source_file_id
+      JOIN sources s ON s.id = sf.source_id
+      WHERE ${where.sql}
+      ORDER BY s.display_name COLLATE NOCASE, sf.relative_path COLLATE NOCASE,
+               wo.line_number, wo.id
+    `).all(...where.parameters)
     return {
       ok: true,
       occurrences: rows.map((row) => ({
         id: Number(row.id),
-        planItemId: Number(row.plan_item_id),
+        planItemId: numericPlanItemId,
         sourceName: row.source_name,
-        folderPath: row.source_folder_path,
+        folderPath: row.folder_path,
         relativePath: row.relative_path,
         filePath: row.file_path,
         lineNumber: Number(row.line_number),
@@ -1318,7 +1261,6 @@ export function getStudyPlanItemOccurrences(planId, planItemId) {
         markers: [row.marker_1, row.marker_2, row.marker_3, row.marker_4, row.marker_5],
         annotation: row.annotation,
         rawLine: row.raw_line,
-        capturedAt: Number(row.captured_at),
       })),
     }
   })
@@ -1344,7 +1286,7 @@ function parseStudySessionState(value) {
 }
 
 function getReviewItemRow(database, sessionRow, planItemId) {
-  return database.prepare(`
+  const item = database.prepare(`
     SELECT
       spi.id,
       spi.plan_id,
@@ -1356,14 +1298,22 @@ function getReviewItemRow(database, sessionRow, planItemId) {
       w.language,
       w.normalization_version,
       w.normalized_word,
-      w.display_word,
-      COUNT(spio.id) AS occurrence_count
+      w.display_word
     FROM study_plan_items spi
     JOIN words w ON w.id = spi.word_id
-    LEFT JOIN study_plan_item_occurrences spio ON spio.plan_item_id = spi.id
     WHERE spi.id = ? AND spi.plan_id = ?
-    GROUP BY spi.id
   `).get(planItemId, sessionRow.plan_id)
+  if (!item) return null
+  const resolution = resolveStudyPlanFilters(database, sessionRow)
+  const occurrenceCounts = resolution.ok
+    ? getLiveWordOccurrenceCounts(
+      database,
+      resolution.filters,
+      [Number(item.word_id)],
+      resolution.queryOptions
+    )
+    : new Map()
+  return { ...item, occurrence_count: occurrenceCounts.get(Number(item.word_id)) || 0 }
 }
 
 function normalizeReviewItem(row) {
@@ -1410,7 +1360,7 @@ function normalizeStudySessionRow(database, row) {
 
 function getStudySessionRow(database, sessionId) {
   return database.prepare(`
-    SELECT ss.*, p.name AS plan_name
+    SELECT ss.*, p.name AS plan_name, p.source_filter_json
     FROM study_sessions ss
     JOIN study_plans p ON p.id = ss.plan_id
     WHERE ss.id = ?
@@ -1419,7 +1369,7 @@ function getStudySessionRow(database, sessionId) {
 
 function getActiveStudySessionRow(database) {
   const rows = database.prepare(`
-    SELECT ss.*, p.name AS plan_name
+    SELECT ss.*, p.name AS plan_name, p.source_filter_json
     FROM study_sessions ss
     JOIN study_plans p ON p.id = ss.plan_id
     WHERE ss.ended_at IS NULL

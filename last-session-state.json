@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "savedAt": "2026-10-10T10:15:22.892Z",
+  "savedAt": "2026-10-13T17:20:07.885Z",
   "window": {
-    "displayId": 1460970827,
+    "displayId": 559524117,
     "displayBounds": {
       "x": 0,
       "y": 0,
@@ -10,9 +10,9 @@
       "height": 1080
     },
     "bounds": {
-      "x": 1119,
+      "x": 1200,
       "y": 0,
-      "width": 801,
+      "width": 720,
       "height": 1032
     },
     "isMaximized": false
@@ -33,7 +33,7 @@
       "rightToolTab": "main",
       "selectedNoteIndex": -1,
       "defaultNotesOwnerPath": "C:\\youtubeDL\\At 17, She Hauled Home 3 Corn Cribs Nobody Wanted - Then the Buyers Came Looking [sSNPqysevoE].mp4",
-      "playbackTime": 2.204443,
+      "playbackTime": 0,
       "mainMiddleView": {
         "toggleView": {
           "activeState": 0,
@@ -128,7 +128,7 @@
         "sources": {
           "default": {
             "filePath": "C:\\youtubeDL\\At 17, She Hauled Home 3 Corn Cribs Nobody Wanted - Then the Buyers Came Looking [sSNPqysevoE].mp4",
-            "playbackTime": 2.204443
+            "playbackTime": 0
           },
           "pool": {
             "filePath": "D:\\解题 高中数学\\解题 司马红丽老师\\【司马红丽数学】用对三个方法，杀疯“极值点偏移问题”   _JOM 一题多解  3个典型方法处理同一道题  复合函数 同构关系 换元之后零点个数变化  乘积关系也是极值点偏移问题 _JOM\\1.2022-7-8-4(Av728546113,P1).mp4",
@@ -171,47 +171,48 @@
       }
     },
     "text": {
-      "activeTab": "mixedLibrary",
+      "activeTab": "study",
       "wordsTabViewMode": "review",
-      "currentTxtFilePath": "C:\\WangYuMen TOEFL\\张红岩-词以类记\\事物.txt",
-      "currentFolderPath": "C:\\WangYuMen TOEFL\\张红岩-词以类记",
-      "selectedRecordIndex": 334,
+      "currentTxtFilePath": "C:\\WangYuMen TOEFL\\王玉梅TOEFL\\list021.txt",
+      "currentFolderPath": "C:\\WangYuMen TOEFL\\王玉梅TOEFL",
+      "selectedRecordIndex": 43,
       "specialTextFilePath": "",
       "specialFolderPath": "",
       "library": {
         "filters": {
-          "sourceId": "",
+          "sourceId": "1",
           "fileId": "",
           "tagId": "",
           "word": ""
         },
         "appliedFilters": {
-          "sourceId": "",
+          "sourceId": "1",
           "fileId": "",
           "tagId": "",
           "word": ""
         },
         "offset": 0,
-        "expandedWordId": 3432,
-        "loadedFilterPath": "C:\\WangYuMen TOEFL\\王玉梅加张红岩.bn-word-filter.json",
-        "loadedFilterName": "王玉梅加张红岩.bn-word-filter.json",
+        "expandedWordId": null,
+        "loadedFilterPath": "C:\\temp\\王玉梅.bn-word-filter.json",
+        "loadedFilterName": "王玉梅.bn-word-filter.json",
         "loadedFilterFilters": {
-          "sourceId": "",
+          "sourceId": "1",
           "fileId": "",
           "tagId": "",
           "word": ""
         },
         "formatDisplay": "all",
-        "sortType": "source",
+        "sortType": "text",
         "sortDirection": "asc"
       },
       "studyPlan": {
         "selectedPlanId": 1,
         "offset": 0,
-        "expandedItemId": null,
+        "expandedItemId": 133,
+        "previewItemId": 61,
         "filterFilePath": "",
         "filterFileName": "",
-        "reviewMode": false,
+        "reviewMode": true,
         "historyOpen": false,
         "expandedHistorySessionId": null,
         "planSelectionCleared": false
@@ -221,7 +222,7 @@
           "sourceId": "",
           "fileId": "",
           "noteType": "NewWordLog",
-          "year": "2013",
+          "year": "",
           "month": "",
           "computerName": "",
           "wps": "",
@@ -231,40 +232,41 @@
           "sourceId": "",
           "fileId": "",
           "noteType": "NewWordLog",
+          "year": "",
+          "month": "",
+          "computerName": "",
+          "wps": "",
+          "comment": ""
+        },
+        "offset": 0,
+        "expandedWordId": 28693,
+        "loadedFilterPath": "C:\\temp\\Word2012.bn-mixed-note-filter.json",
+        "loadedFilterName": "Word2012.bn-mixed-note-filter.json",
+        "loadedFilterFilters": {
+          "sourceId": "",
+          "fileId": "",
+          "noteType": "NewWordLog",
           "year": "2012",
           "month": "",
           "computerName": "",
           "wps": "",
           "comment": ""
         },
-        "offset": 0,
-        "expandedWordId": 65805,
-        "loadedFilterPath": "E:\\__English 文本笔记 未整理 20260929\\Word2013.bn-mixed-note-filter.json",
-        "loadedFilterName": "Word2013.bn-mixed-note-filter.json",
-        "loadedFilterFilters": {
-          "sourceId": "",
-          "fileId": "",
-          "noteType": "NewWordLog",
-          "year": "2013",
-          "month": "",
-          "computerName": "",
-          "wps": "",
-          "comment": ""
-        },
-        "formatDisplay": "unformatted",
-        "sortType": "source",
+        "formatDisplay": "all",
+        "sortType": "text",
         "sortDirection": "asc"
       },
       "mixedStudy": {
         "selectedPlanId": null,
         "offset": 0,
-        "expandedItemId": 2004,
+        "expandedItemId": 80,
+        "previewItemId": null,
         "filterFilePath": "",
         "filterFileName": "",
         "reviewMode": false,
         "historyOpen": false,
         "expandedHistorySessionId": null,
-        "planSelectionCleared": true
+        "planSelectionCleared": false
       }
     }
   }

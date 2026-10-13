@@ -68,25 +68,89 @@ export function normalizeMixedWps(value) {
   return String(value ?? '').normalize('NFKC').replace(/\s+/g, ' ').trim()
 }
 
-function parseMixedLine(rawLine) {
-  const raw = String(rawLine ?? '')
-  const trimmed = raw.trim()
-  if (!trimmed) return null
-  const match = trimmed.match(/^\[([^\]]+)\]\s*([\s\S]*)$/)
-  const sourceWps = match ? match[1].trim() : trimmed
+function createMixedRecord({
+  sourceWps,
+  comment = '',
+  rawLine = '',
+  lineNumber,
+  endLineNumber = lineNumber,
+  isPlainLine,
+}) {
   const normalizedWps = normalizeMixedWps(sourceWps)
   if (!normalizedWps) return null
   return {
     sourceWps,
     normalizedWps,
     displayWps: sourceWps,
-    comment: match ? match[2] : '',
-    rawLine: raw,
-    isPlainLine: !match,
+    comment,
+    rawLine,
+    lineNumber,
+    endLineNumber,
+    isPlainLine,
     itemUid: crypto.createHash('sha256')
       .update(`mixed-note-wps:v${MIXED_NOTE_NORMALIZATION_VERSION}\n${normalizedWps}`)
       .digest('hex'),
   }
+}
+
+function parseMixedRecords(records) {
+  const parsedRecords = []
+  let current = null
+
+  const flushCurrent = () => {
+    if (!current) return
+    const parsed = createMixedRecord({
+      sourceWps: current.sourceWps,
+      comment: current.commentLines.join('\n'),
+      rawLine: current.rawLines.join('\n'),
+      lineNumber: current.lineNumber,
+      endLineNumber: current.lineNumber + current.rawLines.length - 1,
+      isPlainLine: false,
+    })
+    if (parsed) parsedRecords.push(parsed)
+    current = null
+  }
+
+  for (let index = 0; index < records.length; index += 1) {
+    const raw = String(records[index]?.raw ?? '')
+    // The opening bracket must be the first physical character. Do not trim
+    // before matching: leading spaces, tabs, BOMs, etc. make this a comment or
+    // an unformatted preamble line rather than a new Mixed Note.
+    const headerMatch = raw.match(/^\[([^\]]+)\](.*)$/)
+    const headerWps = headerMatch?.[1]?.trim() || ''
+
+    if (headerMatch && headerWps) {
+      flushCurrent()
+      const firstCommentLine = headerMatch[2].replace(/^[ \t]+/, '')
+      current = {
+        sourceWps: headerWps,
+        commentLines: firstCommentLine ? [firstCommentLine] : [],
+        rawLines: [raw],
+        lineNumber: index + 1,
+      }
+      continue
+    }
+
+    if (current) {
+      current.commentLines.push(raw)
+      current.rawLines.push(raw)
+      continue
+    }
+
+    const sourceWps = raw.trim()
+    if (!sourceWps) continue
+    const parsed = createMixedRecord({
+      sourceWps,
+      rawLine: raw,
+      lineNumber: index + 1,
+      endLineNumber: index + 1,
+      isPlainLine: true,
+    })
+    if (parsed) parsedRecords.push(parsed)
+  }
+
+  flushCurrent()
+  return parsedRecords
 }
 
 function parseFileMetadata(fileName) {
@@ -116,7 +180,8 @@ export function initializeMixedNoteSchema() {
       );
       CREATE TABLE IF NOT EXISTS mixed_note_files (
         id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES mixed_note_sources(id) ON DELETE CASCADE,
-        relative_path TEXT NOT NULL, file_path TEXT NOT NULL, file_size INTEGER, modified_at_ms INTEGER,
+        relative_path TEXT NOT NULL, file_path TEXT NOT NULL, file_order INTEGER NOT NULL,
+        file_size INTEGER, modified_at_ms INTEGER,
         encoding TEXT, note_type TEXT NOT NULL DEFAULT '', note_year INTEGER, note_month INTEGER,
         computer_name TEXT NOT NULL DEFAULT '', indexed_at INTEGER,
         UNIQUE(source_id, relative_path)
@@ -129,30 +194,31 @@ export function initializeMixedNoteSchema() {
       CREATE TABLE IF NOT EXISTS mixed_note_occurrences (
         id INTEGER PRIMARY KEY, source_file_id INTEGER NOT NULL REFERENCES mixed_note_files(id) ON DELETE CASCADE,
         item_id INTEGER NOT NULL REFERENCES mixed_note_items(id) ON DELETE RESTRICT,
-        line_number INTEGER NOT NULL, source_wps TEXT NOT NULL, comment TEXT NOT NULL DEFAULT '',
+        line_number INTEGER NOT NULL, end_line_number INTEGER NOT NULL, occurrence_order INTEGER NOT NULL,
+        source_wps TEXT NOT NULL, comment TEXT NOT NULL DEFAULT '',
         raw_line TEXT NOT NULL, is_plain_line INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-        UNIQUE(source_file_id, line_number)
+        UNIQUE(source_file_id, occurrence_order), UNIQUE(source_file_id, line_number)
       );
       CREATE INDEX IF NOT EXISTS idx_mixed_occurrence_item ON mixed_note_occurrences(item_id);
+      CREATE INDEX IF NOT EXISTS idx_mixed_file_source_order ON mixed_note_files(source_id, file_order);
+      CREATE INDEX IF NOT EXISTS idx_mixed_occurrence_file_order
+        ON mixed_note_occurrences(source_file_id, occurrence_order);
+      CREATE INDEX IF NOT EXISTS idx_mixed_occurrence_item_file_order
+        ON mixed_note_occurrences(item_id, source_file_id, occurrence_order);
       CREATE TABLE IF NOT EXISTS mixed_note_study_plans (
         id INTEGER PRIMARY KEY, name TEXT NOT NULL, source_filter_json TEXT NOT NULL,
         normalization_version INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS mixed_note_plan_items (
         id INTEGER PRIMARY KEY, plan_id INTEGER NOT NULL REFERENCES mixed_note_study_plans(id) ON DELETE CASCADE,
-        item_id INTEGER NOT NULL REFERENCES mixed_note_items(id) ON DELETE RESTRICT, item_order INTEGER NOT NULL,
+        item_id INTEGER NOT NULL REFERENCES mixed_note_items(id) ON DELETE CASCADE, item_order INTEGER NOT NULL,
         status TEXT NOT NULL DEFAULT 'unseen', is_special INTEGER NOT NULL DEFAULT 0,
         added_at INTEGER NOT NULL, status_at INTEGER NOT NULL, last_reviewed_at INTEGER,
         UNIQUE(plan_id, item_id)
       );
-      CREATE TABLE IF NOT EXISTS mixed_note_plan_occurrences (
-        id INTEGER PRIMARY KEY, plan_item_id INTEGER NOT NULL REFERENCES mixed_note_plan_items(id) ON DELETE CASCADE,
-        source_name TEXT NOT NULL, source_folder_path TEXT NOT NULL, relative_path TEXT NOT NULL,
-        file_path TEXT NOT NULL, line_number INTEGER NOT NULL, source_wps TEXT NOT NULL,
-        comment TEXT NOT NULL DEFAULT '', raw_line TEXT NOT NULL DEFAULT '', note_type TEXT NOT NULL DEFAULT '',
-        note_year INTEGER, note_month INTEGER, computer_name TEXT NOT NULL DEFAULT '', captured_at INTEGER NOT NULL
-      );
+      CREATE INDEX IF NOT EXISTS idx_mixed_plan_items_order
+        ON mixed_note_plan_items(plan_id, item_order);
       CREATE TABLE IF NOT EXISTS mixed_note_study_sessions (
         id INTEGER PRIMARY KEY, plan_id INTEGER NOT NULL REFERENCES mixed_note_study_plans(id) ON DELETE RESTRICT,
         started_at INTEGER NOT NULL, ended_at INTEGER, session_json TEXT NOT NULL DEFAULT '{}'
@@ -189,6 +255,41 @@ const mapSource = (row) => row ? ({
 
 const getSourceRow = (db, id) => db.prepare(`${SOURCE_SQL} WHERE s.id = ? GROUP BY s.id`).get(id)
 
+function removeOrphanedMixedItems(db, now = Date.now()) {
+  const orphanItems = db.prepare(`SELECT id FROM mixed_note_items WHERE NOT EXISTS
+    (SELECT 1 FROM mixed_note_occurrences o WHERE o.item_id=mixed_note_items.id)`).all()
+  const orphanItemIds = orphanItems.map((row) => Number(row.id))
+  if (!orphanItemIds.length) return { itemCount: 0, planItemCount: 0 }
+
+  const placeholders = orphanItemIds.map(() => '?').join(',')
+  const planItems = db.prepare(`SELECT id, plan_id FROM mixed_note_plan_items
+    WHERE item_id IN (${placeholders})`).all(...orphanItemIds)
+  const removedPlanItemIds = new Set(planItems.map((row) => Number(row.id)))
+  if (removedPlanItemIds.size) {
+    const activeSessions = db.prepare(`SELECT id, session_json FROM mixed_note_study_sessions
+      WHERE ended_at IS NULL`).all()
+    const updateSession = db.prepare(`UPDATE mixed_note_study_sessions
+      SET session_json=?, ended_at=? WHERE id=?`)
+    activeSessions.forEach((session) => {
+      const state = parseSession(session.session_json)
+      if (!state.isValid || !state.queueItemIds.some((id) => removedPlanItemIds.has(id))) return
+      const removedBeforeCurrent = state.queueItemIds
+        .slice(0, state.currentIndex)
+        .filter((id) => removedPlanItemIds.has(id)).length
+      state.queueItemIds = state.queueItemIds.filter((id) => !removedPlanItemIds.has(id))
+      state.currentIndex = Math.max(0, state.currentIndex - removedBeforeCurrent)
+      const completed = state.currentIndex >= state.queueItemIds.length
+      updateSession.run(JSON.stringify(state), completed ? now : null, session.id)
+    })
+    const affectedPlanIds = [...new Set(planItems.map((row) => Number(row.plan_id)))]
+    const touchPlan = db.prepare('UPDATE mixed_note_study_plans SET updated_at=? WHERE id=?')
+    affectedPlanIds.forEach((planId) => touchPlan.run(now, planId))
+  }
+
+  db.prepare(`DELETE FROM mixed_note_items WHERE id IN (${placeholders})`).run(...orphanItemIds)
+  return { itemCount: orphanItemIds.length, planItemCount: planItems.length }
+}
+
 export function listMixedNoteSources() {
   return useWordLibraryDatabase((db) => db.prepare(
     `${SOURCE_SQL} GROUP BY s.id ORDER BY s.is_enabled DESC, s.updated_at DESC, s.id DESC`
@@ -218,7 +319,8 @@ export async function addMixedNoteSource(folderPath) {
   })
 }
 
-export async function validateMixedNoteSourceSelection(ids) {
+export async function validateMixedNoteSourceSelection(ids, options = {}) {
+  const checkFormat = options.checkFormat !== false
   const requestedIds = [...new Set((Array.isArray(ids) ? ids : []).map(toId).filter(Boolean))]
   const sourceMap = new Map(listMixedNoteSources().map((source) => [source.id, source]))
   const sources = requestedIds.map((id) => sourceMap.get(id)).filter(Boolean)
@@ -271,7 +373,83 @@ export async function validateMixedNoteSourceSelection(ids) {
   if (duplicateFileNames.length > 0) {
     return { ok: false, reason: 'mixed-note-duplicate-file-names', duplicateFileNames }
   }
-  return { ok: true, sources, manifests, fileCount: manifests.reduce((sum, item) => sum + item.files.length, 0) }
+
+  const fileCount = manifests.reduce((sum, item) => sum + item.files.length, 0)
+  if (!checkFormat) {
+    return { ok: true, sources, manifests, fileCount, formatChecked: false }
+  }
+
+  const validationReports = []
+  for (const manifest of manifests) {
+    const source = sourceMap.get(manifest.sourceId)
+    const fileReports = []
+    for (const file of manifest.files) {
+      try {
+        const read = await readWordFile(file.filePath, { includeTxtFiles: false })
+        if (!read?.ok) throw new Error(read?.reason || 'read-failed')
+        const errors = []
+        for (let index = 0; index < read.records.length; index += 1) {
+          const rawLine = String(read.records[index]?.raw ?? '')
+          if (rawLine.startsWith('[') && !rawLine.includes(']')) {
+            errors.push({
+              stage: 'VALIDATE',
+              type: 'UnclosedMixedNoteHeaderError',
+              lineNumber: index + 1,
+              rawLine,
+              message: "physical line starts with '[' but has no closing ']'",
+            })
+          }
+        }
+        if (errors.length) {
+          fileReports.push({
+            fileName: file.fileName,
+            filePath: file.filePath,
+            relativePath: path.relative(source.folderPath, file.filePath) || file.fileName,
+            totalLines: read.records.length,
+            errors,
+          })
+        }
+      } catch (error) {
+        fileReports.push({
+          fileName: file.fileName,
+          filePath: file.filePath,
+          relativePath: path.relative(source.folderPath, file.filePath) || file.fileName,
+          totalLines: 0,
+          errors: [{
+            stage: 'READ',
+            type: error?.name || 'Error',
+            lineNumber: null,
+            rawLine: '',
+            message: error?.message || String(error),
+          }],
+        })
+      }
+    }
+    if (fileReports.length) {
+      validationReports.push({
+        sourceId: source.id,
+        sourceName: source.displayName,
+        sourceFolder: source.folderPath,
+        filesDiscovered: manifest.files.length,
+        files: fileReports,
+      })
+    }
+  }
+
+  if (validationReports.length) {
+    return {
+      ok: false,
+      reason: 'mixed-note-preflight-validation-failed',
+      validationReports,
+      fileCount,
+      errorCount: validationReports.reduce((sourceTotal, sourceReport) => (
+        sourceTotal + sourceReport.files.reduce((fileTotal, fileReport) => (
+          fileTotal + fileReport.errors.length
+        ), 0)
+      ), 0),
+    }
+  }
+  return { ok: true, sources, manifests, fileCount, formatChecked: true }
 }
 
 export function applyMixedNoteSourceSelection(ids) {
@@ -304,9 +482,7 @@ export function deleteMixedNoteSource(id) {
     db.exec('BEGIN IMMEDIATE')
     try {
       db.prepare('DELETE FROM mixed_note_sources WHERE id = ?').run(sourceId)
-      db.prepare(`DELETE FROM mixed_note_items WHERE NOT EXISTS
-        (SELECT 1 FROM mixed_note_occurrences o WHERE o.item_id = mixed_note_items.id)
-        AND NOT EXISTS (SELECT 1 FROM mixed_note_plan_items p WHERE p.item_id = mixed_note_items.id)`).run()
+      removeOrphanedMixedItems(db)
       db.exec('COMMIT')
       return { ok: true, source }
     } catch (error) {
@@ -326,10 +502,7 @@ async function readMixedSource(source, manifestFiles = null) {
         readWordFile(file.filePath, { includeTxtFiles: false }), fs.stat(file.filePath),
       ])
       if (!read?.ok) throw new Error(read?.reason || 'read-failed')
-      const records = read.records.map((record, index) => {
-        const parsed = parseMixedLine(record.raw)
-        return parsed ? { ...parsed, lineNumber: index + 1 } : null
-      }).filter(Boolean)
+      const records = parseMixedRecords(read.records)
       indexedFiles.push({
         ...file, fileSize: stat.size, modifiedAtMs: stat.mtimeMs, encoding: read.encoding || '',
         metadata: parseFileMetadata(file.fileName), records,
@@ -345,41 +518,40 @@ function replaceMixedSourceIndex(source, scan) {
   return useWordLibraryDatabase((db) => {
     const now = Date.now()
     const insertFile = db.prepare(`INSERT INTO mixed_note_files
-      (source_id, relative_path, file_path, file_size, modified_at_ms, encoding,
+      (source_id, relative_path, file_path, file_order, file_size, modified_at_ms, encoding,
        note_type, note_year, note_month, computer_name, indexed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     const upsertItem = db.prepare(`INSERT INTO mixed_note_items
       (item_uid, normalization_version, normalized_wps, display_wps, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(normalized_wps) DO UPDATE SET updated_at = excluded.updated_at`)
     const findItem = db.prepare('SELECT id FROM mixed_note_items WHERE normalized_wps = ?')
     const insertOccurrence = db.prepare(`INSERT INTO mixed_note_occurrences
-      (source_file_id, item_id, line_number, source_wps, comment, raw_line, is_plain_line, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (source_file_id, item_id, line_number, end_line_number, occurrence_order,
+       source_wps, comment, raw_line, is_plain_line, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     db.exec('BEGIN IMMEDIATE')
     try {
       db.prepare('DELETE FROM mixed_note_files WHERE source_id = ?').run(source.id)
       let occurrenceCount = 0
       let plainLineCount = 0
-      for (const file of scan.indexedFiles) {
+      for (const [fileIndex, file] of scan.indexedFiles.entries()) {
         const m = file.metadata
         const result = insertFile.run(
-          source.id, path.relative(source.folderPath, file.filePath) || file.fileName, file.filePath,
+          source.id, path.relative(source.folderPath, file.filePath) || file.fileName, file.filePath, fileIndex + 1,
           file.fileSize, file.modifiedAtMs, file.encoding, m.noteType, m.year, m.month, m.computerName, now
         )
         const fileId = Number(result.lastInsertRowid)
-        for (const record of file.records) {
+        for (const [recordIndex, record] of file.records.entries()) {
           upsertItem.run(record.itemUid, MIXED_NOTE_NORMALIZATION_VERSION, record.normalizedWps, record.displayWps, now, now)
           const itemId = Number(findItem.get(record.normalizedWps).id)
-          insertOccurrence.run(fileId, itemId, record.lineNumber, record.sourceWps, record.comment,
-            record.rawLine, record.isPlainLine ? 1 : 0, now, now)
+          insertOccurrence.run(fileId, itemId, record.lineNumber, record.endLineNumber, recordIndex + 1,
+            record.sourceWps, record.comment, record.rawLine, record.isPlainLine ? 1 : 0, now, now)
           occurrenceCount += 1
           if (record.isPlainLine) plainLineCount += 1
         }
       }
-      db.prepare(`DELETE FROM mixed_note_items WHERE NOT EXISTS
-        (SELECT 1 FROM mixed_note_occurrences o WHERE o.item_id = mixed_note_items.id)
-        AND NOT EXISTS (SELECT 1 FROM mixed_note_plan_items p WHERE p.item_id = mixed_note_items.id)`).run()
+      removeOrphanedMixedItems(db, now)
       const status = scan.failures.length ? 'partial' : 'ready'
       db.prepare(`UPDATE mixed_note_sources SET updated_at=?, last_scanned_at=?, last_scan_status=?, last_scan_error=?
         WHERE id=?`).run(now, now, status, scan.failures.map((x) => `${x.filePath}: ${x.reason}`).join('\n'), source.id)
@@ -414,10 +586,19 @@ const normalizeFilters = (filters = {}) => ({
   wps: String(filters.wps || ''), comment: String(filters.comment || ''),
 })
 
-function buildWhere(filters = {}, itemIds = []) {
+function buildWhere(filters = {}, itemIds = [], options = {}) {
   const f = normalizeFilters(filters)
-  const clauses = ['s.is_enabled = 1']
+  const clauses = options.requireEnabled === false ? [] : ['s.is_enabled = 1']
   const parameters = []
+  if (options.enforceSourceScope) {
+    const sourceIds = Array.isArray(options.sourceIds) ? options.sourceIds.map(toId).filter(Boolean) : []
+    if (sourceIds.length) {
+      clauses.push(`s.id IN (${sourceIds.map(() => '?').join(',')})`)
+      parameters.push(...sourceIds)
+    } else {
+      clauses.push('1 = 0')
+    }
+  }
   if (f.sourceId) { clauses.push('s.id = ?'); parameters.push(f.sourceId) }
   if (f.fileId) { clauses.push('mf.id = ?'); parameters.push(f.fileId) }
   if (f.noteType) { clauses.push('mf.note_type = ? COLLATE NOCASE'); parameters.push(f.noteType) }
@@ -439,7 +620,7 @@ function buildWhere(filters = {}, itemIds = []) {
     clauses.push(`mi.id IN (${itemIds.map(() => '?').join(',')})`)
     parameters.push(...itemIds)
   }
-  return { sql: clauses.join(' AND '), parameters }
+  return { sql: clauses.length ? clauses.join(' AND ') : '1 = 1', parameters }
 }
 
 export function listMixedNoteFilterOptions() {
@@ -508,19 +689,22 @@ export function queryMixedNotes(filters = {}, options = {}) {
     const byItem = new Map()
     if (ids.length) {
       const occurrenceWhere = buildWhere(filters, ids)
-      const occurrences = db.prepare(`SELECT mo.*, mf.id file_id, mf.file_path, mf.relative_path,
+      const occurrences = db.prepare(`SELECT mo.*, mf.id file_id, mf.file_order, mf.file_path, mf.relative_path,
         mf.note_type, mf.note_year, mf.note_month, mf.computer_name,
         s.id source_id, s.display_name source_name, s.folder_path, mi.normalized_wps
         ${join} WHERE ${occurrenceWhere.sql}
         ORDER BY mi.normalized_wps COLLATE NOCASE, s.display_name COLLATE NOCASE,
-                 mf.relative_path COLLATE NOCASE, mo.line_number`).all(...occurrenceWhere.parameters)
+                 mf.file_order, mo.occurrence_order`).all(...occurrenceWhere.parameters)
       occurrences.forEach((row) => {
         const itemId = Number(row.item_id)
         const list = byItem.get(itemId) || []
         list.push({
           id: Number(row.id), wordId: itemId, sourceId: Number(row.source_id), sourceName: row.source_name,
           folderPath: row.folder_path, fileId: Number(row.file_id), filePath: row.file_path,
-          relativePath: row.relative_path, lineNumber: Number(row.line_number), sourceWord: row.source_wps,
+          relativePath: row.relative_path, lineNumber: Number(row.line_number),
+          endLineNumber: Number(row.end_line_number), fileOrder: Number(row.file_order),
+          occurrenceOrder: Number(row.occurrence_order),
+          sourceWord: row.source_wps,
           annotation: row.comment, rawLine: row.raw_line, isPlainLine: Boolean(row.is_plain_line),
           noteType: row.note_type, year: row.note_year == null ? null : Number(row.note_year),
           month: row.note_month == null ? null : Number(row.note_month), computerName: row.computer_name,
@@ -567,20 +751,21 @@ export function createStableMixedNoteFilter(filters = {}) {
   return useWordLibraryDatabase((db) => stableConditionsInDb(db, filters))
 }
 
-function resolveConditionsInDb(db, definition) {
+function resolveConditionsInDb(db, definition, options = {}) {
   const c = definition?.conditions || {}
+  const enabledSql = options.requireEnabled === false ? '' : ' AND is_enabled=1'
   const resolved = normalizeFilters({
     noteType: c.noteType, year: c.year, month: c.month,
     computerName: c.computerName, wps: c.wps, comment: c.comment,
   })
   if (c.source?.folderPath) {
-    const row = db.prepare('SELECT id FROM mixed_note_sources WHERE folder_path_key=? AND is_enabled=1')
+    const row = db.prepare(`SELECT id FROM mixed_note_sources WHERE folder_path_key=?${enabledSql}`)
       .get(pathKey(c.source.folderPath))
     if (!row) return { ok: false, reason: 'mixed-filter-source-unresolved' }
     resolved.sourceId = Number(row.id)
   }
   if (c.file?.sourceFolderPath) {
-    const source = db.prepare('SELECT id FROM mixed_note_sources WHERE folder_path_key=? AND is_enabled=1')
+    const source = db.prepare(`SELECT id FROM mixed_note_sources WHERE folder_path_key=?${enabledSql}`)
       .get(pathKey(c.file.sourceFolderPath))
     if (!source) return { ok: false, reason: 'mixed-filter-file-source-unresolved' }
     const candidates = db.prepare('SELECT id, relative_path FROM mixed_note_files WHERE source_id=?').all(source.id)
@@ -652,8 +837,8 @@ export function listMixedStudyPlans() {
     .all().map(mapPlan))
 }
 
-function matchingItemIds(db, filters) {
-  const where = buildWhere(filters)
+function matchingItemIds(db, filters, queryOptions = {}) {
+  const where = buildWhere(filters, [], queryOptions)
   return db.prepare(`SELECT DISTINCT mi.id FROM mixed_note_items mi
     JOIN mixed_note_occurrences mo ON mo.item_id=mi.id JOIN mixed_note_files mf ON mf.id=mo.source_file_id
     JOIN mixed_note_sources s ON s.id=mf.source_id WHERE ${where.sql}
@@ -661,26 +846,41 @@ function matchingItemIds(db, filters) {
     .map((row) => Number(row.id))
 }
 
-function replacePlanOccurrences(db, planId, filters, now) {
-  db.prepare(`DELETE FROM mixed_note_plan_occurrences WHERE plan_item_id IN
-    (SELECT id FROM mixed_note_plan_items WHERE plan_id=?)`).run(planId)
-  const where = buildWhere(filters)
-  const rows = db.prepare(`SELECT pi.id plan_item_id, s.display_name source_name, s.folder_path,
-    mf.relative_path, mf.file_path, mf.note_type, mf.note_year, mf.note_month, mf.computer_name,
-    mo.line_number, mo.source_wps, mo.comment, mo.raw_line
-    FROM mixed_note_plan_items pi JOIN mixed_note_items mi ON mi.id=pi.item_id
-    JOIN mixed_note_occurrences mo ON mo.item_id=mi.id JOIN mixed_note_files mf ON mf.id=mo.source_file_id
-    JOIN mixed_note_sources s ON s.id=mf.source_id WHERE pi.plan_id=? AND ${where.sql}
-    ORDER BY pi.item_order, s.display_name COLLATE NOCASE, mf.relative_path COLLATE NOCASE, mo.line_number`)
-    .all(planId, ...where.parameters)
-  const insert = db.prepare(`INSERT INTO mixed_note_plan_occurrences
-    (plan_item_id, source_name, source_folder_path, relative_path, file_path, line_number,
-     source_wps, comment, raw_line, note_type, note_year, note_month, computer_name, captured_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-  rows.forEach((row) => insert.run(row.plan_item_id, row.source_name, row.folder_path, row.relative_path,
-    row.file_path, row.line_number, row.source_wps, row.comment, row.raw_line, row.note_type,
-    row.note_year, row.note_month, row.computer_name, now))
-  return rows.length
+function resolvePlanFilters(db, planRow) {
+  let storedFilter
+  try {
+    storedFilter = JSON.parse(planRow?.source_filter_json || '{}')
+  } catch {
+    return { ok: false, reason: 'invalid-study-plan-filter' }
+  }
+  const resolution = resolveConditionsInDb(db, storedFilter.filterSnapshot, { requireEnabled: false })
+  if (!resolution.ok) return resolution
+  const sourceScopeFolderPaths = Array.isArray(storedFilter.sourceScopeFolderPaths)
+    ? storedFilter.sourceScopeFolderPaths
+    : []
+  const findSource = db.prepare('SELECT id FROM mixed_note_sources WHERE folder_path_key=?')
+  const sourceIds = sourceScopeFolderPaths
+    .map((folderPath) => Number(findSource.get(pathKey(folderPath))?.id || 0))
+    .filter(Boolean)
+  return {
+    ...resolution,
+    queryOptions: {
+      requireEnabled: false,
+      enforceSourceScope: true,
+      sourceIds,
+    },
+  }
+}
+
+function getLiveOccurrenceCounts(db, filters, itemIds, queryOptions = {}) {
+  if (!itemIds.length) return new Map()
+  const where = buildWhere(filters, itemIds, queryOptions)
+  const rows = db.prepare(`SELECT mo.item_id, COUNT(DISTINCT mo.id) occurrence_count
+    FROM mixed_note_items mi JOIN mixed_note_occurrences mo ON mo.item_id=mi.id
+    JOIN mixed_note_files mf ON mf.id=mo.source_file_id
+    JOIN mixed_note_sources s ON s.id=mf.source_id
+    WHERE ${where.sql} GROUP BY mo.item_id`).all(...where.parameters)
+  return new Map(rows.map((row) => [Number(row.item_id), Number(row.occurrence_count || 0)]))
 }
 
 export function createMixedStudyPlan(name, definition, filterFilePath = '') {
@@ -690,20 +890,22 @@ export function createMixedStudyPlan(name, definition, filterFilePath = '') {
     const resolution = resolveConditionsInDb(db, definition)
     if (!resolution.ok) return resolution
     const itemIds = matchingItemIds(db, resolution.filters)
+    const sourceScopeFolderPaths = db.prepare(`SELECT folder_path FROM mixed_note_sources
+      WHERE is_enabled=1 ORDER BY id`).all().map((row) => row.folder_path)
     const now = Date.now()
     db.exec('BEGIN IMMEDIATE')
     try {
       const result = db.prepare(`INSERT INTO mixed_note_study_plans
         (name, source_filter_json, normalization_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`)
         .run(planName, JSON.stringify({ version: 1, filterFilePath, filterSnapshot: definition,
-          occurrenceSnapshotVersion: 1 }), MIXED_NOTE_NORMALIZATION_VERSION, now, now)
+          sourceScopeFolderPaths,
+          occurrenceDataModel: 'live-reference-v1' }), MIXED_NOTE_NORMALIZATION_VERSION, now, now)
       const planId = Number(result.lastInsertRowid)
       const insert = db.prepare(`INSERT INTO mixed_note_plan_items
         (plan_id,item_id,item_order,status,is_special,added_at,status_at) VALUES (?, ?, ?, 'unseen', 0, ?, ?)`)
       itemIds.forEach((itemId, index) => insert.run(planId, itemId, index + 1, now, now))
-      const occurrenceSnapshotCount = replacePlanOccurrences(db, planId, resolution.filters, now)
       db.exec('COMMIT')
-      return { ok: true, plan: mapPlan(getPlanRow(db, planId)), addedCount: itemIds.length, occurrenceSnapshotCount }
+      return { ok: true, plan: mapPlan(getPlanRow(db, planId)), addedCount: itemIds.length }
     } catch (error) { db.exec('ROLLBACK'); throw error }
   })
 }
@@ -728,11 +930,9 @@ export function refreshMixedStudyPlanScope(id) {
   return useWordLibraryDatabase((db) => {
     const row = db.prepare('SELECT * FROM mixed_note_study_plans WHERE id=?').get(planId)
     if (!row) return { ok: false, reason: 'study-plan-not-found' }
-    let snapshot
-    try { snapshot = JSON.parse(row.source_filter_json) } catch { return { ok: false, reason: 'invalid-study-plan-filter-snapshot' } }
-    const resolution = resolveConditionsInDb(db, snapshot.filterSnapshot)
+    const resolution = resolvePlanFilters(db, row)
     if (!resolution.ok) return resolution
-    const ids = matchingItemIds(db, resolution.filters)
+    const ids = matchingItemIds(db, resolution.filters, resolution.queryOptions)
     const now = Date.now()
     const maxOrder = Number(db.prepare('SELECT COALESCE(MAX(item_order),0) value FROM mixed_note_plan_items WHERE plan_id=?')
       .get(planId)?.value || 0)
@@ -743,9 +943,8 @@ export function refreshMixedStudyPlanScope(id) {
       const result = insert.run(planId, itemId, maxOrder + addedCount + 1, now, now)
       if (result.changes) addedCount += 1
     })
-    const occurrenceSnapshotCount = replacePlanOccurrences(db, planId, resolution.filters, now)
     db.prepare('UPDATE mixed_note_study_plans SET updated_at=? WHERE id=?').run(now, planId)
-    return { ok: true, plan: mapPlan(getPlanRow(db, planId)), matchedCount: ids.length, addedCount, occurrenceSnapshotCount }
+    return { ok: true, plan: mapPlan(getPlanRow(db, planId)), matchedCount: ids.length, addedCount }
   })
 }
 
@@ -755,18 +954,26 @@ export function listMixedStudyPlanItems(id, options = {}) {
   const offset = Math.max(0, Number(options.offset) || 0)
   if (!planId) return { ok: false, reason: 'invalid-study-plan-id', items: [], total: 0 }
   return useWordLibraryDatabase((db) => {
-    const plan = mapPlan(getPlanRow(db, planId))
+    const planRow = getPlanRow(db, planId)
+    const plan = mapPlan(planRow)
     if (!plan) return { ok: false, reason: 'study-plan-not-found', items: [], total: 0 }
-    const rows = db.prepare(`SELECT pi.*, mi.normalized_wps, mi.display_wps, COUNT(po.id) occurrence_count
+    const resolution = resolvePlanFilters(db, planRow)
+    if (!resolution.ok) return { ...resolution, items: [], total: plan.totalCount }
+    const rows = db.prepare(`SELECT pi.*, mi.normalized_wps, mi.display_wps
       FROM mixed_note_plan_items pi JOIN mixed_note_items mi ON mi.id=pi.item_id
-      LEFT JOIN mixed_note_plan_occurrences po ON po.plan_item_id=pi.id WHERE pi.plan_id=?
-      GROUP BY pi.id ORDER BY pi.item_order, pi.id LIMIT ? OFFSET ?`).all(planId, limit, offset)
+      WHERE pi.plan_id=? ORDER BY pi.item_order, pi.id LIMIT ? OFFSET ?`).all(planId, limit, offset)
+    const occurrenceCounts = getLiveOccurrenceCounts(
+      db,
+      resolution.filters,
+      rows.map((row) => Number(row.item_id)),
+      resolution.queryOptions
+    )
     return { ok: true, plan, items: rows.map((row) => ({
       id: Number(row.id), wordId: Number(row.item_id), itemOrder: Number(row.item_order), status: row.status,
       isSpecial: Boolean(row.is_special), addedAt: Number(row.added_at), statusAt: Number(row.status_at),
       lastReviewedAt: row.last_reviewed_at == null ? null : Number(row.last_reviewed_at), language: 'mixed',
       normalizationVersion: MIXED_NOTE_NORMALIZATION_VERSION, normalizedWord: row.normalized_wps,
-      displayWord: row.display_wps, occurrenceCount: Number(row.occurrence_count || 0),
+      displayWord: row.display_wps, occurrenceCount: occurrenceCounts.get(Number(row.item_id)) || 0,
     })), total: plan.totalCount, limit, offset }
   })
 }
@@ -775,16 +982,29 @@ export function getMixedPlanItemOccurrences(planIdValue, itemIdValue) {
   const planId = toId(planIdValue); const planItemId = toId(itemIdValue)
   if (!planId || !planItemId) return { ok: false, reason: 'invalid-study-plan-item', occurrences: [] }
   return useWordLibraryDatabase((db) => {
-    const item = db.prepare('SELECT id FROM mixed_note_plan_items WHERE id=? AND plan_id=?').get(planItemId, planId)
+    const planRow = db.prepare('SELECT * FROM mixed_note_study_plans WHERE id=?').get(planId)
+    if (!planRow) return { ok: false, reason: 'study-plan-not-found', occurrences: [] }
+    const item = db.prepare('SELECT id, item_id FROM mixed_note_plan_items WHERE id=? AND plan_id=?').get(planItemId, planId)
     if (!item) return { ok: false, reason: 'study-plan-item-not-found', occurrences: [] }
-    const rows = db.prepare(`SELECT * FROM mixed_note_plan_occurrences WHERE plan_item_id=?
-      ORDER BY source_name COLLATE NOCASE, relative_path COLLATE NOCASE, line_number, id`).all(planItemId)
+    const resolution = resolvePlanFilters(db, planRow)
+    if (!resolution.ok) return { ...resolution, occurrences: [] }
+    const where = buildWhere(resolution.filters, [Number(item.item_id)], resolution.queryOptions)
+    const rows = db.prepare(`SELECT mo.*, mf.file_order, mf.relative_path, mf.file_path,
+      mf.note_type, mf.note_year, mf.note_month, mf.computer_name,
+      s.display_name source_name, s.folder_path
+      FROM mixed_note_items mi JOIN mixed_note_occurrences mo ON mo.item_id=mi.id
+      JOIN mixed_note_files mf ON mf.id=mo.source_file_id
+      JOIN mixed_note_sources s ON s.id=mf.source_id
+      WHERE ${where.sql}
+      ORDER BY s.display_name COLLATE NOCASE, mf.file_order, mo.occurrence_order, mo.id`)
+      .all(...where.parameters)
     return { ok: true, occurrences: rows.map((row) => ({
-      id: Number(row.id), planItemId: Number(row.plan_item_id), sourceName: row.source_name,
-      folderPath: row.source_folder_path, relativePath: row.relative_path, filePath: row.file_path,
-      lineNumber: Number(row.line_number), sourceWord: row.source_wps,
+      id: Number(row.id), planItemId, sourceName: row.source_name,
+      folderPath: row.folder_path, relativePath: row.relative_path, filePath: row.file_path,
+      lineNumber: Number(row.line_number), endLineNumber: Number(row.end_line_number),
+      fileOrder: Number(row.file_order), occurrenceOrder: Number(row.occurrence_order), sourceWord: row.source_wps,
       markers: [row.note_type, row.note_year && row.note_month ? `${row.note_year}-${row.note_month}` : '', row.computer_name].filter(Boolean),
-      annotation: row.comment, rawLine: row.raw_line, capturedAt: Number(row.captured_at),
+      annotation: row.comment, rawLine: row.raw_line,
     })) }
   })
 }
@@ -798,16 +1018,23 @@ function parseSession(value) {
   } catch { return { version: 1, queueItemIds: [], currentIndex: 0, isValid: false } }
 }
 
-const sessionRow = (db, id) => db.prepare(`SELECT ss.*, p.name plan_name FROM mixed_note_study_sessions ss
+const sessionRow = (db, id) => db.prepare(`SELECT ss.*, p.name plan_name, p.source_filter_json
+  FROM mixed_note_study_sessions ss
   JOIN mixed_note_study_plans p ON p.id=ss.plan_id WHERE ss.id=?`).get(id)
-const activeSessionRow = (db) => db.prepare(`SELECT ss.*, p.name plan_name FROM mixed_note_study_sessions ss
+const activeSessionRow = (db) => db.prepare(`SELECT ss.*, p.name plan_name, p.source_filter_json
+  FROM mixed_note_study_sessions ss
   JOIN mixed_note_study_plans p ON p.id=ss.plan_id WHERE ss.ended_at IS NULL ORDER BY ss.started_at DESC LIMIT 1`).get()
 
 function reviewItemRow(db, row, id) {
-  return db.prepare(`SELECT pi.*, mi.normalized_wps, mi.display_wps, COUNT(po.id) occurrence_count
+  const item = db.prepare(`SELECT pi.*, mi.normalized_wps, mi.display_wps
     FROM mixed_note_plan_items pi JOIN mixed_note_items mi ON mi.id=pi.item_id
-    LEFT JOIN mixed_note_plan_occurrences po ON po.plan_item_id=pi.id
-    WHERE pi.id=? AND pi.plan_id=? GROUP BY pi.id`).get(id, row.plan_id)
+    WHERE pi.id=? AND pi.plan_id=?`).get(id, row.plan_id)
+  if (!item) return null
+  const resolution = resolvePlanFilters(db, row)
+  const occurrenceCounts = resolution.ok
+    ? getLiveOccurrenceCounts(db, resolution.filters, [Number(item.item_id)], resolution.queryOptions)
+    : new Map()
+  return { ...item, occurrence_count: occurrenceCounts.get(Number(item.item_id)) || 0 }
 }
 
 const mapReviewItem = (row) => row ? ({
