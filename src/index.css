@@ -1316,6 +1316,10 @@ button:hover {
   flex: 0 1 154px;
 }
 
+.text-library-filters .text-library-character-filter {
+  flex: 0 1 150px;
+}
+
 .text-library-word-filter {
   flex: 1.4 1 130px;
   width: 100%;
@@ -4566,6 +4570,38 @@ button:hover {
   padding: 5px 8px;
   text-align: left;
   border-radius: 3px;
+}
+
+.video-move-path-list label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(245, 222, 179, 0.2);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.video-move-path-list label:has(input:checked) {
+  border-color: #ffb347;
+  background: rgba(255, 179, 71, 0.12);
+}
+
+.video-move-path-list label:has(input:disabled) {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.video-move-path-list input {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  margin: 2px 0 0;
+}
+
+.video-move-path-list label span {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .subtitle-choice-list span,

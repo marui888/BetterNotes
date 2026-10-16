@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import SimpleContextMenu from '../components/SimpleContextMenu'
 
 const PLAN_PAGE_SIZE = 250
+const CHARACTER_TYPE_LABELS = {
+  english: 'English only',
+  chinese: 'Contains Chinese',
+  mixed: 'English + Chinese',
+}
 
 function getPlanItemPageOffset(item) {
   const itemOrder = Math.max(1, Number(item?.itemOrder) || 1)
@@ -37,6 +42,9 @@ function formatFilterSummary(snapshot = {}) {
     if (conditions.computerName) parts.push(`Computer: ${conditions.computerName}`)
     if (conditions.wps) parts.push(`WPS: ${conditions.wps}`)
     if (conditions.comment) parts.push(`Comment: ${conditions.comment}`)
+    if (CHARACTER_TYPE_LABELS[conditions.characterType]) {
+      parts.push(`Characters: ${CHARACTER_TYPE_LABELS[conditions.characterType]}`)
+    }
     return parts.length > 0 ? parts.join(' · ') : 'All effective Sources'
   }
 
@@ -46,6 +54,10 @@ function formatFilterSummary(snapshot = {}) {
   if (filters.fileId) parts.push(`File #${filters.fileId}`)
   if (filters.tagId) parts.push(`Tag #${filters.tagId}`)
   if (filters.word) parts.push(`Word: ${filters.word}`)
+  if (filters.comment) parts.push(`Comment: ${filters.comment}`)
+  if (CHARACTER_TYPE_LABELS[filters.characterType]) {
+    parts.push(`Characters: ${CHARACTER_TYPE_LABELS[filters.characterType]}`)
+  }
   return parts.length > 0 ? parts.join(' · ') : 'All effective Sources'
 }
 

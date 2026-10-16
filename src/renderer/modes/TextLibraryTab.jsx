@@ -5,6 +5,8 @@ const EMPTY_FILTERS = {
   fileId: '',
   tagId: '',
   word: '',
+  comment: '',
+  characterType: '',
 }
 
 function createInitialState(initialState) {
@@ -13,6 +15,8 @@ function createInitialState(initialState) {
     fileId: String(initialState?.filters?.fileId || ''),
     tagId: String(initialState?.filters?.tagId || ''),
     word: String(initialState?.filters?.word || ''),
+    comment: String(initialState?.filters?.comment || ''),
+    characterType: String(initialState?.filters?.characterType || ''),
   }
   return {
     filters,
@@ -21,6 +25,8 @@ function createInitialState(initialState) {
       fileId: String(initialState?.appliedFilters?.fileId ?? filters.fileId),
       tagId: String(initialState?.appliedFilters?.tagId ?? filters.tagId),
       word: String(initialState?.appliedFilters?.word ?? filters.word),
+      comment: String(initialState?.appliedFilters?.comment ?? filters.comment),
+      characterType: String(initialState?.appliedFilters?.characterType ?? filters.characterType),
     },
     offset: Math.max(0, Number(initialState?.offset) || 0),
     expandedWordId: Number(initialState?.expandedWordId) || null,
@@ -36,6 +42,8 @@ function createInitialState(initialState) {
       fileId: String(initialState.loadedFilterFilters.fileId || ''),
       tagId: String(initialState.loadedFilterFilters.tagId || ''),
       word: String(initialState.loadedFilterFilters.word || ''),
+      comment: String(initialState.loadedFilterFilters.comment || ''),
+      characterType: String(initialState.loadedFilterFilters.characterType || ''),
     } : null,
   }
 }
@@ -62,6 +70,10 @@ function sanitizeLibraryFilters(filters, filterOptions) {
     fileId: fileIds.has(String(filters.fileId || '')) ? String(filters.fileId) : '',
     tagId: tagIds.has(String(filters.tagId || '')) ? String(filters.tagId) : '',
     word: String(filters.word || ''),
+    comment: String(filters.comment || ''),
+    characterType: ['english', 'chinese', 'mixed'].includes(filters.characterType)
+      ? filters.characterType
+      : '',
   }
 }
 
@@ -70,6 +82,8 @@ function areLibraryFiltersEqual(first, second) {
     && first.fileId === second.fileId
     && first.tagId === second.tagId
     && first.word === second.word
+    && first.comment === second.comment
+    && first.characterType === second.characterType
 }
 
 export default function TextLibraryTab({ initialState, onOpenOccurrence, onSessionStateChange }) {
@@ -334,6 +348,8 @@ export default function TextLibraryTab({ initialState, onOpenOccurrence, onSessi
         fileId: String(result.filters?.fileId || ''),
         tagId: String(result.filters?.tagId || ''),
         word: String(result.filters?.word || ''),
+        comment: String(result.filters?.comment || ''),
+        characterType: String(result.filters?.characterType || ''),
       }
       setFilters(nextFilters)
       setLoadedFilterPath(result.filePath || '')
@@ -545,6 +561,30 @@ export default function TextLibraryTab({ initialState, onOpenOccurrence, onSessi
           placeholder="Word contains…"
           type="text"
           value={filters.word}
+        />
+        <select
+          aria-label="Word character type"
+          className="text-file-select text-library-character-filter"
+          data-tooltip="Filter Word text by its Unicode letter types"
+          onChange={(event) => setFilters((current) => ({ ...current, characterType: event.target.value }))}
+          value={filters.characterType}
+        >
+          <option value="">Characters: Any</option>
+          <option value="english">English only</option>
+          <option value="chinese">Contains Chinese</option>
+          <option value="mixed">English + Chinese</option>
+        </select>
+        <input
+          aria-label="Comment filter"
+          className="text-library-word-filter"
+          data-tooltip="Case-insensitive search in occurrence comments"
+          onChange={(event) => setFilters((current) => ({ ...current, comment: event.target.value }))}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') queryLibrary(filters, 0)
+          }}
+          placeholder="Comment contains…"
+          type="text"
+          value={filters.comment}
         />
         <select
           aria-label="Sort type"

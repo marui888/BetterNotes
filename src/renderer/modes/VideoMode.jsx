@@ -665,6 +665,7 @@ export default function VideoMode() {
   const noteEditorRef = useRef(null)
   const leaveGuardHandlerRef = useRef(null)
   const dialogResolveRef = useRef(null)
+  const videoMoveInProgressRef = useRef(false)
   const toastTimerRef = useRef(null)
   const subtitlePickChordTimerRef = useRef(null)
   const subtitleInteractionModeRef = useRef('follow')
@@ -1350,6 +1351,11 @@ export default function VideoMode() {
   }, [])
 
   const closeDialog = (decision) => {
+    if (dialog?.kind === 'videoMoving') return
+    if (dialog?.kind === 'videoMoveSelect' && decision === 'move') {
+      if (!dialog.targetFolder) return
+      decision = dialog.targetFolder
+    }
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current)
       toastTimerRef.current = null
@@ -1452,6 +1458,11 @@ export default function VideoMode() {
     if (!dialog) return undefined
 
     const onKeyDown = (event) => {
+      if (dialog.kind === 'videoMoving') {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        return
+      }
       if (dialog.kind === 'videoRename') {
         if (event.key === 'Escape') {
           event.preventDefault()
@@ -1724,12 +1735,21 @@ export default function VideoMode() {
     setTimeout(applySeek, 120)
   }
 
-  const buildCaptureRange = (forwardSeconds = QUICK_NOTE_FORWARD_SECONDS, backwardSeconds = QUICK_NOTE_BACKWARD_SECONDS) => {
+  const buildCaptureRange = (
+    forwardSeconds = QUICK_NOTE_FORWARD_SECONDS,
+    backwardSeconds = QUICK_NOTE_BACKWARD_SECONDS,
+    capturedStartSeconds = null
+  ) => {
     const currentTime = getPlayerTime()
     const duration = getDuration()
     const scaledBackward = scaleTimeDistance(backwardSeconds)
     const scaledForward = scaleTimeDistance(forwardSeconds)
-    const start = currentTime - scaledBackward < 0 ? 0 : currentTime - scaledBackward
+    const hasCapturedStart = capturedStartSeconds !== null
+      && capturedStartSeconds !== undefined
+      && Number.isFinite(Number(capturedStartSeconds))
+    const start = hasCapturedStart
+      ? Math.max(0, Number(capturedStartSeconds))
+      : currentTime - scaledBackward < 0 ? 0 : currentTime - scaledBackward
     let end = Math.min(duration, start + scaledForward)
 
     if (!Number.isFinite(end) || end <= start) {
@@ -2083,11 +2103,11 @@ export default function VideoMode() {
     return false
   }
 
-  const closeCurrentVideo = async () => {
-    if (!videoFile?.filePath) return
+  const closeCurrentVideo = async (options = {}) => {
+    if (!videoFile?.filePath) return false
 
-    const canClose = await confirmBeforeSwitchVideo()
-    if (!canClose) return
+    const canClose = options.skipSwitchConfirm || await confirmBeforeSwitchVideo()
+    if (!canClose) return false
 
     playerRef.current?.pause?.()
     rememberCurrentLoadedVideo()
@@ -2133,9 +2153,12 @@ export default function VideoMode() {
       setSelectedEnd('')
       setDirty(APP_MODES.VIDEO, false)
     }
+    return true
   }
 
-  leaveGuardHandlerRef.current = confirmBeforeSwitchVideo
+  leaveGuardHandlerRef.current = () => (
+    videoMoveInProgressRef.current ? false : confirmBeforeSwitchVideo()
+  )
 
   useEffect(() => {
     setLeaveGuard(APP_MODES.VIDEO, () => leaveGuardHandlerRef.current?.() ?? true)
@@ -2382,6 +2405,11 @@ export default function VideoMode() {
   }, [restoreSessionState])
 
   const chooseSubtitleLanguage = async (languageOptions = [], options = {}) => {
+    if (Object.prototype.hasOwnProperty.call(options, 'restoreSubtitleLanguageKey')) {
+      return languageOptions.find((entry) => (
+        getSubtitleLanguageKey(entry.language) === options.restoreSubtitleLanguageKey
+      )) || null
+    }
     if (languageOptions.length === 0) {
       return null
     }
@@ -2553,7 +2581,7 @@ export default function VideoMode() {
 
     const nextVideoOpenSource = options.videoOpenSource === 'pool' ? 'pool' : 'default'
     const restoredPlaybackTime = Number(restoredSeekTime)
-    rememberCurrentLoadedVideo()
+    if (!options.skipRememberCurrent) rememberCurrentLoadedVideo()
     loadedVideoStateRef.current = {
       ...loadedVideoStateRef.current,
       activeSource: nextVideoOpenSource,
@@ -2638,6 +2666,7 @@ export default function VideoMode() {
     if (srtSubtitle) {
       convertSrtSubtitleInBackground(info, srtSubtitle)
     }
+    return true
   }
 
   const openVideoFileFullPath = async (fullPath, options = {}) => {
@@ -2678,7 +2707,7 @@ export default function VideoMode() {
       loadDirectoryMp4Files: !poolSource && openOptions.updateDirectoryMp4Files !== false,
       loadNotes: !poolSource,
     })
-    await loadVideoInfo(info, openOptions)
+    return loadVideoInfo(info, openOptions)
   }
 
   const openVideoFilePath = async (fileName) => {
@@ -2725,6 +2754,162 @@ export default function VideoMode() {
     const result = await window.videoApi?.showFileInFolder?.(filePath)
     if (!result?.ok) {
       showAutoMessage('Unable to open the file folder.', 'MP4 File', 1600)
+    }
+  }
+
+  const moveMp4File = async (filePath) => {
+    if (!filePath || videoMoveInProgressRef.current) return
+    videoMoveInProgressRef.current = true
+    let closedCurrent = false
+    let moveSucceeded = false
+    let reopenOptions = null
+    let savedInfoTimes = null
+    try {
+      const pathList = await window.videoApi?.readMovePaths?.()
+      if (!pathList?.ok || !pathList.paths.length) {
+        throw new Error(pathList?.reason || 'MoveToPathList contains no directories.')
+      }
+      const targetFolder = await showActionDialog({
+        kind: 'videoMoveSelect',
+        title: 'MoveTo',
+        fileName: splitPath(filePath).fileName,
+        targetFolders: pathList.paths,
+        targetFolder: '',
+        defaultValue: 'move',
+        cancelValue: 'cancel',
+        actions: [
+          { label: 'Move', value: 'move', primary: true },
+          { label: 'Cancel', value: 'cancel' },
+        ],
+      })
+      if (!targetFolder || targetFolder === 'cancel') return
+      const payload = { filePath, targetFolder }
+      const preview = await window.videoApi.previewMove(payload)
+      if (!preview?.ok) throw new Error(preview?.reason || 'Unable to move this file.')
+
+      const isCurrent = isSameFilePath(activeVideoPathRef.current, filePath)
+      if (isCurrent) {
+        if (!await confirmBeforeSwitchVideo()) return
+        const currentNotes = useVideoStore.getState()
+        savedInfoTimes = { start: currentNotes.curStart, end: currentNotes.curEnd }
+        reopenOptions = {
+          autoplay: false,
+          skipSwitchConfirm: true,
+          skipRememberCurrent: true,
+          allowPoolToDefault: true,
+          videoOpenSource: videoOpenSourceRef.current,
+          seekTime: getPlayerTime(),
+          playbackRate: getPlaybackRate(),
+          selectedNoteIndex: currentNotes.notes.findIndex((note) => note.id === currentNotes.selectedNoteId),
+          restoreSubtitleLanguageKey: selectedSubtitleLanguageKey,
+        }
+        if (!await closeCurrentVideo({ skipSwitchConfirm: true })) return
+        closedCurrent = true
+        // Reset releases the media source; yield for React and Chromium to unload it.
+        playerRef.current?.reset?.()
+        await new Promise((resolve) => window.setTimeout(resolve, 180))
+      }
+
+      setDialog({
+        kind: 'videoMoving',
+        title: 'Moving video files',
+        message: 'Moving and verifying the MP4, subtitles and notes. Please wait…',
+        actions: [],
+      })
+      const result = await window.videoApi.moveFile(payload)
+      setDialog(null)
+      if (!result?.ok) {
+        window.debugApi?.log(`MoveTo failed: ${JSON.stringify(result)}`)
+        if (result?.recoveryRequired) {
+          await showActionDialog({
+            title: 'MoveTo recovery required',
+            message: 'Some files could not be restored. Copies have been retained. See Debug Info for all source and destination paths.',
+            actions: [{ label: 'OK', value: 'ok' }],
+          })
+          throw new Error('Move incomplete. Check Debug Info before moving these files again.')
+        }
+        throw new Error(result?.reason || 'Move failed.')
+      }
+      moveSucceeded = true
+      const targetPath = result.filePath
+      const movedPaths = result.movedFiles || []
+      const remapPath = (oldPath) => movedPaths.find((entry) => isSameFilePath(entry.from, oldPath))?.to || oldPath
+      replaceRecentFile(APP_MODES.VIDEO, filePath, targetPath)
+      addRecentFolder(APP_MODES.VIDEO, splitPath(targetPath).folderPath)
+      loadedVideoStateRef.current = {
+        ...loadedVideoStateRef.current,
+        sources: Object.fromEntries(Object.entries(loadedVideoStateRef.current.sources).map(([source, slot]) => [
+          source, { ...slot, filePath: remapPath(slot.filePath) },
+        ])),
+      }
+      readingPositionsRef.current = readingPositionsRef.current.map((entry) => ({
+        ...entry,
+        videoPath: remapPath(entry.videoPath),
+        subtitlePath: remapPath(entry.subtitlePath),
+      }))
+      setReadingPositions(readingPositionsRef.current)
+      const remapSource = (source) => source.type === 'file'
+        ? { ...source, path: remapPath(source.path), id: getNotesPoolSourceId('file', remapPath(source.path)) }
+        : source
+      setExternalNoteSources((current) => normalizeNotesPoolSources(current.map(remapSource)))
+      setExternalNoteLoadedSources((current) => normalizeNotesPoolSources(current.map(remapSource)))
+      setExternalNotes((current) => current.map((note) => ({
+        ...note,
+        sourceVideoPath: remapPath(note.sourceVideoPath),
+        sourceJsonPath: remapPath(note.sourceJsonPath),
+        defaultNoteId: closedCurrent && reopenOptions.videoOpenSource === 'default'
+          && isSameFilePath(note.sourceVideoPath, filePath) && note.defaultNoteId
+          ? `${targetPath}-${note.noteIndex}`
+          : note.defaultNoteId,
+      })))
+      if (isSameFilePath(defaultNotesOwnerPathRef.current, filePath)) {
+        defaultNotesOwnerPathRef.current = targetPath
+      }
+      // Keep Default's list intact when moving an inactive file or a Pool video.
+      if (!closedCurrent || reopenOptions.videoOpenSource === 'pool') {
+        const currentNotes = useVideoStore.getState().notes
+        setNotes(currentNotes.map((note) => ({ ...note, sourceVideoPath: remapPath(note.sourceVideoPath) })))
+      }
+      if (closedCurrent) {
+        const opened = await openVideoFileFullPath(targetPath, reopenOptions)
+        if (!opened) throw new Error('Files moved, but reopening failed. Open the new path from Recent MP4 Files.')
+        setCurStart(savedInfoTimes.start)
+        setCurEnd(savedInfoTimes.end)
+      }
+      const displayedFolder = closedCurrent && reopenOptions.videoOpenSource === 'default'
+        ? splitPath(targetPath).folderPath
+        : directoryFolderPath
+      if (displayedFolder) {
+        const listing = await window.videoApi.listMp4Files(displayedFolder)
+        if (listing?.ok) setDirectoryMp4Files(listing.mp4Files || [])
+      }
+      if (!closedCurrent && isSameFilePath(splitPath(filePath).folderPath, directoryFolderPath)
+        && selectedDirectoryMp4Name === splitPath(filePath).fileName) {
+        setSelectedDirectoryMp4Name('')
+      }
+      window.debugApi?.log(`MoveTo completed: ${JSON.stringify(movedPaths)}`)
+      showAutoMessage('Video and related files moved.', 'MoveTo', 1500)
+    } catch (error) {
+      setDialog(null)
+      window.debugApi?.log(`MoveTo: ${filePath}: ${error.message || String(error)}`)
+      if (closedCurrent && !moveSucceeded) {
+        try {
+          const opened = await openVideoFileFullPath(filePath, reopenOptions)
+          if (opened && savedInfoTimes) {
+            setCurStart(savedInfoTimes.start)
+            setCurEnd(savedInfoTimes.end)
+          }
+        } catch (reopenError) {
+          window.debugApi?.log(`MoveTo reopen failed: ${reopenError.message}`)
+        }
+      }
+      await showActionDialog({
+        title: 'MoveTo',
+        message: error.message || String(error),
+        actions: [{ label: 'OK', value: 'ok' }],
+      })
+    } finally {
+      videoMoveInProgressRef.current = false
     }
   }
 
@@ -3672,10 +3857,22 @@ export default function VideoMode() {
     setCurEnd(range.end)
   }
 
-  const addQuickNote = async () => {
+  const getSegmentedNoteStartTime = (actionContext) => {
+    if (actionContext?.startTime === null || actionContext?.startTime === undefined) return null
+    const startTime = Number(actionContext?.startTime)
+    return Number.isFinite(startTime) ? startTime : null
+  }
+
+  const captureNoteActionSegmentedContext = () => ({ startTime: getPlayerTime() })
+
+  const addQuickNote = async (actionContext) => {
     if (!videoFile?.filePath) return
 
-    const range = normalizeRange(buildCaptureRange())
+    const range = normalizeRange(buildCaptureRange(
+      QUICK_NOTE_FORWARD_SECONDS,
+      QUICK_NOTE_BACKWARD_SECONDS,
+      getSegmentedNoteStartTime(actionContext)
+    ))
     if (!range) return
 
     addNote(createQuickNote(range, ''))
@@ -3685,10 +3882,11 @@ export default function VideoMode() {
     showAutoMessage('Action message.', 'Message', 900)
   }
 
-  const appendCurrentMark = () => {
+  const appendCurrentMark = (actionContext) => {
     if (!videoFile?.filePath) return
 
-    const startSeconds = parseTime(curStart)
+    const capturedStartTime = getSegmentedNoteStartTime(actionContext)
+    const startSeconds = capturedStartTime ?? parseTime(curStart)
     const endSeconds = parseTime(curEnd)
     if (!Number.isFinite(startSeconds)) {
       showAutoMessage('Action message.', 'Message', 1200)
@@ -3727,7 +3925,7 @@ export default function VideoMode() {
     raw: {},
   })
 
-  const insertQuickNoteNearSelected = (position) => {
+  const insertQuickNoteNearSelected = (position, actionContext) => {
     if (!selectedNoteId || !videoFile?.filePath) {
       showAutoMessage('Action message.', 'Message', 900)
       return
@@ -3739,7 +3937,11 @@ export default function VideoMode() {
       return
     }
 
-    const range = normalizeRange(buildCaptureRange())
+    const range = normalizeRange(buildCaptureRange(
+      QUICK_NOTE_FORWARD_SECONDS,
+      QUICK_NOTE_BACKWARD_SECONDS,
+      getSegmentedNoteStartTime(actionContext)
+    ))
     if (!range) return
 
     const insertIndex = position === 'before' ? selectedIndex : selectedIndex + 1
@@ -4251,7 +4453,7 @@ export default function VideoMode() {
 
 
   const getContextMenuItemCount = (type) => (
-    type === 'subtitleCue' ? 3 : type === 'externalNote' ? 4 : type === 'mp4File' ? 3 : 12
+    type === 'subtitleCue' ? 3 : type === 'externalNote' ? 4 : type === 'mp4File' ? 4 : 12
   )
 
   const openMp4FileContextMenu = (event, filePath, listSource) => {
@@ -4391,6 +4593,7 @@ export default function VideoMode() {
           disabled: isSameFilePath(targetPath, videoFile?.filePath),
           action: () => renameMp4File(targetPath),
         },
+        { label: 'MoveTo', action: () => moveMp4File(targetPath) },
       ]
     }
 
@@ -4500,6 +4703,7 @@ export default function VideoMode() {
       label: 'Append Mark',
       scope: APP_MODES.VIDEO,
       handler: appendCurrentMark,
+      captureSegmentedContext: captureNoteActionSegmentedContext,
     },
     {
       id: 'video.togglePlay',
@@ -4662,18 +4866,21 @@ export default function VideoMode() {
       label: 'Append Quick Mark',
       scope: APP_MODES.VIDEO,
       handler: addQuickNote,
+      captureSegmentedContext: captureNoteActionSegmentedContext,
     },
     {
       id: 'video.insertQuickBefore',
       label: 'Insert Quick Before',
       scope: APP_MODES.VIDEO,
-      handler: () => insertQuickNoteNearSelected('before'),
+      handler: (actionContext) => insertQuickNoteNearSelected('before', actionContext),
+      captureSegmentedContext: captureNoteActionSegmentedContext,
     },
     {
       id: 'video.insertQuickAfter',
       label: 'Insert Quick After',
       scope: APP_MODES.VIDEO,
-      handler: () => insertQuickNoteNearSelected('after'),
+      handler: (actionContext) => insertQuickNoteNearSelected('after', actionContext),
+      captureSegmentedContext: captureNoteActionSegmentedContext,
     },
     {
       id: 'video.quickUpdateRange',
@@ -6159,14 +6366,32 @@ export default function VideoMode() {
 
       {dialog && !dialog.autoClose ? (
         <div className={dialog.nonModal ? 'inline-dialog-layer non-modal' : 'inline-dialog-mask'}>
-          <div className={[
+          <div data-block-shortcuts={dialog.kind === 'videoMoving' ? 'true' : undefined} className={[
             'inline-dialog',
             ['subtitlePick', 'subtitleEdit'].includes(dialog.kind) ? 'subtitle-pick-dialog' : '',
             dialog.kind === 'videoRename' ? 'video-rename-dialog video-rename-editor-dialog' : '',
             dialog.kind === 'videoRenameConfirm' ? 'video-rename-dialog video-rename-confirm-dialog' : '',
           ].filter(Boolean).join(' ')}>
             <div className="inline-dialog-title">{dialog.title}</div>
-            {dialog.kind === 'videoRename' ? (
+            {dialog.kind === 'videoMoveSelect' ? (
+              <div>
+                <p className="inline-dialog-message">{dialog.fileName}</p>
+                <div className="subtitle-choice-list video-move-path-list">
+                  {dialog.targetFolders.map((entry) => (
+                    <label key={entry.folderPath} title={entry.error || entry.folderPath}>
+                      <input
+                        type="radio"
+                        name="video-move-target"
+                        checked={dialog.targetFolder === entry.folderPath}
+                        disabled={Boolean(entry.error)}
+                        onChange={() => setDialog((current) => ({ ...current, targetFolder: entry.folderPath }))}
+                      />
+                      <span>{entry.folderPath}{entry.error ? ` — ${entry.error}` : ''}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : dialog.kind === 'videoRename' ? (
               <div className="video-rename-fields">
                 <label className="replace-field">
                   <span>Old filename</span>
@@ -6292,6 +6517,7 @@ export default function VideoMode() {
               ) : null}
               {dialog.actions.map((action, index) => (
                 <button
+                  disabled={dialog.kind === 'videoMoveSelect' && action.value === 'move' && !dialog.targetFolder}
                   className={[
                     action.primary ? 'primary' : '',
                     action.danger ? 'danger' : '',

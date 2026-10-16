@@ -1189,6 +1189,90 @@ export default function RollingSubtitlePanel({
     })
   }
 
+  const expandPanelToFitFontSize = (nextFontSize) => {
+    const track = trackRef.current
+    const bounds = containerRef?.current?.getBoundingClientRect()
+    const rows = [...(track?.querySelectorAll('.rolling-subtitle-row') || [])]
+    if (!bounds?.width || !bounds?.height || rows.length === 0 || !document.body) {
+      return rectRef.current
+    }
+
+    const measuringText = document.createElement('span')
+    Object.assign(measuringText.style, {
+      position: 'fixed',
+      left: '-100000px',
+      top: '-100000px',
+      display: 'inline-block',
+      visibility: 'hidden',
+      pointerEvents: 'none',
+      whiteSpace: 'pre',
+      fontSize: `${nextFontSize}px`,
+      lineHeight: 'normal',
+    })
+    document.body.appendChild(measuringText)
+
+    let widestText = 0
+    try {
+      rows.forEach((row) => {
+        const textElement = row.querySelector('strong')
+        if (!textElement) return
+        const textStyle = window.getComputedStyle(textElement)
+        measuringText.style.fontFamily = textStyle.fontFamily
+        measuringText.style.fontStyle = textStyle.fontStyle
+        measuringText.style.fontStretch = textStyle.fontStretch
+        measuringText.style.fontVariant = textStyle.fontVariant
+        measuringText.style.fontWeight = textStyle.fontWeight
+        measuringText.style.letterSpacing = textStyle.letterSpacing
+        measuringText.style.textTransform = textStyle.textTransform
+        measuringText.textContent = textElement.textContent || ''
+        widestText = Math.max(widestText, measuringText.getBoundingClientRect().width)
+      })
+    } finally {
+      measuringText.remove()
+    }
+
+    if (!widestText) return rectRef.current
+
+    const sampleRowStyle = window.getComputedStyle(rows[0])
+    const listStyle = listRef.current ? window.getComputedStyle(listRef.current) : null
+    const numericStyle = (value) => Number.parseFloat(value) || 0
+    const rowChromeWidth = numericStyle(sampleRowStyle.paddingLeft)
+      + numericStyle(sampleRowStyle.paddingRight)
+      + numericStyle(sampleRowStyle.borderLeftWidth)
+      + numericStyle(sampleRowStyle.borderRightWidth)
+    const listChromeWidth = numericStyle(listStyle?.paddingLeft) + numericStyle(listStyle?.paddingRight)
+    const checkboxAndGapWidth = nextFontSize * (0.82 + 0.36)
+    const requiredWidth = Math.ceil(widestText + rowChromeWidth + listChromeWidth + checkboxAndGapWidth + 4)
+    const currentRect = rectRef.current
+    if (requiredWidth <= currentRect.width) return currentRect
+
+    const width = Math.max(currentRect.width, Math.min(requiredWidth, bounds.width))
+    if (width <= currentRect.width) return currentRect
+
+    const currentCenterX = currentRect.x + (currentRect.width / 2)
+    const visibleWidth = Math.min(VISIBLE_HANDLE_SIZE, bounds.width)
+    const x = subtitleCenterModeActive
+      ? Math.round((bounds.width - width) / 2)
+      : clamp(
+          Math.round(currentCenterX - (width / 2)),
+          -width + visibleWidth,
+          bounds.width - visibleWidth,
+        )
+    const nextRect = { ...currentRect, x, width }
+
+    rectRef.current = nextRect
+    relativeRectRef.current = getRelativePanelRect(nextRect, bounds)
+    containerSizeRef.current = { width: bounds.width, height: bounds.height }
+    sessionPanelViewStatesRef.current[panelViewKey] = {
+      ...nextRect,
+      dockPosition,
+    }
+    if (subtitleCenterModeActive) subtitleCenterModeSessionSizeRef.current = { width }
+    setRect(nextRect)
+    window.requestAnimationFrame(rebuildLayoutAndMotionPlan)
+    return nextRect
+  }
+
   useEffect(() => {
     const sequence = Number(fontSizeStepRequest?.sequence) || 0
     if (!sequence || sequence === lastFontSizeStepSequenceRef.current) return
@@ -1200,12 +1284,14 @@ export default function RollingSubtitlePanel({
       : [...FONT_SIZE_PRESETS].reverse().find((size) => size < fontSize)
     if (!Number.isFinite(nextFontSize)) return
 
+    const nextRect = expandPanelToFitFontSize(nextFontSize)
+
     setFontSizeByView((current) => ({
       ...current,
       [resolvedFontSizeKey]: nextFontSize,
     }))
     onPanelViewStateChange?.({
-      ...rectRef.current,
+      ...nextRect,
       fontSize: nextFontSize,
       dockPosition,
     })

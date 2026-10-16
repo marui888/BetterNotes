@@ -507,6 +507,11 @@ function escapeSqlLike(value) {
   return String(value ?? '').replace(/[\\%_]/g, '\\$&')
 }
 
+function normalizeCharacterType(value) {
+  const type = String(value || '')
+  return ['english', 'chinese', 'mixed'].includes(type) ? type : ''
+}
+
 // Treat horizontal/vertical control whitespace as spaces before checking the
 // source word. Repeated spaces do not change the formatted result, which is
 // equivalent to collapsing each run to one space without mutating the source.
@@ -525,6 +530,8 @@ function buildLibraryFilterWhere(filters = {}, wordIds = [], options = {}) {
   const fileId = toOptionalPositiveInteger(filters.fileId)
   const tagId = toOptionalPositiveInteger(filters.tagId)
   const word = normalizeWordV1(filters.word)
+  const comment = String(filters.comment || '')
+  const characterType = normalizeCharacterType(filters.characterType)
   const clauses = options.requireEnabled === false ? [] : ['s.is_enabled = 1']
   const parameters = []
 
@@ -559,6 +566,14 @@ function buildLibraryFilterWhere(filters = {}, wordIds = [], options = {}) {
   if (word) {
     clauses.push("w.normalized_word COLLATE NOCASE LIKE ? ESCAPE '\\'")
     parameters.push(`%${escapeSqlLike(word)}%`)
+  }
+  if (comment) {
+    clauses.push("wo.annotation COLLATE NOCASE LIKE ? ESCAPE '\\'")
+    parameters.push(`%${escapeSqlLike(comment)}%`)
+  }
+  if (characterType) {
+    clauses.push('bn_text_matches_character_type(w.normalized_word, ?) = 1')
+    parameters.push(characterType)
   }
   if (wordIds.length > 0) {
     clauses.push(`w.id IN (${wordIds.map(() => '?').join(', ')})`)
@@ -617,6 +632,8 @@ function createStableWordFilterInDatabase(database, filters = {}) {
         value: String(filters.word),
         caseSensitive: false,
       } : null,
+      comment: String(filters.comment || ''),
+      characterType: normalizeCharacterType(filters.characterType),
     },
   }
 }
@@ -627,7 +644,7 @@ export function createStableWordFilter(filters = {}) {
 
 function resolveStableWordFilterInDatabase(database, definition, options = {}) {
   const conditions = definition?.conditions || {}
-  const resolved = { sourceId: '', fileId: '', tagId: '', word: '' }
+  const resolved = { sourceId: '', fileId: '', tagId: '', word: '', comment: '', characterType: '' }
   const enabledSql = options.requireEnabled === false ? '' : ' AND is_enabled = 1'
 
   if (conditions.source) {
@@ -678,6 +695,8 @@ function resolveStableWordFilterInDatabase(database, definition, options = {}) {
     }
     resolved.word = String(conditions.word.value || '')
   }
+  resolved.comment = String(conditions.comment || '')
+  resolved.characterType = normalizeCharacterType(conditions.characterType)
 
   return { ok: true, filters: resolved }
 }

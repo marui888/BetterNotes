@@ -18,9 +18,11 @@ export const DEFAULT_APP_SETTINGS = {
     monthlyNotesFolder: '',
     specialTextFolder: '',
     autoHotkeyPath: '',
+    notepadPlusPlusPath: '',
     keywordFolder: '',
     defaultKeywordFile: '',
     extraSubtitleFolder: '',
+    moveToPathList: '',
     subtitleDisplayMode: 'native',
     rollingSubtitleFontSize: 25,
     pickSubAutoSelectCurrent: false,
@@ -281,6 +283,9 @@ export function normalizeAppSettings(value) {
   const autoHotkeyPath = typeof value?.general?.autoHotkeyPath === 'string'
     ? value.general.autoHotkeyPath.trim()
     : DEFAULT_APP_SETTINGS.general.autoHotkeyPath
+  const notepadPlusPlusPath = typeof value?.general?.notepadPlusPlusPath === 'string'
+    ? value.general.notepadPlusPlusPath.trim()
+    : DEFAULT_APP_SETTINGS.general.notepadPlusPlusPath
   const keywordFolder = typeof value?.general?.keywordFolder === 'string'
     ? value.general.keywordFolder
     : DEFAULT_APP_SETTINGS.general.keywordFolder
@@ -290,6 +295,9 @@ export function normalizeAppSettings(value) {
   const extraSubtitleFolder = typeof value?.general?.extraSubtitleFolder === 'string'
     ? value.general.extraSubtitleFolder.trim()
     : DEFAULT_APP_SETTINGS.general.extraSubtitleFolder
+  const moveToPathList = typeof value?.general?.moveToPathList === 'string'
+    ? value.general.moveToPathList.trim()
+    : DEFAULT_APP_SETTINGS.general.moveToPathList
   const subtitleLanguagePriority = normalizeSubtitleLanguagePriority(
     typeof value?.general?.subtitleLanguagePriority === 'string'
       ? value.general.subtitleLanguagePriority
@@ -387,9 +395,11 @@ export function normalizeAppSettings(value) {
       monthlyNotesFolder,
       specialTextFolder,
       autoHotkeyPath,
+      notepadPlusPlusPath,
       keywordFolder,
       defaultKeywordFile,
       extraSubtitleFolder,
+      moveToPathList,
       subtitleDisplayMode,
       rollingSubtitleFontSize,
       pickSubAutoSelectCurrent,

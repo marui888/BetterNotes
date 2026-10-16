@@ -16,6 +16,9 @@ function validateConditions(conditions) {
   const file = normalizeNullableObject(conditions?.file)
   const tag = normalizeNullableObject(conditions?.tag)
   const word = normalizeNullableObject(conditions?.word)
+  const characterType = ['english', 'chinese', 'mixed'].includes(conditions?.characterType)
+    ? conditions.characterType
+    : ''
 
   if (source && !String(source.folderPath || '').trim()) {
     return { ok: false, reason: 'word-filter-source-path-required' }
@@ -41,6 +44,8 @@ function validateConditions(conditions) {
         value: String(word.value),
         caseSensitive: false,
       } : null,
+      comment: String(conditions?.comment || ''),
+      characterType,
     },
   }
 }

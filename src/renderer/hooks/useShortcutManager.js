@@ -1,6 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { SHORTCUT_SCOPES, useSettingsStore } from '../../stores/settingsStore'
-import { getRegisteredActions, runAction } from '../actions/actionRegistry'
+import {
+  captureSegmentedActionContexts,
+  getRegisteredActions,
+  runAction,
+} from '../actions/actionRegistry'
 
 export function formatShortcutEvent(event) {
   const key = event.key === ' ' ? 'Space' : event.key
@@ -164,6 +168,7 @@ export default function useShortcutManager(mode, disabled = false) {
   const chordTimeoutMs = settings.general.segmentedShortcutWaitSec * 1000
   const pendingChordRef = useRef(null)
   const pendingChordScopesRef = useRef(null)
+  const pendingChordActionContextsRef = useRef({})
   const chordTimerRef = useRef(null)
   const suppressBeforeInputRef = useRef(false)
   const suppressBeforeInputTimerRef = useRef(null)
@@ -242,6 +247,7 @@ export default function useShortcutManager(mode, disabled = false) {
   const clearPendingChord = ({ restoreFocus = true } = {}) => {
     pendingChordRef.current = null
     pendingChordScopesRef.current = null
+    pendingChordActionContextsRef.current = {}
     if (chordTimerRef.current) {
       clearTimeout(chordTimerRef.current)
       chordTimerRef.current = null
@@ -255,6 +261,9 @@ export default function useShortcutManager(mode, disabled = false) {
     captureAndBlurVideoNoteContent()
     pendingChordRef.current = firstShortcut
     pendingChordScopesRef.current = scopes
+    pendingChordActionContextsRef.current = captureSegmentedActionContexts(
+      options.map((option) => option.actionId)
+    )
     window.dispatchEvent(new CustomEvent('shortcut-chord-change', {
       detail: { shortcut: firstShortcut, options },
     }))
@@ -263,6 +272,12 @@ export default function useShortcutManager(mode, disabled = false) {
 
   useEffect(() => {
     const handleKeyDown = (event) => {
+      if (document.querySelector('[data-block-shortcuts="true"]')) {
+        if (pendingChordRef.current) clearPendingChord({ restoreFocus: false })
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        return
+      }
       if (event.repeat) return
       if (disabled && !pendingChordRef.current) return
       if (document.querySelector('.subtitle-pick-dialog') && !pendingChordRef.current) return
@@ -290,12 +305,13 @@ export default function useShortcutManager(mode, disabled = false) {
 
         const chordShortcut = `${pendingChordRef.current} ${shortcut}`
         const pendingScopes = pendingChordScopesRef.current || scopes
-        clearPendingChord()
         const chordActionId = findActionByShortcutInScopes(shortcuts, pendingScopes, chordShortcut)
+        const actionContext = pendingChordActionContextsRef.current[chordActionId]
+        clearPendingChord()
         if (!chordActionId) return
         if (!isShortcutActionEnabled(chordActionId, mode)) return
 
-        runAction(chordActionId)
+        runAction(chordActionId, actionContext)
         return
       }
 

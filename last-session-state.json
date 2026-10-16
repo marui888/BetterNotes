@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "savedAt": "2026-10-13T17:20:07.885Z",
+  "savedAt": "2026-10-16T19:55:51.563Z",
   "window": {
-    "displayId": 559524117,
+    "displayId": 3041416063,
     "displayBounds": {
       "x": 0,
       "y": 0,
@@ -10,33 +10,141 @@
       "height": 1080
     },
     "bounds": {
-      "x": 1200,
-      "y": 0,
+      "x": 475,
+      "y": 413,
       "width": 720,
       "height": 1032
     },
-    "isMaximized": false
+    "isMaximized": true
   },
-  "activeMode": "text",
-  "mode": "text",
+  "activeMode": "video",
+  "mode": "video",
   "modes": {
+    "text": {
+      "activeTab": "library",
+      "wordsTabViewMode": "review",
+      "currentTxtFilePath": "C:\\WangYuMen TOEFL\\王玉梅TOEFL\\list021.txt",
+      "currentFolderPath": "C:\\WangYuMen TOEFL\\王玉梅TOEFL",
+      "selectedRecordIndex": 40,
+      "specialTextFilePath": "",
+      "specialFolderPath": "",
+      "library": {
+        "filters": {
+          "sourceId": "",
+          "fileId": "",
+          "tagId": "",
+          "word": "",
+          "comment": "",
+          "characterType": ""
+        },
+        "appliedFilters": {
+          "sourceId": "",
+          "fileId": "",
+          "tagId": "",
+          "word": "",
+          "comment": "",
+          "characterType": ""
+        },
+        "offset": 0,
+        "expandedWordId": 114,
+        "loadedFilterPath": "C:\\temp\\王玉梅.bn-word-filter.json",
+        "loadedFilterName": "王玉梅.bn-word-filter.json",
+        "loadedFilterFilters": {
+          "sourceId": "1",
+          "fileId": "",
+          "tagId": "",
+          "word": "",
+          "comment": "",
+          "characterType": ""
+        },
+        "formatDisplay": "all",
+        "sortType": "source",
+        "sortDirection": "asc"
+      },
+      "studyPlan": {
+        "selectedPlanId": 1,
+        "offset": 0,
+        "expandedItemId": 236,
+        "previewItemId": 236,
+        "filterFilePath": "",
+        "filterFileName": "",
+        "reviewMode": false,
+        "historyOpen": false,
+        "expandedHistorySessionId": null,
+        "planSelectionCleared": false
+      },
+      "mixedLibrary": {
+        "filters": {
+          "sourceId": "",
+          "fileId": "",
+          "noteType": "NewSentencesLog",
+          "year": "",
+          "month": "",
+          "computerName": "",
+          "wps": "",
+          "comment": "",
+          "characterType": "chinese"
+        },
+        "appliedFilters": {
+          "sourceId": "",
+          "fileId": "",
+          "noteType": "NewSentencesLog",
+          "year": "",
+          "month": "",
+          "computerName": "",
+          "wps": "",
+          "comment": "",
+          "characterType": "chinese"
+        },
+        "offset": 250,
+        "expandedWordId": null,
+        "loadedFilterPath": "C:\\temp\\Word2012.bn-mixed-note-filter.json",
+        "loadedFilterName": "Word2012.bn-mixed-note-filter.json",
+        "loadedFilterFilters": {
+          "sourceId": "",
+          "fileId": "",
+          "noteType": "NewWordLog",
+          "year": "2012",
+          "month": "",
+          "computerName": "",
+          "wps": "",
+          "comment": "",
+          "characterType": ""
+        },
+        "formatDisplay": "formatted",
+        "sortType": "source",
+        "sortDirection": "asc"
+      },
+      "mixedStudy": {
+        "selectedPlanId": null,
+        "offset": 0,
+        "expandedItemId": 80,
+        "previewItemId": null,
+        "filterFilePath": "",
+        "filterFileName": "",
+        "reviewMode": false,
+        "historyOpen": false,
+        "expandedHistorySessionId": null,
+        "planSelectionCleared": false
+      }
+    },
     "image": {
-      "currentFilePath": "E:\\__English 截图笔记 备份 dumpscreen screenshot\\downsized\\20180303 downsized old\\IMG_20180213_161027.jpg",
+      "currentFilePath": "E:\\__English 截图笔记 备份 dumpscreen screenshot\\downsized\\20180303 downsized old\\Screenshot_2018-01-14-08-14-44-60.png",
       "folderPath": "E:\\__English 截图笔记 备份 dumpscreen screenshot\\downsized\\20180303 downsized old",
-      "leftTab": "current",
-      "selectedRecentPath": "E:\\__English 截图笔记 备份 dumpscreen screenshot\\downsized\\20180303 downsized old\\IMG_20180213_161027.jpg"
+      "leftTab": "recent",
+      "selectedRecentPath": "E:\\__English 截图笔记 备份 dumpscreen screenshot\\downsized\\20180303 downsized old\\Screenshot_2018-01-14-08-14-44-60.png"
     },
     "video": {
-      "currentFilePath": "C:\\youtubeDL\\At 17, She Hauled Home 3 Corn Cribs Nobody Wanted - Then the Buyers Came Looking [sSNPqysevoE].mp4",
+      "currentFilePath": "C:\\youtubeDL\\“Quota!” Squadron Dropped Black Pilot’s Wings in Coffee — Storm Made Her Fly Their Commander Home [_12JdTXmTkw].mp4",
       "folderPath": "C:\\youtubeDL",
       "leftTab": "files",
-      "rightToolTab": "main",
+      "rightToolTab": "notesPool",
       "selectedNoteIndex": -1,
-      "defaultNotesOwnerPath": "C:\\youtubeDL\\At 17, She Hauled Home 3 Corn Cribs Nobody Wanted - Then the Buyers Came Looking [sSNPqysevoE].mp4",
-      "playbackTime": 0,
+      "defaultNotesOwnerPath": "C:\\youtubeDL\\“Quota!” Squadron Dropped Black Pilot’s Wings in Coffee — Storm Made Her Fly Their Commander Home [_12JdTXmTkw].mp4",
+      "playbackTime": 2172.865289,
       "mainMiddleView": {
         "toggleView": {
-          "activeState": 0,
+          "activeState": 4,
           "states": {
             "f0": {
               "hideSub": false,
@@ -48,33 +156,33 @@
               "hideSub": false,
               "hideView": false,
               "hvLayout": 1,
-              "videoOpacity": 0.1
+              "videoOpacity": 0.5
             }
           }
         },
         "rollingPanelView": {
           "states": {
             "f0": {
-              "x": 176,
-              "y": 26,
-              "width": 763,
-              "height": 838,
-              "fontSize": 30,
+              "x": 0,
+              "y": 0,
+              "width": 1317,
+              "height": 706,
+              "fontSize": 42,
               "dockPosition": "left"
             },
             "f4": {
-              "x": 143,
+              "x": 178,
               "y": 0,
-              "width": 1308,
+              "width": 1237,
               "height": 959,
-              "fontSize": 48,
+              "fontSize": 60,
               "dockPosition": "center"
             }
           }
         },
         "playingView": {
           "playbackRate": 0.9,
-          "volume": 1
+          "volume": 0.7755102040816326
         }
       },
       "filterHistory": {
@@ -92,6 +200,13 @@
         "direction": "desc"
       },
       "readingPositions": [
+        {
+          "videoPath": "C:\\youtubeDL\\CEO Fired the Single Dad—Then Froze at What He Left on His Desk [wzk8yCv_hLA].mp4",
+          "subtitlePath": "C:\\youtubeDL\\CEO Fired the Single Dad—Then Froze at What He Left on His Desk [wzk8yCv_hLA].en.vtt",
+          "cueIndex": 86,
+          "cueStart": 221.04,
+          "updatedAt": "2026-10-15T14:31:59.821Z"
+        },
         {
           "videoPath": "C:\\youtubeDL\\My Wife Said： ＂I'm Moving Out. Don't Try To Stalk Me.＂ 4 Days Later, She Begged Me For... [WmpF6H9qOH8].mp4",
           "subtitlePath": "C:\\youtubeDL\\My Wife Said： ＂I'm Moving Out. Don't Try To Stalk Me.＂ 4 Days Later, She Begged Me For... [WmpF6H9qOH8].en.vtt",
@@ -127,39 +242,30 @@
         "activeLoaded": true,
         "sources": {
           "default": {
-            "filePath": "C:\\youtubeDL\\At 17, She Hauled Home 3 Corn Cribs Nobody Wanted - Then the Buyers Came Looking [sSNPqysevoE].mp4",
-            "playbackTime": 0
+            "filePath": "C:\\youtubeDL\\“Quota!” Squadron Dropped Black Pilot’s Wings in Coffee — Storm Made Her Fly Their Commander Home [_12JdTXmTkw].mp4",
+            "playbackTime": 2172.865289
           },
           "pool": {
-            "filePath": "D:\\解题 高中数学\\解题 司马红丽老师\\【司马红丽数学】用对三个方法，杀疯“极值点偏移问题”   _JOM 一题多解  3个典型方法处理同一道题  复合函数 同构关系 换元之后零点个数变化  乘积关系也是极值点偏移问题 _JOM\\1.2022-7-8-4(Av728546113,P1).mp4",
-            "playbackTime": 711.840114
+            "filePath": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中数学  高考数学\\高中数学大合集 P1 【导数 _ 常考模型】端点效应失效怎么办（进阶）_1614959530.mp4",
+            "playbackTime": 1269.001953
           }
         }
       },
       "notesPool": {
         "notes": [],
-        "filterText": "对称",
+        "filterText": "错 && 逻辑",
         "filterOn": false,
         "reverse": false,
         "showFileName": false,
         "folderSearchDepth": 3,
         "sources": [
           {
-            "id": "folder:d:\\解题 高中数学\\解题 司马红丽老师",
-            "type": "folder",
-            "path": "D:\\解题 高中数学\\解题 司马红丽老师",
-            "depth": 3,
-            "selected": false,
-            "lastUsedAt": 1791331753064,
-            "error": ""
-          },
-          {
             "id": "folder:f:\\__视频 解题 高中数学 高考数学\\up 一数  高中数学  高考数学",
             "type": "folder",
             "path": "F:\\__视频 解题 高中数学 高考数学\\up 一数  高中数学  高考数学",
             "depth": 3,
             "selected": false,
-            "lastUsedAt": 1791303381260,
+            "lastUsedAt": 1791960849612,
             "error": ""
           }
         ],
@@ -168,105 +274,6 @@
         "expandedNoteId": "",
         "draftContent": "",
         "dirtyNoteIds": []
-      }
-    },
-    "text": {
-      "activeTab": "study",
-      "wordsTabViewMode": "review",
-      "currentTxtFilePath": "C:\\WangYuMen TOEFL\\王玉梅TOEFL\\list021.txt",
-      "currentFolderPath": "C:\\WangYuMen TOEFL\\王玉梅TOEFL",
-      "selectedRecordIndex": 43,
-      "specialTextFilePath": "",
-      "specialFolderPath": "",
-      "library": {
-        "filters": {
-          "sourceId": "1",
-          "fileId": "",
-          "tagId": "",
-          "word": ""
-        },
-        "appliedFilters": {
-          "sourceId": "1",
-          "fileId": "",
-          "tagId": "",
-          "word": ""
-        },
-        "offset": 0,
-        "expandedWordId": null,
-        "loadedFilterPath": "C:\\temp\\王玉梅.bn-word-filter.json",
-        "loadedFilterName": "王玉梅.bn-word-filter.json",
-        "loadedFilterFilters": {
-          "sourceId": "1",
-          "fileId": "",
-          "tagId": "",
-          "word": ""
-        },
-        "formatDisplay": "all",
-        "sortType": "text",
-        "sortDirection": "asc"
-      },
-      "studyPlan": {
-        "selectedPlanId": 1,
-        "offset": 0,
-        "expandedItemId": 133,
-        "previewItemId": 61,
-        "filterFilePath": "",
-        "filterFileName": "",
-        "reviewMode": true,
-        "historyOpen": false,
-        "expandedHistorySessionId": null,
-        "planSelectionCleared": false
-      },
-      "mixedLibrary": {
-        "filters": {
-          "sourceId": "",
-          "fileId": "",
-          "noteType": "NewWordLog",
-          "year": "",
-          "month": "",
-          "computerName": "",
-          "wps": "",
-          "comment": ""
-        },
-        "appliedFilters": {
-          "sourceId": "",
-          "fileId": "",
-          "noteType": "NewWordLog",
-          "year": "",
-          "month": "",
-          "computerName": "",
-          "wps": "",
-          "comment": ""
-        },
-        "offset": 0,
-        "expandedWordId": 28693,
-        "loadedFilterPath": "C:\\temp\\Word2012.bn-mixed-note-filter.json",
-        "loadedFilterName": "Word2012.bn-mixed-note-filter.json",
-        "loadedFilterFilters": {
-          "sourceId": "",
-          "fileId": "",
-          "noteType": "NewWordLog",
-          "year": "2012",
-          "month": "",
-          "computerName": "",
-          "wps": "",
-          "comment": ""
-        },
-        "formatDisplay": "all",
-        "sortType": "text",
-        "sortDirection": "asc"
-      },
-      "mixedStudy": {
-        "selectedPlanId": null,
-        "offset": 0,
-        "expandedItemId": 80,
-        "previewItemId": null,
-        "filterFilePath": "",
-        "filterFileName": "",
-        "reviewMode": false,
-        "historyOpen": false,
-        "expandedHistorySessionId": null,
-        "planSelectionCleared": false
       }
     }
   }

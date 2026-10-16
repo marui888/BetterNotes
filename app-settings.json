@@ -7,9 +7,11 @@
     "monthlyNotesFolder": "",
     "specialTextFolder": "",
     "autoHotkeyPath": "C:\\AutoHotkey",
+    "notepadPlusPlusPath": "C:\\Program Files\\Notepad++\\notepad++.exe",
     "keywordFolder": "F:\\",
     "defaultKeywordFile": "",
     "extraSubtitleFolder": "",
+    "moveToPathList": "C:\\JOM\\MoveToPathList.txt",
     "subtitleDisplayMode": "rolling",
     "rollingSubtitleFontSize": 30,
     "pickSubAutoSelectCurrent": false,
@@ -22,7 +24,7 @@
     "subtitleLanguagePriority": "en-orig;en;default",
     "subtitleConvertPromptTimeoutSec": 5,
     "imageAutoLoadDelayMs": 250,
-    "imageViewCount": 3,
+    "imageViewCount": 2,
     "imageSuffixOptions": [
       "删除"
     ],

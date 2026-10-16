@@ -105,13 +105,27 @@ export function registerActions(nextActions) {
   return () => unregisterCallbacks.forEach((unregister) => unregister())
 }
 
-export async function runAction(actionId) {
+export function captureSegmentedActionContexts(actionIds = []) {
+  const contexts = {}
+  const capturedByProvider = new Map()
+
+  for (const actionId of new Set(actionIds)) {
+    const provider = actions.get(actionId)?.captureSegmentedContext
+    if (typeof provider !== 'function') continue
+    if (!capturedByProvider.has(provider)) capturedByProvider.set(provider, provider())
+    contexts[actionId] = capturedByProvider.get(provider)
+  }
+
+  return contexts
+}
+
+export async function runAction(actionId, context) {
   const action = actions.get(actionId)
   if (!action) {
     return { ok: false, reason: 'action-not-found', actionId }
   }
 
-  await action.handler()
+  await action.handler(context)
   return { ok: true }
 }
 
@@ -121,7 +135,7 @@ export function getRegisteredActions() {
     mergedActions.set(actionId, action)
   })
 
-  return [...mergedActions.values()].map(({ handler, ...metadata }) => metadata)
+  return [...mergedActions.values()].map(({ handler, captureSegmentedContext, ...metadata }) => metadata)
 }
 
 export function getActionsByScope(scope) {

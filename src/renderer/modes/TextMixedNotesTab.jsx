@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 const EMPTY_FILTERS = {
   sourceId: '', fileId: '', noteType: '', year: '', month: '',
-  computerName: '', wps: '', comment: '',
+  computerName: '', wps: '', comment: '', characterType: '',
 }
 
 const equalFilters = (a, b) => Object.keys(EMPTY_FILTERS).every((key) => String(a?.[key] || '') === String(b?.[key] || ''))
@@ -95,6 +95,7 @@ export default function TextMixedNotesTab({ initialState, onSessionStateChange }
     }
     const files = nextOptions.files.filter((file) => !next.sourceId || String(file.sourceId) === String(next.sourceId))
     if (!files.some((file) => String(file.id) === String(next.fileId))) next.fileId = ''
+    if (!['english', 'chinese', 'mixed'].includes(next.characterType)) next.characterType = ''
     return next
   }
 
@@ -211,9 +212,13 @@ export default function TextMixedNotesTab({ initialState, onSessionStateChange }
     try {
       const copyResult = await window.textApi.writeClipboardText(rawLine)
       if (!copyResult?.ok) throw new Error(copyResult?.reason || 'clipboard-write-failed')
-      const openResult = await window.textApi.openTextFileExternal(filePath)
+      const openResult = await window.textApi.openTextFileExternal(filePath, {
+        lineNumber: Number(occurrence?.lineNumber) || 0,
+      })
       if (!openResult?.ok) throw new Error(openResult?.reason || 'open-text-file-failed')
-      setMessage('Mixed Note copied; TXT opened with the default app.')
+      setMessage(openResult.editor === 'notepad-plus-plus'
+        ? `Mixed Note copied; TXT opened in Notepad++ at line ${openResult.lineNumber}.`
+        : 'Mixed Note copied; TXT opened with the default app.')
     } catch (error) {
       const reason = error?.message || String(error)
       setMessage('Could not copy and open this Mixed Note.')
@@ -260,6 +265,9 @@ export default function TextMixedNotesTab({ initialState, onSessionStateChange }
       <select className="text-file-select" value={filters.month} onChange={(e) => set('month', e.target.value)}><option value="">All months</option>{Array.from({ length: 12 }, (_, i) => i + 1).map((x) => <option key={x} value={x}>{x}</option>)}</select>
       <select className="text-file-select" value={filters.computerName} onChange={(e) => set('computerName', e.target.value)}><option value="">All computers</option>{options.computers.map((x) => <option key={x} value={x}>{x}</option>)}</select>
       <input className="text-library-word-filter" placeholder="WPS contains..." value={filters.wps} onChange={(e) => set('wps', e.target.value)} onKeyDown={(e) => e.key === 'Enter' && query(filters, 0)} />
+      <select aria-label="WPS character type" className="text-file-select text-library-character-filter" data-tooltip="Filter WPS text by its Unicode letter types" value={filters.characterType} onChange={(e) => set('characterType', e.target.value)}>
+        <option value="">Characters: Any</option><option value="english">English only</option><option value="chinese">Contains Chinese</option><option value="mixed">English + Chinese</option>
+      </select>
       <input className="text-library-word-filter" placeholder="Comment contains..." value={filters.comment} onChange={(e) => set('comment', e.target.value)} onKeyDown={(e) => e.key === 'Enter' && query(filters, 0)} />
       <select aria-label="Sort type" className="text-file-select text-library-sort-select" data-tooltip="Sort the complete result before pagination" onChange={(event) => {
         const next = event.target.value

@@ -584,6 +584,9 @@ const normalizeFilters = (filters = {}) => ({
   noteType: String(filters.noteType || ''), year: Number(filters.year) || '',
   month: Number(filters.month) || '', computerName: String(filters.computerName || ''),
   wps: String(filters.wps || ''), comment: String(filters.comment || ''),
+  characterType: ['english', 'chinese', 'mixed'].includes(filters.characterType)
+    ? filters.characterType
+    : '',
 })
 
 function buildWhere(filters = {}, itemIds = [], options = {}) {
@@ -615,6 +618,10 @@ function buildWhere(filters = {}, itemIds = [], options = {}) {
   if (f.comment) {
     clauses.push("mo.comment LIKE ? ESCAPE '\\' COLLATE NOCASE")
     parameters.push(`%${escapeLike(f.comment)}%`)
+  }
+  if (f.characterType) {
+    clauses.push('bn_text_matches_character_type(mi.normalized_wps, ?) = 1')
+    parameters.push(f.characterType)
   }
   if (itemIds.length) {
     clauses.push(`mi.id IN (${itemIds.map(() => '?').join(',')})`)
@@ -744,6 +751,7 @@ function stableConditionsInDb(db, filters = {}) {
     file: file ? { sourceFolderPath: file.folder_path, relativePath: file.relative_path } : null,
     noteType: f.noteType, year: f.year || null, month: f.month || null,
     computerName: f.computerName, wps: f.wps, comment: f.comment,
+    characterType: f.characterType,
   } }
 }
 
@@ -757,6 +765,7 @@ function resolveConditionsInDb(db, definition, options = {}) {
   const resolved = normalizeFilters({
     noteType: c.noteType, year: c.year, month: c.month,
     computerName: c.computerName, wps: c.wps, comment: c.comment,
+    characterType: c.characterType,
   })
   if (c.source?.folderPath) {
     const row = db.prepare(`SELECT id FROM mixed_note_sources WHERE folder_path_key=?${enabledSql}`)

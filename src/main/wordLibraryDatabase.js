@@ -7,6 +7,30 @@ export const WORD_LIBRARY_SCHEMA_VERSION = 3
 let database = null
 let currentDatabasePath = ''
 
+const LATIN_LETTER_PATTERN = /\p{Script=Latin}/u
+const HAN_LETTER_PATTERN = /\p{Script=Han}/u
+const ANY_LETTER_PATTERN = /\p{Letter}/u
+
+function textMatchesCharacterType(value, characterType) {
+  const text = String(value ?? '')
+  const type = String(characterType || '')
+  if (!type) return 1
+
+  let hasLatin = false
+  let hasHan = false
+  let hasOtherLetter = false
+  for (const character of text) {
+    if (LATIN_LETTER_PATTERN.test(character)) hasLatin = true
+    else if (HAN_LETTER_PATTERN.test(character)) hasHan = true
+    else if (ANY_LETTER_PATTERN.test(character)) hasOtherLetter = true
+  }
+
+  if (type === 'english') return hasLatin && !hasHan && !hasOtherLetter ? 1 : 0
+  if (type === 'chinese') return hasHan ? 1 : 0
+  if (type === 'mixed') return hasLatin && hasHan ? 1 : 0
+  return 1
+}
+
 const INITIAL_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS app_meta (
     key        TEXT PRIMARY KEY,
@@ -232,6 +256,7 @@ export function initializeWordLibraryDatabase(databasePath) {
     nextDatabase.exec('PRAGMA journal_mode = WAL')
     nextDatabase.exec('PRAGMA synchronous = NORMAL')
     nextDatabase.exec('PRAGMA busy_timeout = 5000')
+    nextDatabase.function('bn_text_matches_character_type', { deterministic: true }, textMatchesCharacterType)
     const migration = migrateDatabase(nextDatabase)
 
     database = nextDatabase

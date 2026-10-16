@@ -2,10 +2,12 @@ import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, n
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import iconv from 'iconv-lite';
 import started from 'electron-squirrel-startup';
 import { convertSrtToVtt } from './main/srtToVtt';
+import { listVideoFileFamily, readVideoMovePaths, previewVideoFileMove, moveVideoFileFamily } from './main/videoFileMoveService';
 import { captureWebsterOutput, doubleClickWebsterClientPoint } from './main/websterCapture';
 import { appendTextLine, appendUtf8TextLine, convertFolderTxtToUtf8, listTxtFilesInFolder, readWordFile, saveWordFile } from './main/wordFileService';
 import { cycleMDictDictionary, findDictionaryWindows, getMDictInputText, lookupMDict, lookupMDictRestore, lookupWebster, lookupWebsterAndRead } from './main/dictionaryAhkBridge';
@@ -131,9 +133,11 @@ const DEFAULT_APP_SETTINGS = {
     monthlyNotesFolder: '',
     specialTextFolder: '',
     autoHotkeyPath: '',
+    notepadPlusPlusPath: '',
     keywordFolder: '',
     defaultKeywordFile: '',
     extraSubtitleFolder: '',
+    moveToPathList: '',
     subtitleDisplayMode: 'native',
     rollingSubtitleFontSize: 25,
     pickSubAutoSelectCurrent: false,
@@ -372,6 +376,9 @@ function normalizeAppSettings(value) {
   const autoHotkeyPath = typeof value?.general?.autoHotkeyPath === 'string'
     ? normalizeFilePath(value.general.autoHotkeyPath)
     : DEFAULT_APP_SETTINGS.general.autoHotkeyPath
+  const notepadPlusPlusPath = typeof value?.general?.notepadPlusPlusPath === 'string'
+    ? normalizeFilePath(value.general.notepadPlusPlusPath)
+    : DEFAULT_APP_SETTINGS.general.notepadPlusPlusPath
   const keywordFolder = typeof value?.general?.keywordFolder === 'string'
     ? normalizeFilePath(value.general.keywordFolder)
     : DEFAULT_APP_SETTINGS.general.keywordFolder
@@ -381,6 +388,9 @@ function normalizeAppSettings(value) {
   const extraSubtitleFolder = typeof value?.general?.extraSubtitleFolder === 'string'
     ? normalizeFilePath(value.general.extraSubtitleFolder)
     : DEFAULT_APP_SETTINGS.general.extraSubtitleFolder
+  const moveToPathList = typeof value?.general?.moveToPathList === 'string'
+    ? normalizeFilePath(value.general.moveToPathList)
+    : DEFAULT_APP_SETTINGS.general.moveToPathList
   const subtitleLanguagePriority = normalizeSubtitleLanguagePriority(
     typeof value?.general?.subtitleLanguagePriority === 'string'
       ? value.general.subtitleLanguagePriority
@@ -478,9 +488,11 @@ function normalizeAppSettings(value) {
       monthlyNotesFolder,
       specialTextFolder,
       autoHotkeyPath,
+      notepadPlusPlusPath,
       keywordFolder,
       defaultKeywordFile,
       extraSubtitleFolder,
+      moveToPathList,
       subtitleDisplayMode,
       rollingSubtitleFontSize,
       pickSubAutoSelectCurrent,
@@ -651,6 +663,35 @@ async function selectFolderDialog() {
   }
 
   return { ok: true, folderPath: result.filePaths[0] }
+}
+
+async function selectNotepadPlusPlusDialog() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Notepad++ Executable',
+    properties: ['openFile'],
+    filters: [{ name: 'Notepad++ Executable', extensions: ['exe'] }],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { ok: false, canceled: true }
+  }
+
+  return { ok: true, filePath: result.filePaths[0] }
+}
+
+function openTextFileInNotepadPlusPlus(executablePath, filePath, lineNumber) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executablePath, [`-n${lineNumber}`, filePath], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    child.once('error', reject)
+    child.once('spawn', () => {
+      child.unref()
+      resolve()
+    })
+  })
 }
 
 function getMainWindowSessionState() {
@@ -1768,18 +1809,8 @@ async function renameVideoFileFamily(payload = {}) {
   }
 
   try {
-    const entries = await fs.readdir(folderPath, { withFileTypes: true })
-    const sourceBaseLower = sourceBaseName.toLowerCase()
-    const relatedEntries = entries.filter((entry) => {
-      if (!entry.isFile()) return false
-      const entryNameLower = entry.name.toLowerCase()
-      if (entryNameLower === sourceFileName.toLowerCase()) return true
-      const extension = path.extname(entry.name).toLowerCase()
-      if (extension === '.json') return entryNameLower === `${sourceBaseLower}.json`
-      if (!['.vtt', '.srt'].includes(extension)) return false
-      const subtitleBaseLower = entryNameLower.slice(0, -extension.length)
-      return subtitleBaseLower === sourceBaseLower || subtitleBaseLower.startsWith(`${sourceBaseLower}.`)
-    })
+    const relatedEntries = (await listVideoFileFamily(sourcePath))
+      .map((filePath) => ({ name: path.basename(filePath) }))
     const operations = relatedEntries.map((entry) => {
       const suffix = entry.name.slice(sourceBaseName.length)
       const targetName = entry.name.toLowerCase() === sourceFileName.toLowerCase()
@@ -2432,6 +2463,39 @@ function registerIpcHandlers() {
 
   ipcMain.handle('video:renameFile', async (_event, payload) => renameVideoFileFamily(payload))
 
+  ipcMain.handle('video:selectMovePathList', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select MoveToPathList TXT file',
+      properties: ['openFile'],
+      filters: [{ name: 'Path List', extensions: ['txt'] }],
+    })
+    return { ok: !result.canceled, canceled: result.canceled, filePath: result.filePaths[0] || '' }
+  })
+  ipcMain.handle('video:readMovePaths', async () => {
+    const settings = await readAppSettings()
+    return readVideoMovePaths(settings.general.moveToPathList)
+  })
+  let movingVideoFiles = false
+  const handleVideoMove = async (payload = {}, previewOnly = false) => {
+    if (movingVideoFiles) return { ok: false, reason: 'A video move is already in progress.' }
+    const settings = await readAppSettings()
+    const list = await readVideoMovePaths(settings.general.moveToPathList)
+    if (!list.ok) return list
+    const target = list.paths.find((entry) => !entry.error
+      && path.resolve(entry.folderPath).toLowerCase() === path.resolve(payload.targetFolder || '').toLowerCase())
+    if (!target) return { ok: false, reason: 'Select a valid directory from MoveToPathList.' }
+    if (previewOnly) return previewVideoFileMove(payload.filePath, target.folderPath)
+    if (movingVideoFiles) return { ok: false, reason: 'A video move is already in progress.' }
+    movingVideoFiles = true
+    try {
+      return await moveVideoFileFamily(payload.filePath, target.folderPath)
+    } finally {
+      movingVideoFiles = false
+    }
+  }
+  ipcMain.handle('video:previewMove', (_event, payload) => handleVideoMove(payload, true))
+  ipcMain.handle('video:moveFile', (_event, payload) => handleVideoMove(payload))
+
   ipcMain.handle('image:openFile', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
@@ -2585,14 +2649,38 @@ function registerIpcHandlers() {
 
   ipcMain.handle('text:selectFolder', async () => selectFolderDialog())
 
-  ipcMain.handle('text:openExternal', async (_event, filePath) => {
+  ipcMain.handle('text:openExternal', async (_event, filePath, options = {}) => {
     const normalizedPath = normalizeFilePath(filePath)
     if (path.extname(normalizedPath).toLowerCase() !== '.txt' || !(await fileExists(normalizedPath))) {
       return { ok: false, reason: 'invalid-text-file' }
     }
 
+    const lineNumber = Math.max(0, Math.trunc(Number(options?.lineNumber) || 0))
+    if (lineNumber > 0) {
+      const settings = await readAppSettings()
+      const executablePath = normalizeFilePath(settings.general.notepadPlusPlusPath)
+      if (executablePath) {
+        if (path.extname(executablePath).toLowerCase() !== '.exe' || !(await fileExists(executablePath))) {
+          appendDebugInfo(`[Text Error] Notepad++ executable is invalid: ${executablePath}`)
+          return { ok: false, reason: 'invalid-notepad-plus-plus-path' }
+        }
+        try {
+          await openTextFileInNotepadPlusPlus(executablePath, normalizedPath, lineNumber)
+          return { ok: true, editor: 'notepad-plus-plus', lineNumber }
+        } catch (error) {
+          appendDebugInfo(
+            `[Text Error] Could not open TXT in Notepad++ at line ${lineNumber}: ${normalizedPath}\n`
+            + `${error?.stack || error}`
+          )
+          return { ok: false, reason: 'notepad-plus-plus-launch-failed' }
+        }
+      }
+    }
+
     const errorMessage = await shell.openPath(normalizedPath)
-    return errorMessage ? { ok: false, reason: errorMessage } : { ok: true }
+    return errorMessage
+      ? { ok: false, reason: errorMessage }
+      : { ok: true, editor: 'system-default', lineNumber: null }
   })
 
   ipcMain.handle('text:readClipboardText', async () => clipboard.readText() || '')
@@ -3327,6 +3415,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('app:saveSettings', async (_event, settings) => writeAppSettings(settings))
   ipcMain.handle('app:selectFolder', async () => selectFolderDialog())
+  ipcMain.handle('app:selectNotepadPlusPlus', async () => selectNotepadPlusPlusDialog())
   ipcMain.handle('app:loadLastSessionState', async () => readLastSessionState())
   ipcMain.handle('app:saveLastSessionState', async (_event, sessionState) => writeLastSessionState(sessionState))
 

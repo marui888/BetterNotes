@@ -173,13 +173,15 @@ export default function SettingsDialog({ onClose }) {
         {
           key: 'video-normal',
           title: '普通快捷键',
-          rows: shortcutRows.filter((action) => !action.segmentedShortcut),
+          rows: shortcutRows.filter((action) => (
+            !action.segmentedShortcut && action.id !== 'video.toggleControlMode'
+          )),
         },
         {
           key: 'video-control-segmented',
-          title: '分段快捷键',
+          title: 'Video view-layout Segmented Shortcut',
           firstKey: draft.shortcuts?.[SHORTCUT_SCOPES.VIDEO]?.['video.toggleControlMode'] || '',
-          firstKeyReadOnly: true,
+          firstKeyReadOnly: false,
           rows: controlSegmentedRows,
           segmented: true,
         },
@@ -211,7 +213,7 @@ export default function SettingsDialog({ onClose }) {
       },
       {
         key: 'global-segmented',
-        title: '分段快捷键',
+        title: 'Global mode switching Segmented Shortcut',
         firstKey,
         firstKeyReadOnly: false,
         rows: segmentedRows,
@@ -255,6 +257,12 @@ export default function SettingsDialog({ onClose }) {
     setDraft((current) => {
       const currentBucket = current.shortcuts?.[shortcutTab] || {}
       const nextBucket = { ...currentBucket }
+      if (
+        shortcutTab === SHORTCUT_SCOPES.VIDEO
+        && group.key === 'video-control-segmented'
+      ) {
+        nextBucket['video.toggleControlMode'] = firstKey
+      }
       group.rows.forEach((action) => {
         const { secondKey } = splitSegmentedShortcut(currentBucket[action.id])
         nextBucket[action.id] = buildSegmentedShortcut(firstKey, secondKey)
@@ -323,6 +331,35 @@ export default function SettingsDialog({ onClose }) {
         ...current.general,
         autoHotkeyPath: result.folderPath || '',
       },
+    }))
+  }
+
+  const chooseNotepadPlusPlus = async () => {
+    if (!window.appApi?.selectNotepadPlusPlus) {
+      setMessage('Notepad++ file selection API unavailable')
+      return
+    }
+
+    const result = await window.appApi.selectNotepadPlusPlus()
+    if (!result?.ok || result.canceled) return
+
+    setMessage('')
+    setDraft((current) => ({
+      ...current,
+      general: {
+        ...current.general,
+        notepadPlusPlusPath: result.filePath || '',
+      },
+    }))
+  }
+
+  const chooseVideoMovePathList = async () => {
+    const result = await window.videoApi?.selectMovePathList?.()
+    if (!result?.ok || result.canceled) return
+    setMessage('')
+    setDraft((current) => ({
+      ...current,
+      general: { ...current.general, moveToPathList: result.filePath },
     }))
   }
 
@@ -654,6 +691,30 @@ export default function SettingsDialog({ onClose }) {
                 <section className="settings-section">
                   <div className="settings-section-title">Video</div>
                   <div className="settings-form-grid">
+                    <label htmlFor="settings-video-move-path-list">MoveToPathList</label>
+                    <div className="settings-folder-row">
+                      <input
+                        id="settings-video-move-path-list"
+                        placeholder="TXT file: one absolute destination directory per line"
+                        value={draft.general.moveToPathList}
+                        onChange={(event) => {
+                          setMessage('')
+                          const moveToPathList = event.target.value
+                          setDraft((current) => ({
+                            ...current,
+                            general: { ...current.general, moveToPathList },
+                          }))
+                        }}
+                      />
+                      <button
+                        data-tooltip="Choose MoveToPathList TXT file"
+                        title="Choose MoveToPathList TXT file"
+                        onClick={chooseVideoMovePathList}
+                        type="button"
+                      >
+                        <i className="fa-solid fa-file" aria-hidden="true" />
+                      </button>
+                    </div>
                     <label htmlFor="settings-extra-subtitle-folder">Extra Subtitle Folder</label>
                     <div className="settings-folder-row">
                       <input
@@ -979,6 +1040,31 @@ export default function SettingsDialog({ onClose }) {
                         type="button"
                       >
                         <i className="fa-solid fa-folder-open" aria-hidden="true" />
+                      </button>
+                    </div>
+                    <label htmlFor="settings-notepad-plus-plus-path">Notepad++ Path</label>
+                    <div className="settings-folder-row">
+                      <input
+                        id="settings-notepad-plus-plus-path"
+                        placeholder="C:\\Program Files\\Notepad++\\notepad++.exe"
+                        value={draft.general.notepadPlusPlusPath}
+                        onChange={(event) => {
+                          setMessage('')
+                          setDraft((current) => ({
+                            ...current,
+                            general: {
+                              ...current.general,
+                              notepadPlusPlusPath: event.target.value,
+                            },
+                          }))
+                        }}
+                      />
+                      <button
+                        data-tooltip="Choose Notepad++ executable"
+                        onClick={chooseNotepadPlusPlus}
+                        type="button"
+                      >
+                        <i className="fa-solid fa-file" aria-hidden="true" />
                       </button>
                     </div>
                     <label htmlFor="settings-text-auto-play-all">AutoPlay All</label>
